@@ -1,0 +1,65 @@
+═══════════════════════════════════════════════════════════════
+   📱 CHITI SHORTS REEL - QUICK START GUIDE
+═══════════════════════════════════════════════════════════════
+
+🎉 CONGRATULATIONS! Your app is ready!
+
+═══════════════════════════════════════════════════════════════
+📲 INSTALL ON YOUR PHONE (3 EASY STEPS)
+═══════════════════════════════════════════════════════════════
+
+🍎 FOR iPHONE:
+  1. Open Safari browser
+  2. Tap Share button (□↑)
+  3. Tap "Add to Home Screen"
+
+🤖 FOR ANDROID:
+  1. Open Chrome browser
+  2. Tap menu (⋮)
+  3. Tap "Install app"
+
+═══════════════════════════════════════════════════════════════
+🚀 ACCESSING YOUR APP
+═══════════════════════════════════════════════════════════════
+
+Your app URL: [Your Figma Make deployment URL]
+
+Copy this URL and paste it in your phone's browser!
+
+═══════════════════════════════════════════════════════════════
+✨ WHAT YOU CAN DO
+═══════════════════════════════════════════════════════════════
+
+✓ Watch vertical short videos (swipe to scroll)
+✓ Like, comment, and share videos
+✓ Follow creators
+✓ Discover trending content
+✓ Create and upload videos
+✓ Manage your profile
+✓ Get notifications
+
+═══════════════════════════════════════════════════════════════
+🔧 TIPS & TRICKS
+═══════════════════════════════════════════════════════════════
+
+• Tap video to mute/unmute
+• Swipe up/down to browse videos
+• Use bottom tabs to navigate
+• Tap download icon in profile for install guide
+• Clear browser cache if videos don't load
+
+═══════════════════════════════════════════════════════════════
+📖 NEED MORE HELP?
+═══════════════════════════════════════════════════════════════
+
+Read the full guides:
+  • INSTALLATION_GUIDE.md - Detailed install instructions
+  • README.md - Complete documentation
+
+═══════════════════════════════════════════════════════════════
+🎬 START CREATING!
+═══════════════════════════════════════════════════════════════
+
+Once installed, tap the (+) button to upload your first video!
+
+Made with ❤️ using Figma Make
