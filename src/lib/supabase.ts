@@ -1,14 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
 
-const supabaseUrl = `https://${projectId}.supabase.co`;
-const supabaseAnonKey = publicAnonKey;
+// Humne yahan direct details daal di hain taaki error khatam ho jaye
+const supabaseUrl = 'https://fuhbqtatyixpqrsyuozu.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1aGJxdGF0eWl4cHFyc3l1b3p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkxNjAzMTUsImV4cCI6MjA4NDczNjMxNX0.ds8Ap039dQm2LYUv0-79_1AtddeZ3-AO6czG6OuoTVM';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // Video cache for local storage
 const VIDEO_CACHE_KEY = 'chiti_video_cache';
-const MAX_CACHE_SIZE = 50; // Maximum number of videos to cache
+const MAX_CACHE_SIZE = 50; 
 
 interface CachedVideo {
   id: string;
@@ -26,7 +26,6 @@ export const videoCacheManager = {
       const video = videos.find(v => v.id === videoId);
       
       if (video) {
-        // Update timestamp
         video.timestamp = Date.now();
         localStorage.setItem(VIDEO_CACHE_KEY, JSON.stringify(videos));
         return video.url;
@@ -42,13 +41,9 @@ export const videoCacheManager = {
       const cache = localStorage.getItem(VIDEO_CACHE_KEY);
       let videos: CachedVideo[] = cache ? JSON.parse(cache) : [];
       
-      // Remove existing entry if present
       videos = videos.filter(v => v.id !== videoId);
-      
-      // Add new entry
       videos.push({ id: videoId, url, timestamp: Date.now() });
       
-      // Keep only the most recent MAX_CACHE_SIZE videos
       if (videos.length > MAX_CACHE_SIZE) {
         videos.sort((a, b) => b.timestamp - a.timestamp);
         videos = videos.slice(0, MAX_CACHE_SIZE);
