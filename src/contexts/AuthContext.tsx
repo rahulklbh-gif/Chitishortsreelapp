@@ -1,7 +1,9 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
-import { User, Session } from '@supabase/supabase-js';
+import { User, Session, AuthError } from '@supabase/supabase-js';
+import { toast } from 'sonner';
 
+// 1. Context Interface - Defines what data is available in the app
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -18,54 +20,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    // Check active sessions on page load
+    const initializeAuth = async () => {
+      try {
+        const { data: { session: activeSession }, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        
+        setSession(activeSession);
+        setUser(activeSession?.user ?? null);
+      } catch (error: any) {
+        console.error('Auth initialization error:', error.message);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    initializeAuth();
+
+    // Listen for auth changes (Login, Logout, Token Refresh)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      setSession(currentSession);
+      setUser(currentSession?.user ?? null);
       setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
+  // 2. Google Sign-In Logic with YouTube Permissions
   const signInWithGoogle = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          // YAHAN DHAYAN DEIN: Sirf space use kiya hai
-          scopes: 'openid email profile https://www.googleapis.com/auth/youtube.upload',
+          // IMPORTANT: Space-separated scopes for YouTube Upload
+          scopes: 'openid email profile https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
           queryParams: {
             access_type: 'offline',
-            prompt: 'consent',
+            prompt: 'consent', // Forces Google to show the permission screen
           },
           redirectTo: window.location.origin
         }
       });
+
       if (error) throw error;
-    } catch (error) {
-      console.error('Error logging in:', error);
+    } catch (error: any) {
+      toast.error('Google Sign-In failed: ' + error.message);
+      console.error('Sign-In Error:', error);
     }
   };
 
+  // 3. Sign Out Logic
   const signOut = async () => {
-    await supabase.auth.signOut();
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      toast.success('Logged out successfully');
+    } catch (error: any) {
+      toast.error('Error signing out');
+    }
   };
 
   return (
     <AuthContext.Provider value={{ user, session, loading, signInWithGoogle, signOut }}>
-      {children}
+      {!loading && children}
     </AuthContext.Provider>
   );
 }
 
+// Custom hook to use Auth
 export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (context === undefined) throw new Error('useAuth must be used within AuthProvider');
+  if (context === undefined) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
   return context;
 };
