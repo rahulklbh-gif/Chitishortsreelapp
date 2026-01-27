@@ -1,6 +1,6 @@
 import { Heart, MessageCircle, Share2, MoreHorizontal } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { supabase } from '@/lib/supabase'; // Naya path
 import { toast } from 'sonner';
 
 interface VideoActionsProps {
@@ -21,60 +21,56 @@ export function VideoActions({
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(initialLikes);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [showHearts, setShowHearts] = useState(false); // Surprise animation state
 
   useEffect(() => {
     const likedVideos = JSON.parse(localStorage.getItem('likedVideos') || '[]');
     setIsLiked(likedVideos.includes(videoId));
-  }, [videoId]);
+    setLikeCount(initialLikes);
+  }, [videoId, initialLikes]);
 
   const handleLike = async () => {
     if (isUpdating) return;
     
     setIsUpdating(true);
     const likedVideos = JSON.parse(localStorage.getItem('likedVideos') || '[]');
-    const action = isLiked ? 'unlike' : 'like';
     
-    // Optimistic update
+    // UI Update (Optimistic)
     const newIsLiked = !isLiked;
-    const newCount = isLiked ? likeCount - 1 : likeCount + 1;
+    const newCount = isLiked ? Math.max(0, likeCount - 1) : likeCount + 1;
+    
     setIsLiked(newIsLiked);
     setLikeCount(newCount);
 
-    // Update localStorage
     if (newIsLiked) {
+      setShowHearts(true); // Like karne par surprise chalu
+      setTimeout(() => setShowHearts(false), 2000);
       likedVideos.push(videoId);
     } else {
-      const updated = likedVideos.filter((id: string) => id !== videoId);
-      localStorage.setItem('likedVideos', JSON.stringify(updated));
+      const idx = likedVideos.indexOf(videoId);
+      if (idx > -1) likedVideos.splice(idx, 1);
     }
     localStorage.setItem('likedVideos', JSON.stringify(likedVideos));
 
-    // Update backend
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-d82a0f74/videos/${videoId}/like`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${publicAnonKey}`
-          },
-          body: JSON.stringify({ action })
-        }
+      // Naya Logic: Seedha Supabase Table update
+      const { data, error } = await supabase.rpc(
+        newIsLiked ? 'increment_likes' : 'decrement_likes', 
+        { row_id: videoId }
       );
 
-      if (!response.ok) {
-        throw new Error('Failed to update like');
+      // Agar RPC setup nahi hai, toh simple update use karenge
+      if (error) {
+        const { error: upError } = await supabase
+          .from('posts')
+          .update({ likes_count: newCount })
+          .eq('id', videoId);
+        if (upError) throw upError;
       }
 
-      const data = await response.json();
-      setLikeCount(data.likes);
     } catch (error) {
-      console.error('Error updating like:', error);
-      // Revert on error
-      setIsLiked(!newIsLiked);
-      setLikeCount(likeCount);
-      toast.error('Failed to update like. Please try again.');
+      console.error('Error:', error);
+      toast.error('Could not save like');
     } finally {
       setIsUpdating(false);
     }
@@ -84,75 +80,70 @@ export function VideoActions({
     try {
       if (navigator.share) {
         await navigator.share({
-          title: 'Check out this video on Chiti Shorts!',
-          text: 'Amazing video I found on Chiti Shorts',
+          title: 'Chiti Shorts',
+          text: 'Check out this video!',
           url: window.location.href
         });
-        toast.success('Shared successfully!');
       } else {
-        // Fallback: copy to clipboard
         await navigator.clipboard.writeText(window.location.href);
-        toast.success('Link copied to clipboard!');
+        toast.success('Link copied!');
       }
-    } catch (error) {
-      console.error('Error sharing:', error);
-      // Silent fail for user cancellation
-    }
+    } catch (error) { console.log(error); }
   };
 
   const formatCount = (count: number) => {
-    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
     if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
     return count.toString();
   };
 
   return (
-    <div className="absolute right-3 bottom-20 flex flex-col items-center gap-5 z-10">
+    <div className="flex flex-col items-center gap-6">
+      {/* Surprise Hearts Animation */}
+      {showHearts && (
+        <div className="absolute right-0 bottom-10 pointer-events-none">
+          <div className="animate-float-up text-red-500 text-2xl">❤️</div>
+          <div className="animate-float-up-slow text-red-400 text-xl ml-4">💖</div>
+          <div className="animate-float-up-fast text-pink-500 text-3xl -ml-4">❤️</div>
+        </div>
+      )}
+
       {/* Like Button */}
-      <button 
-        onClick={handleLike} 
-        disabled={isUpdating}
-        className="flex flex-col items-center gap-1 active:scale-90 transition"
-      >
-        <div className={`transform transition-transform ${isLiked ? 'scale-110' : ''}`}>
+      <button onClick={handleLike} className="flex flex-col items-center gap-1 group">
+        <div className={`p-2 rounded-full transition-all ${isLiked ? 'bg-red-500/10' : 'bg-white/5'}`}>
           <Heart
-            className={`w-9 h-9 drop-shadow-lg ${
-              isLiked ? 'fill-red-500 text-red-500 animate-pulse' : 'text-white'
-            }`}
-            strokeWidth={1.5}
+            className={`w-8 h-8 transition-all ${isLiked ? 'fill-red-500 text-red-500 scale-125' : 'text-white'}`}
+            strokeWidth={2}
           />
         </div>
-        <span className="text-white text-xs font-bold drop-shadow-lg">
-          {formatCount(likeCount)}
-        </span>
+        <span className="text-white text-[11px] font-bold shadow-sm">{formatCount(likeCount)}</span>
       </button>
 
       {/* Comment Button */}
-      <button 
-        onClick={onComment} 
-        className="flex flex-col items-center gap-1 active:scale-90 transition"
-      >
-        <MessageCircle className="w-9 h-9 text-white drop-shadow-lg" strokeWidth={1.5} />
-        <span className="text-white text-xs font-bold drop-shadow-lg">
-          {formatCount(initialComments)}
-        </span>
+      <button onClick={onComment} className="flex flex-col items-center gap-1">
+        <div className="p-2 rounded-full bg-white/5">
+          <MessageCircle className="w-8 h-8 text-white" strokeWidth={2} />
+        </div>
+        <span className="text-white text-[11px] font-bold">{formatCount(initialComments)}</span>
       </button>
 
-      {/* Share Button */}
-      <button 
-        onClick={handleShare} 
-        className="flex flex-col items-center gap-1 active:scale-90 transition"
-      >
-        <Share2 className="w-9 h-9 text-white drop-shadow-lg" strokeWidth={1.5} />
-        <span className="text-white text-xs font-bold drop-shadow-lg">
-          {formatCount(initialShares)}
-        </span>
+      {/* Share Button (Unchanged logic) */}
+      <button onClick={handleShare} className="flex flex-col items-center gap-1">
+        <div className="p-2 rounded-full bg-white/5">
+          <Share2 className="w-8 h-8 text-white" strokeWidth={2} />
+        </div>
+        <span className="text-white text-[11px] font-bold">Share</span>
       </button>
 
-      {/* More Options */}
-      <button className="flex flex-col items-center gap-1 active:scale-90 transition">
-        <MoreHorizontal className="w-9 h-9 text-white drop-shadow-lg" strokeWidth={1.5} />
-      </button>
+      {/* Custom Styles for Animation */}
+      <style>{`
+        @keyframes float-up {
+          0% { transform: translateY(0) opacity(1); }
+          100% { transform: translateY(-100px) opacity(0); }
+        }
+        .animate-float-up { animation: float-up 1s ease-out forwards; }
+        .animate-float-up-slow { animation: float-up 1.5s ease-out forwards; }
+        .animate-float-up-fast { animation: float-up 0.7s ease-out forwards; }
+      `}</style>
     </div>
   );
 }
