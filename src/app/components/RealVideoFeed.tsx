@@ -1,23 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { OptimizedVideoPlayer } from './OptimizedVideoPlayer';
 import { VideoActions } from './VideoActions';
-import { projectId, publicAnonKey } from '/utils/supabase/info';
-import { Loader2 } from 'lucide-react';
-
-interface Video {
-  id: string;
-  videoUrl: string;
-  username: string;
-  caption: string;
-  music: string;
-  filter: string;
-  likes: number;
-  comments: number;
-  shares: number;
-}
+import { supabase } from '@/lib/supabase'; // Path check kar lena
+import { Loader2, Music2 } from 'lucide-react';
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => void }) {
-  const [videos, setVideos] = useState<Video[]>([]);
+  const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -28,21 +15,18 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
 
   const fetchVideos = async () => {
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-d82a0f74/videos`,
-        {
-          headers: {
-            'Authorization': `Bearer ${publicAnonKey}`
-          }
-        }
-      );
+      setLoading(true);
+      // Naya Logic: Seedha 'posts' table se data lena
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      if (data) setVideos(data);
       
-      const data = await response.json();
-      if (data.videos && data.videos.length > 0) {
-        setVideos(data.videos);
-      }
     } catch (error) {
-      console.error('Error fetching videos:', error);
+      console.error('Error fetching videos from Supabase:', error);
     } finally {
       setLoading(false);
     }
@@ -50,25 +34,16 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
 
   const handleScroll = () => {
     if (!containerRef.current) return;
-    const scrollTop = containerRef.current.scrollTop;
-    const clientHeight = containerRef.current.clientHeight;
+    const { scrollTop, clientHeight } = containerRef.current;
     const index = Math.round(scrollTop / clientHeight);
     setActiveIndex(index);
   };
 
-  const scrollToVideo = (index: number) => {
-    if (!containerRef.current) return;
-    const clientHeight = containerRef.current.clientHeight;
-    containerRef.current.scrollTo({
-      top: index * clientHeight,
-      behavior: 'smooth'
-    });
-  };
-
   if (loading) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-black">
-        <Loader2 className="w-12 h-12 text-purple-500 animate-spin" />
+      <div className="fixed inset-0 flex flex-col items-center justify-center bg-black">
+        <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
+        <p className="text-gray-400">Loading Chiti Shorts...</p>
       </div>
     );
   }
@@ -77,14 +52,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-black text-white p-8">
         <div className="text-center">
-          <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-purple-600 to-pink-600 rounded-full flex items-center justify-center">
-            <span className="text-4xl">📹</span>
-          </div>
-          <h2 className="text-2xl font-bold mb-2">No Videos Yet</h2>
-          <p className="text-gray-400 mb-4">Be the first to upload a video!</p>
-          <p className="text-sm text-gray-500">
-            Sign in and go to the Create tab to share your first video
-          </p>
+          <h2 className="text-2xl font-bold mb-2">No Videos in Feed</h2>
+          <p className="text-gray-400 mb-4">Database is empty or not connected.</p>
         </div>
       </div>
     );
@@ -93,43 +62,54 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 overflow-y-scroll snap-y snap-mandatory scrollbar-hide"
+      className="fixed inset-0 overflow-y-scroll snap-y snap-mandatory no-scrollbar bg-black"
       onScroll={handleScroll}
-      style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+      style={{ scrollbarWidth: 'none' }}
     >
       {videos.map((video, index) => (
-        <div key={video.id} className="relative h-screen w-full snap-start snap-always">
-          <OptimizedVideoPlayer
-            videoId={video.id}
-            videoUrl={video.videoUrl}
-            isActive={index === activeIndex}
-            caption={video.caption}
-            username={video.username}
-            music={video.music}
-            filter={video.filter}
-          />
+        <div key={video.id} className="relative h-screen w-full snap-start snap-always overflow-hidden">
+          {/* YouTube Player Wrapper */}
+          <div className="absolute inset-0 w-full h-full bg-black">
+            <iframe
+              className="w-full h-full object-cover"
+              src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${index === activeIndex ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&mute=0`}
+              title="Chiti Short"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            ></iframe>
+          </div>
 
-          <VideoActions
-            videoId={video.id}
-            initialLikes={video.likes}
-            initialComments={video.comments}
-            initialShares={video.shares}
-            onComment={() => onComment(video.id)}
-          />
-
-          {/* Navigation hint */}
-          {index === 0 && (
-            <div className="absolute bottom-32 left-0 right-0 text-center animate-bounce">
-              <p className="text-white text-sm opacity-75">Swipe up for more videos</p>
+          {/* User Info Overlay */}
+          <div className="absolute bottom-20 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent text-white z-10">
+            <div className="flex items-center gap-3 mb-3">
+              <img 
+                src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
+                className="w-11 h-11 rounded-full border-2 border-white" 
+                alt="u" 
+              />
+              <span className="font-bold text-lg italic">@{video.user_name}</span>
             </div>
-          )}
+            <p className="text-sm mb-4 line-clamp-2 pr-16">{video.caption}</p>
+            <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1 rounded-full backdrop-blur-md">
+              <Music2 size={14} className="animate-pulse" />
+              <span>Original Audio - {video.user_name}</span>
+            </div>
+          </div>
+
+          {/* Action Buttons */}
+          <div className="z-20">
+            <VideoActions
+              videoId={video.id}
+              initialLikes={0}
+              initialComments={0}
+              initialShares={0}
+              onComment={() => onComment(video.id)}
+            />
+          </div>
         </div>
       ))}
 
       <style>{`
-        .scrollbar-hide::-webkit-scrollbar {
-          display: none;
-        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
       `}</style>
     </div>
   );
