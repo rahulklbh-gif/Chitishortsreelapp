@@ -2,6 +2,7 @@ import { Upload, Video, Sparkles, Loader2, Send, X, CheckCircle2, AlertCircle } 
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase'; // Ye line dhyan se check kar lena
 
 export function CreatePage() {
   const { user, session } = useAuth();
@@ -34,7 +35,6 @@ export function CreatePage() {
   };
 
   const handleUpload = async () => {
-    // Provider token check - Yahi error aa raha tha aapko
     const token = (session as any)?.provider_token;
     
     if (!token) {
@@ -59,7 +59,7 @@ export function CreatePage() {
         status: { privacyStatus: "public" }
       };
 
-      // YouTube Upload logic
+      // 1. YouTube Upload initialization
       const initRes = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
         method: 'POST',
         headers: {
@@ -77,14 +77,38 @@ export function CreatePage() {
       setProgress(40);
       toast.loading('Uploading video bytes...', { id: toastId });
 
+      // 2. Final Video data transmission
       const finalRes = await fetch(uploadUrl, {
         method: 'PUT',
         body: selectedFile
       });
 
+      const responseData = await finalRes.json();
+
       if (finalRes.ok) {
-        setProgress(100);
-        toast.success('Short Published Successfully! 🚀', { id: toastId });
+        setProgress(80);
+        toast.loading('Saving to App Feed...', { id: toastId });
+
+        // 3. NEW: Save to Supabase 'posts' table
+        const videoId = responseData.id;
+        
+        const { error: dbError } = await supabase.from('posts').insert([{
+          youtube_video_id: videoId,
+          caption: caption,
+          user_id: user?.id,
+          user_name: user?.user_metadata?.full_name || 'Chiti User',
+          user_avatar: user?.user_metadata?.avatar_url
+        }]);
+
+        if (dbError) {
+          console.error("Supabase Error:", dbError);
+          toast.warning('Posted to YouTube, but Feed update failed.', { id: toastId });
+        } else {
+          setProgress(100);
+          toast.success('Short Published to YouTube & App Feed! 🚀', { id: toastId });
+        }
+
+        // Reset form
         setSelectedFile(null);
         setPreviewUrl('');
         setCaption('');
