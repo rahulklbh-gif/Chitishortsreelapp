@@ -22,17 +22,18 @@ export function ProfilePage() {
   const fetchProfileAndPosts = async () => {
     setLoading(true);
     try {
-      // 1. Profile Data fetch karein
-      const { data: prof } = await supabase.from('profiles').select('*').eq('id', user?.id).single();
+      const { data: prof, error } = await supabase.from('profiles').select('*').eq('id', user?.id).single();
       if (prof) {
         setProfile(prof);
         setNewName(prof.full_name || '');
       }
-      // 2. Sirf login user ki videos fetch karein
       const { data: posts } = await supabase.from('posts').select('*').eq('user_id', user?.id).order('created_at', { ascending: false });
       if (posts) setUserPosts(posts);
-    } catch (error) { console.error(error); }
-    setLoading(false);
+    } catch (error) { 
+      console.error(error); 
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -42,10 +43,9 @@ export function ProfilePage() {
     try {
       setUploading(true);
       const fileExt = file.name.split('.').pop();
-      const fileName = `${user?.id}-${Math.random()}.${fileExt}`;
-      const filePath = `${fileName}`; // bucket path
+      const fileName = `${user?.id}-${new Date().getTime()}.${fileExt}`;
+      const filePath = `${fileName}`;
 
-      // Uploading to Supabase bucket 'avatars'
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(filePath, file);
@@ -54,145 +54,180 @@ export function ProfilePage() {
 
       const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
 
-      // Database mein link save karein
-      const { error: updateError } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', user?.id);
+      // Unique URL with timestamp to force browser refresh
+      const finalUrl = `${publicUrl}?t=${new Date().getTime()}`;
+
+      const { error: updateError } = await supabase.from('profiles').update({ avatar_url: finalUrl }).eq('id', user?.id);
       if (updateError) throw updateError;
       
-      setProfile({ ...profile, avatar_url: publicUrl });
-      toast.success("Profile photo updated!");
-    } catch (error) {
-      console.error(error);
-      toast.error("Upload failed! Check if bucket 'avatars' is Public.");
+      setProfile((prev: any) => ({ ...prev, avatar_url: finalUrl }));
+      toast.success("Photo Updated Successfully!");
+    } catch (error: any) {
+      toast.error(error.message || "Upload failed!");
     } finally {
       setUploading(false);
     }
   };
 
-  const handleDeletePost = async (postId: string) => {
-    const confirmDelete = window.confirm("Bhai, kya sach mein ye video delete karni hai?");
-    if (!confirmDelete) return;
+  const handleUpdateProfile = async () => {
+    try {
+      const { error } = await supabase.from('profiles').update({ full_name: newName }).eq('id', user?.id);
+      if (error) throw error;
 
+      setProfile((prev: any) => ({ ...prev, full_name: newName }));
+      setIsEditing(false);
+      toast.success("Profile Updated!");
+    } catch (error: any) {
+      toast.error(error.message || "Update failed!");
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+    if (!window.confirm("Bhai, kya aap ye video delete karna chahte hain?")) return;
     try {
       const { error } = await supabase.from('posts').delete().eq('id', postId).eq('user_id', user?.id);
       if (error) throw error;
       setUserPosts(userPosts.filter(p => p.id !== postId));
-      toast.success("Reel deleted successfully!");
-    } catch (error) {
-      toast.error("Delete failed!");
+      toast.success("Video deleted!");
+    } catch (error: any) { 
+      toast.error(error.message || "Delete failed!"); 
     }
-  };
-
-  const handleUpdateProfile = async () => {
-    try {
-      await supabase.from('profiles').update({ full_name: newName }).eq('id', user?.id);
-      setIsEditing(false);
-      toast.success("Name updated!");
-      fetchProfileAndPosts();
-    } catch (error) { toast.error("Failed to update name"); }
   };
 
   if (loading) return (
     <div className="h-screen bg-black flex items-center justify-center">
-      <Loader2 className="animate-spin text-blue-500 w-12 h-12" />
+      <Loader2 className="animate-spin text-blue-500 w-10" />
     </div>
   );
 
   return (
-    <div className="min-h-screen bg-black text-white pb-24">
-      {/* Header */}
+    <div className="min-h-screen bg-black text-white pb-24 font-sans">
+      {/* Header Section */}
       <div className="p-6 pt-12 border-b border-white/10">
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-xl font-bold text-blue-400">@{profile?.username || 'user'}</h1>
-          <button onClick={() => setIsEditing(!isEditing)} className="p-2 bg-white/5 rounded-full hover:bg-white/10">
-            {isEditing ? <Check className="text-green-500" onClick={handleUpdateProfile}/> : <Settings size={22} />}
-          </button>
+          <h1 className="text-xl font-black text-blue-400 tracking-tighter italic">
+            @{profile?.username || 'user'}
+          </h1>
+          <div className="flex gap-4">
+             {isEditing && (
+               <button 
+                 onClick={handleUpdateProfile} 
+                 className="p-2 bg-green-600 rounded-full hover:scale-110 transition active:scale-95"
+               >
+                 <Check size={18} />
+               </button>
+             )}
+             <button 
+               onClick={() => setIsEditing(!isEditing)} 
+               className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition"
+             >
+               <Settings size={20} className={isEditing ? "text-blue-500" : ""} />
+             </button>
+          </div>
         </div>
 
-        <div className="flex items-center gap-8 mb-8">
+        {/* Profile Info */}
+        <div className="flex items-center gap-8 mb-6">
           <div className="relative">
-            <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-blue-600 p-0.5">
+            <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.3)]">
               {profile?.avatar_url ? (
-                <img src={profile.avatar_url} className="w-full h-full rounded-full object-cover" alt="profile" />
+                <img 
+                  src={profile.avatar_url} 
+                  className="w-full h-full object-cover" 
+                  key={profile.avatar_url} // Force re-render
+                  alt="profile"
+                />
               ) : (
-                <div className="w-full h-full bg-gray-900 flex items-center justify-center rounded-full"><User size={40} /></div>
+                <div className="w-full h-full bg-gray-800 flex items-center justify-center">
+                  <User size={40} className="text-gray-400" />
+                </div>
               )}
             </div>
-            {/* Gallery Upload Button */}
             <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="absolute bottom-0 right-0 bg-blue-600 p-2 rounded-full border-2 border-black hover:scale-110 transition shadow-lg"
+              onClick={() => fileInputRef.current?.click()} 
+              className="absolute bottom-0 right-0 bg-blue-600 p-2 rounded-full border-2 border-black hover:bg-blue-500 transition shadow-lg"
+              disabled={uploading}
             >
-              {uploading ? <Loader2 size={14} className="animate-spin" /> : <Camera size={14} />}
+              {uploading ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
             </button>
-            <input type="file" ref={fileInputRef} onChange={handlePhotoUpload} className="hidden" accept="image/*" />
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handlePhotoUpload} 
+              className="hidden" 
+              accept="image/*" 
+            />
           </div>
           
-          <div className="flex flex-1 justify-around">
-            <div className="text-center">
-              <p className="font-black text-lg">{userPosts.length}</p>
-              <p className="text-[10px] text-gray-500 font-bold uppercase">Posts</p>
+          <div className="flex flex-1 justify-around text-center">
+            <div className="cursor-default">
+              <p className="font-black text-xl">{userPosts.length}</p>
+              <p className="text-[10px] text-gray-500 font-bold tracking-widest uppercase">Posts</p>
             </div>
-            <div className="text-center">
-              <p className="font-black text-lg">{profile?.followers_count || 0}</p>
-              <p className="text-[10px] text-gray-500 font-bold uppercase">Followers</p>
+            <div className="cursor-default">
+              <p className="font-black text-xl">{profile?.followers_count || 0}</p>
+              <p className="text-[10px] text-gray-500 font-bold tracking-widest uppercase">Followers</p>
             </div>
           </div>
         </div>
 
+        {/* Name/Edit Section */}
         {isEditing ? (
-          <div className="animate-in fade-in slide-in-from-top-2">
+          <div className="space-y-2 animate-in fade-in slide-in-from-top-2">
             <input 
               value={newName} 
               onChange={(e) => setNewName(e.target.value)} 
-              className="w-full bg-white/5 border border-white/10 p-3 rounded-xl focus:border-blue-500 outline-none text-sm mb-2" 
-              placeholder="Enter your name"
+              className="w-full bg-white/5 border border-white/10 p-3 rounded-xl focus:border-blue-500 outline-none transition-all" 
+              placeholder="Enter Full Name"
+              autoFocus
             />
-            <button onClick={handleUpdateProfile} className="w-full bg-blue-600 py-2.5 rounded-xl font-bold text-sm">Save Name</button>
           </div>
         ) : (
-          <div className="space-y-1">
-            <h2 className="font-extrabold text-lg">{profile?.full_name || 'Anonymous User'}</h2>
-            <p className="text-sm text-gray-400 font-medium">Chiti Shorts Creator 🎬</p>
+          <div className="animate-in fade-in">
+            <h2 className="font-black text-lg tracking-tight uppercase italic">{profile?.full_name || 'Add Name'}</h2>
+            <p className="text-sm text-gray-400 font-medium mt-1">Chiti Shorts Creator 🎥</p>
           </div>
         )}
       </div>
 
-      {/* Grid Tabs */}
+      {/* Posts Grid Header */}
       <div className="flex justify-center py-4 border-b border-white/5">
-        <Grid className="text-blue-500" size={24} />
+        <Grid size={24} className="text-blue-500" />
       </div>
 
-      {/* Grid Content */}
-      <div className="grid grid-cols-3 gap-0.5 mt-0.5">
-        {userPosts.length > 0 ? (
-          userPosts.map((post) => (
-            <div key={post.id} className="relative aspect-[9/16] bg-gray-900 group overflow-hidden">
-              <img 
-                src={`https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} 
-                className="w-full h-full object-cover opacity-90 transition group-hover:scale-110" 
-                alt="thumbnail"
-              />
-              
-              {/* Delete Button (Trash Icon) */}
-              <button 
-                onClick={() => handleDeletePost(post.id)}
-                className="absolute top-2 right-2 p-1.5 bg-black/60 backdrop-blur-md rounded-lg text-red-500 opacity-0 group-hover:opacity-100 transition shadow-lg"
-              >
-                <Trash2 size={16} />
-              </button>
+      {/* Videos Grid */}
+      <div className="grid grid-cols-3 gap-0.5">
+        {userPosts.map((post) => (
+          <div key={post.id} className="relative aspect-[9/16] bg-gray-900 group overflow-hidden">
+            <img 
+              src={`https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} 
+              className="w-full h-full object-cover transition duration-500 group-hover:scale-110" 
+              alt="thumbnail"
+            />
+            
+            {/* Delete Button */}
+            <button 
+              onClick={() => handleDeletePost(post.id)} 
+              className="absolute top-2 right-2 p-1.5 bg-black/60 rounded-lg text-red-500 opacity-0 group-hover:opacity-100 transition-all hover:bg-red-500 hover:text-white"
+            >
+              <Trash2 size={16} />
+            </button>
 
-              <div className="absolute bottom-2 left-2 flex items-center gap-1.5 text-white drop-shadow-md">
-                <Play size={10} fill="white" className="text-white" />
-                <span className="text-[10px] font-black">{post.views_count || 0}</span>
-              </div>
+            {/* View Count Overlay */}
+            <div className="absolute bottom-2 left-2 flex items-center gap-1 text-[10px] font-black bg-black/40 px-2 py-0.5 rounded-full backdrop-blur-sm">
+              <Play size={10} fill="white" className="text-white" /> 
+              {post.views_count || 0}
             </div>
-          ))
-        ) : (
-          <div className="col-span-3 text-center py-20 opacity-30">
-            <p className="text-sm">Abhi tak koi video nahi hai!</p>
           </div>
-        )}
+        ))}
       </div>
+      
+      {userPosts.length === 0 && (
+        <div className="py-20 text-center text-gray-600">
+          <Play size={40} className="mx-auto mb-4 opacity-20" />
+          <p className="font-bold">No Videos Uploaded Yet</p>
+        </div>
+      )}
     </div>
   );
 }
