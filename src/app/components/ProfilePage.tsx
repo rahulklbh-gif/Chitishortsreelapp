@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { 
   Settings, Grid, Play, Loader2, Check, 
-  User, Camera, ArrowLeft, X 
+  User, Camera, ArrowLeft, X, Trash2 
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -23,7 +23,6 @@ export function ProfilePage() {
 
   // Sabse zaruri fix: Jab refresh hota hai, tab currentUser load hone mein time leta hai
   useEffect(() => {
-    // Agar username nahi hai aur currentUser load ho raha hai, toh thoda intezar karein
     const handleInitialLoad = async () => {
       await loadProfileAndPosts();
     };
@@ -35,7 +34,6 @@ export function ProfilePage() {
     try {
       let targetProfile = null;
       
-      // 1. Agar URL mein username hai (jaise: /profile/rahul)
       if (username) {
         const { data, error } = await supabase
           .from('profiles')
@@ -45,7 +43,6 @@ export function ProfilePage() {
         targetProfile = data;
       } 
       
-      // 2. Agar URL mein username nahi hai, toh login user ki profile dikhayein
       if (!targetProfile && currentUser) {
         const { data, error } = await supabase
           .from('profiles')
@@ -59,7 +56,6 @@ export function ProfilePage() {
         setProfile(targetProfile);
         setNewName(targetProfile.full_name || '');
         
-        // Videos load karein
         const { data: posts } = await supabase
           .from('posts')
           .select('*')
@@ -78,10 +74,33 @@ export function ProfilePage() {
     }
   };
 
+  // --- DELETE VIDEO LOGIC ADDED ---
+  const handleDeletePost = async (e: React.MouseEvent, postId: string) => {
+    e.stopPropagation(); // Isse video play nahi hogi click karne par
+    
+    const confirmDelete = window.confirm("Bhai, kya aap sach mein ye video delete karna chahte hain?");
+    if (!confirmDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from('posts')
+        .delete()
+        .eq('id', postId)
+        .eq('user_id', currentUser?.id); // Security check
+
+      if (error) throw error;
+
+      // Turant list se video hatane ke liye
+      setUserPosts(prev => prev.filter(post => post.id !== postId));
+      toast.success("Video delete ho gayi!");
+    } catch (error: any) {
+      toast.error("Delete nahi ho payi: " + error.message);
+    }
+  };
+
   const handleUpdateProfile = async () => {
     if (!currentUser || !profile) return;
     try {
-      // Database update
       const { error } = await supabase
         .from('profiles')
         .update({ full_name: newName })
@@ -89,7 +108,6 @@ export function ProfilePage() {
 
       if (error) throw error;
       
-      // Turant UI update
       setProfile(prev => ({ ...prev, full_name: newName }));
       setIsEditing(false);
       toast.success("Naam save ho gaya!");
@@ -107,7 +125,6 @@ export function ProfilePage() {
       const fileExt = file.name.split('.').pop();
       const fileName = `${currentUser.id}/${Date.now()}.${fileExt}`;
       
-      // Upload to 'avatars' bucket
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(fileName, file, { upsert: true });
@@ -118,7 +135,6 @@ export function ProfilePage() {
         .from('avatars')
         .getPublicUrl(fileName);
 
-      // Save photo URL to profiles table
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
@@ -144,7 +160,6 @@ export function ProfilePage() {
     );
   }
 
-  // 404 Screen Fix
   if (!profile) {
     return (
       <div className="h-screen bg-black text-white flex flex-col items-center justify-center p-6 text-center">
@@ -256,16 +271,28 @@ export function ProfilePage() {
           {userPosts.map(post => (
             <div 
               key={post.id} 
-              onClick={() => navigate(`/video/${post.id}`)} 
-              className="relative aspect-[9/16] bg-gray-900 overflow-hidden cursor-pointer group"
+              className="relative aspect-[9/16] bg-gray-900 overflow-hidden group"
             >
+              {/* Video Thumbnail */}
               <img 
+                onClick={() => navigate(`/video/${post.id}`)} 
                 src={post.thumbnail_url || `https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} 
-                className="w-full h-full object-cover transition-transform group-hover:scale-105" 
+                className="w-full h-full object-cover transition-transform group-hover:scale-105 cursor-pointer" 
               />
+
+              {/* DELETE BUTTON - Trash Icon */}
+              {profile?.id === currentUser?.id && (
+                <button 
+                  onClick={(e) => handleDeletePost(e, post.id)}
+                  className="absolute top-2 right-2 p-1.5 bg-red-600/90 rounded-full shadow-lg z-10 active:scale-90 transition-transform"
+                >
+                  <Trash2 size={14} className="text-white" />
+                </button>
+              )}
+
               <div className="absolute bottom-2 left-2 flex items-center gap-1">
                 <Play size={10} fill="white" />
-                <span className="text-[10px] font-bold">Views</span>
+                <span className="text-[10px] font-bold text-white shadow-black drop-shadow-lg">Views</span>
               </div>
             </div>
           ))}
