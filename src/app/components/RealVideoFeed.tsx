@@ -12,7 +12,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true); 
   const [showPlayIcon, setShowPlayIcon] = useState(false); 
-  const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); // User's following list
+  const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,7 +37,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
 
         let filteredData = data;
 
-        // Search Filter Logic
         if (searchTerm) {
           filteredData = data.filter(v => 
             v.user_name?.toLowerCase().includes(searchTerm) || 
@@ -45,7 +44,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
           );
         }
 
-        // Grid Click/URL Navigation Logic
         if (videoIdFromUrl) {
           const clickedVideoIndex = filteredData.findIndex(v => v.id === videoIdFromUrl);
           if (clickedVideoIndex !== -1) {
@@ -78,13 +76,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
     }
   };
 
-  // --- AUTO-NEXT LOGIC (YouTube Bridge) ---
+  // --- AUTO-NEXT LOGIC ---
   useEffect(() => {
     const handleYTMessage = (event: MessageEvent) => {
       if (event.origin !== "https://www.youtube.com") return;
       try {
         const data = JSON.parse(event.data);
-        // playerState 0 means 'Ended'
         if (data.event === "infoDelivery" && data.info?.playerState === 0) {
           if (containerRef.current && activeIndex < videos.length - 1) {
             const nextScrollPosition = (activeIndex + 1) * window.innerHeight;
@@ -96,7 +93,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
         }
       } catch (err) {}
     };
-
     window.addEventListener("message", handleYTMessage);
     return () => window.removeEventListener("message", handleYTMessage);
   }, [activeIndex, videos]);
@@ -123,16 +119,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
       toast.error("Pehle login karein!");
       return;
     }
-    if (currentUser.id === targetUserId) {
-      toast.error("Khud ko follow nahi kar sakte!");
-      return;
-    }
+    if (currentUser.id === targetUserId) return;
 
     const isCurrentlyFollowing = followedUsers.has(targetUserId);
 
     try {
       if (isCurrentlyFollowing) {
-        // Unfollow Logic
         await supabase.from('follows')
           .delete()
           .eq('follower_id', currentUser.id)
@@ -145,11 +137,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
         });
         toast.success("Unfollowed");
       } else {
-        // Follow Logic
         await supabase.from('follows').insert([
           { follower_id: currentUser.id, following_id: targetUserId }
         ]);
-        
         setFollowedUsers(prev => new Set(prev).add(targetUserId));
         toast.success("Following!");
       }
@@ -162,14 +152,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
     const shareUrl = `${window.location.origin}/video/${video.id}`;
     if (navigator.share) {
       try { await navigator.share({ title: 'Chiti Shorts', url: shareUrl }); } 
-      catch (err) { console.log("Share cancelled"); }
+      catch (err) {}
     } else {
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        toast.success("Link copy ho gaya!");
-      } catch (err) {
-        toast.error("Copy fail ho gaya");
-      }
+      await navigator.clipboard.writeText(shareUrl);
+      toast.success("Link copy ho gaya!");
     }
   };
 
@@ -177,19 +163,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center bg-black">
         <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
-        <p className="text-gray-400 font-bold tracking-widest uppercase">Chiti Loading...</p>
-      </div>
-    );
-  }
-
-  if (videos.length === 0) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-black text-white p-8">
-        <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2 uppercase italic tracking-tighter">Koi Video Nahi Hai</h2>
-          <p className="text-gray-400 mb-4">Wapas Home Jayein!</p>
-          <button onClick={() => window.location.href = '/'} className="bg-blue-600 px-6 py-2 rounded-full font-bold">RELOAD</button>
-        </div>
+        <p className="text-gray-400 font-bold uppercase">Chiti Loading...</p>
       </div>
     );
   }
@@ -207,14 +181,24 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
           className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black"
           onClick={togglePlayPause} 
         >
-          
-          <div className="absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden pointer-events-none">
+          {/* --- VIDEO PLAYER SECTION --- */}
+          <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-black">
             <iframe
-              className="w-full h-full scale-[1.6] origin-center object-cover" 
+              className="w-full h-full object-cover" 
               src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${index === activeIndex && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=0&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1`}
               title="Chiti Short"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allow="autoplay; encrypted-media"
             ></iframe>
+
+            {/* --- SMART MASKING: Hiding Youtube Icons while keeping buttons safe --- */}
+            <div className="absolute inset-0 pointer-events-none z-10">
+              {/* Top Corners (Hides Replay/Share/Title) */}
+              <div className="absolute top-0 left-0 w-[25%] h-[18%] bg-black"></div>
+              <div className="absolute top-0 right-0 w-[25%] h-[18%] bg-black"></div>
+              {/* Mid-Side Arrows (Hides Next/Previous arrows) */}
+              <div className="absolute top-[35%] left-0 w-[15%] h-[30%] bg-black"></div>
+              <div className="absolute top-[35%] right-0 w-[15%] h-[30%] bg-black"></div>
+            </div>
           </div>
 
           {showPlayIcon && (
@@ -225,23 +209,23 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
             </div>
           )}
 
-          <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/90 via-black/40 to-transparent text-white z-10 pointer-events-none">
+          {/* User Info Overlay - Bottom */}
+          <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black text-white z-10 pointer-events-none">
             <div className="flex items-center gap-3 mb-3 pointer-events-auto">
               <img 
                 src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
                 className="w-11 h-11 rounded-full border-2 border-white shadow-lg" 
-                alt="user avatar" 
               />
               <div className="flex flex-col">
-                <span className="font-black text-lg tracking-tight">@{video.user_name}</span>
+                <span className="font-black text-lg">@{video.user_name}</span>
               </div>
               
               <button 
                 onClick={(e) => handleFollowToggle(e, video.user_id)}
                 className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black uppercase transition-all duration-300 ${
                   followedUsers.has(video.user_id) 
-                  ? 'bg-gray-700/80 text-white' 
-                  : 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)] hover:bg-blue-500'
+                  ? 'bg-gray-700 text-white' 
+                  : 'bg-blue-600 text-white shadow-lg'
                 }`}
               >
                 {followedUsers.has(video.user_id) ? 'Following' : 'Follow'}
@@ -256,12 +240,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
             </div>
           </div>
 
+          {/* Action Buttons (Right Side) - Strictly Unmasked Area */}
           <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
             <VideoActions
               videoId={video.id}
               initialLikes={video.likes_count || 0}
-              initialComments={0}
-              initialShares={0}
               onComment={() => onComment(video.id)}
               onShare={() => handleVideoShare(video)}
             />
