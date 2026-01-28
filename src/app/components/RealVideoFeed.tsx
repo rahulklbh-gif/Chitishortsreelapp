@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
 import { Loader2, Music2 } from 'lucide-react';
+import { toast } from 'sonner'; // Toast notifications ke liye
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => void }) {
   const [videos, setVideos] = useState<any[]>([]);
@@ -37,6 +38,31 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
+    }
+  };
+
+  // --- NATIVE SHARE LOGIC ADDED HERE ---
+  const handleVideoShare = async (video: any) => {
+    const shareUrl = `${window.location.origin}/video/${video.id}`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Chiti Shorts',
+          text: `Check out this video by @${video.user_name}`,
+          url: shareUrl
+        });
+      } catch (err) {
+        console.log("Share cancelled");
+      }
+    } else {
+      // Fallback for browsers that don't support Web Share API
+      try {
+        await navigator.clipboard.writeText(shareUrl);
+        toast.success("Link copied to clipboard!");
+      } catch (err) {
+        toast.error("Failed to copy link");
+      }
     }
   };
 
@@ -110,6 +136,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
               initialComments={0}
               initialShares={0}
               onComment={() => onComment(video.id)}
+              onShare={() => handleVideoShare(video)} // PASSING THE FUNCTION HERE
             />
           </div>
         </div>
