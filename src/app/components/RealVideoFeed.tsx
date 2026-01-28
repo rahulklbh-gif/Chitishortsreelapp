@@ -1,22 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
-import { useAuth } from '@/contexts/AuthContext'; // Follow ke liye zaruri
+import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Music2, Play as PlayIcon } from 'lucide-react';
 import { toast } from 'sonner'; 
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => void }) {
-  const { user: currentUser } = useAuth(); // Auth context se user le rahe hain
+  const { user: currentUser } = useAuth();
   const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true); 
   const [showPlayIcon, setShowPlayIcon] = useState(false); 
+  const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); // User's following list
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchVideos();
-  }, []);
+    if (currentUser) fetchFollows();
+  }, [currentUser]);
 
   const fetchVideos = async () => {
     try {
@@ -29,14 +31,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
       if (error) throw error;
       
       if (data) {
-        // --- FEATURE 1: SEARCH & URL FILTER ---
         const urlParams = new URLSearchParams(window.location.search);
         const videoIdFromUrl = urlParams.get('video');
         const searchTerm = urlParams.get('search')?.toLowerCase();
 
         let filteredData = data;
 
-        // Agar search keyword hai toh filter karein
+        // Search Filter Logic
         if (searchTerm) {
           filteredData = data.filter(v => 
             v.user_name?.toLowerCase().includes(searchTerm) || 
@@ -44,7 +45,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
           );
         }
 
-        // Grid Click Logic
+        // Grid Click/URL Navigation Logic
         if (videoIdFromUrl) {
           const clickedVideoIndex = filteredData.findIndex(v => v.id === videoIdFromUrl);
           if (clickedVideoIndex !== -1) {
@@ -52,29 +53,43 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
             filteredData.unshift(clickedVideo);
           }
         }
-        
         setVideos(filteredData);
       }
-      
-    } catch (error) {
-      console.error('Error fetching videos:', error);
-    } finally {
-      setLoading(false);
+    } catch (error) { 
+      console.error('Error fetching videos:', error); 
+    } finally { 
+      setLoading(false); 
     }
   };
 
-  // --- FEATURE 2: AUTO-NEXT LOGIC ---
+  const fetchFollows = async () => {
+    if (!currentUser) return;
+    try {
+      const { data } = await supabase
+        .from('follows')
+        .select('following_id')
+        .eq('follower_id', currentUser.id);
+      
+      if (data) {
+        setFollowedUsers(new Set(data.map(f => f.following_id)));
+      }
+    } catch (err) {
+      console.error("Error fetching follows:", err);
+    }
+  };
+
+  // --- AUTO-NEXT LOGIC (YouTube Bridge) ---
   useEffect(() => {
     const handleYTMessage = (event: MessageEvent) => {
-      // YouTube player se message listen karte hain
       if (event.origin !== "https://www.youtube.com") return;
       try {
         const data = JSON.parse(event.data);
-        // infoDelivery aur state 0 ka matlab video khatam (Ended)
+        // playerState 0 means 'Ended'
         if (data.event === "infoDelivery" && data.info?.playerState === 0) {
           if (containerRef.current && activeIndex < videos.length - 1) {
+            const nextScrollPosition = (activeIndex + 1) * window.innerHeight;
             containerRef.current.scrollTo({
-              top: (activeIndex + 1) * window.innerHeight,
+              top: nextScrollPosition,
               behavior: 'smooth'
             });
           }
@@ -102,56 +117,59 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
     setTimeout(() => setShowPlayIcon(false), 500); 
   };
 
-  // --- FEATURE 3: FOLLOW/UNFOLLOW LOGIC ---
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
     e.stopPropagation();
     if (!currentUser) {
-      toast.error("Please login to follow creators");
+      toast.error("Pehle login karein!");
       return;
     }
     if (currentUser.id === targetUserId) {
-      toast.error("Bhai, khud ko kaise follow karoge?");
+      toast.error("Khud ko follow nahi kar sakte!");
       return;
     }
 
-    try {
-      // Check if already following
-      const { data: existingFollow } = await supabase
-        .from('follows')
-        .select('*')
-        .eq('follower_id', currentUser.id)
-        .eq('following_id', targetUserId)
-        .maybeSingle();
+    const isCurrentlyFollowing = followedUsers.has(targetUserId);
 
-      if (existingFollow) {
-        await supabase.from('follows').delete().eq('id', existingFollow.id);
+    try {
+      if (isCurrentlyFollowing) {
+        // Unfollow Logic
+        await supabase.from('follows')
+          .delete()
+          .eq('follower_id', currentUser.id)
+          .eq('following_id', targetUserId);
+        
+        setFollowedUsers(prev => {
+          const next = new Set(prev);
+          next.delete(targetUserId);
+          return next;
+        });
         toast.success("Unfollowed");
       } else {
+        // Follow Logic
         await supabase.from('follows').insert([
           { follower_id: currentUser.id, following_id: targetUserId }
         ]);
+        
+        setFollowedUsers(prev => new Set(prev).add(targetUserId));
         toast.success("Following!");
       }
     } catch (err) {
-      toast.error("Kuch gadbad hui");
+      toast.error("Action fail ho gaya");
     }
   };
 
   const handleVideoShare = async (video: any) => {
     const shareUrl = `${window.location.origin}/video/${video.id}`;
     if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'Chiti Shorts',
-          text: `Check out this video by @${video.user_name}`,
-          url: shareUrl
-        });
-      } catch (err) { console.log("Share cancelled"); }
+      try { await navigator.share({ title: 'Chiti Shorts', url: shareUrl }); } 
+      catch (err) { console.log("Share cancelled"); }
     } else {
       try {
         await navigator.clipboard.writeText(shareUrl);
-        toast.success("Link copied to clipboard!");
-      } catch (err) { toast.error("Failed to copy link"); }
+        toast.success("Link copy ho gaya!");
+      } catch (err) {
+        toast.error("Copy fail ho gaya");
+      }
     }
   };
 
@@ -168,8 +186,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-black text-white p-8">
         <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2 uppercase italic">Koi Video Nahi Mili</h2>
-          <p className="text-gray-400 mb-4">Search badaliye ya naya upload kijiye!</p>
+          <h2 className="text-2xl font-bold mb-2 uppercase italic tracking-tighter">Koi Video Nahi Hai</h2>
+          <p className="text-gray-400 mb-4">Wapas Home Jayein!</p>
+          <button onClick={() => window.location.href = '/'} className="bg-blue-600 px-6 py-2 rounded-full font-bold">RELOAD</button>
         </div>
       </div>
     );
@@ -211,16 +230,21 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
               <img 
                 src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
                 className="w-11 h-11 rounded-full border-2 border-white shadow-lg" 
-                alt="user" 
+                alt="user avatar" 
               />
               <div className="flex flex-col">
                 <span className="font-black text-lg tracking-tight">@{video.user_name}</span>
               </div>
+              
               <button 
                 onClick={(e) => handleFollowToggle(e, video.user_id)}
-                className="ml-2 bg-blue-600 text-white px-4 py-1 rounded-full text-xs font-bold active:scale-90 transition shadow-lg shadow-blue-500/20"
+                className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black uppercase transition-all duration-300 ${
+                  followedUsers.has(video.user_id) 
+                  ? 'bg-gray-700/80 text-white' 
+                  : 'bg-blue-600 text-white shadow-[0_0_15px_rgba(37,99,235,0.4)] hover:bg-blue-500'
+                }`}
               >
-                Follow
+                {followedUsers.has(video.user_id) ? 'Following' : 'Follow'}
               </button>
             </div>
             
