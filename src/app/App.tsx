@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { Toaster } from 'sonner';
 import { BottomNavigation } from '@/app/components/BottomNavigation';
@@ -13,38 +14,36 @@ import { LogIn } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
 function AppContent() {
-  const [activeTab, setActiveTab] = useState('home');
   const [commentSheetOpen, setCommentSheetOpen] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<string>('');
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const { user, signOut } = useAuth();
+  
+  // React Router ke hooks
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Active tab ko URL se match karne ke liye logic
+  const activeTab = location.pathname === '/' ? 'home' : 
+                    location.pathname.startsWith('/discover') ? 'discover' :
+                    location.pathname.startsWith('/create') ? 'create' :
+                    location.pathname.startsWith('/inbox') ? 'inbox' :
+                    location.pathname.startsWith('/profile') ? 'profile' : 'home';
 
   const handleComment = (videoId: string) => {
     setSelectedVideoId(videoId);
     setCommentSheetOpen(true);
   };
 
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'home':
-        return <RealVideoFeed onComment={handleComment} />;
-      case 'discover':
-        return <DiscoverPage />;
-      case 'create':
-        return <CreatePage />;
-      case 'inbox':
-        return <InboxPage />;
-      case 'profile':
-        return <ProfilePage />;
-      default:
-        return <RealVideoFeed onComment={handleComment} />;
-    }
+  const handleTabChange = (tab: string) => {
+    if (tab === 'home') navigate('/');
+    else navigate(`/${tab}`);
   };
 
   return (
     <div className="relative min-h-screen bg-black">
       {/* App Header - Only show on home tab */}
-      {activeTab === 'home' && (
+      {location.pathname === '/' && (
         <div className="fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-black/90 to-transparent p-4">
           <div className="flex items-center justify-between">
             <h1 className="text-2xl font-bold text-white tracking-tight">
@@ -70,13 +69,20 @@ function AppContent() {
         </div>
       )}
 
-      {/* Main Content */}
-      <main className={activeTab === 'home' ? '' : 'pt-0'}>
-        {renderContent()}
+      {/* Main Content using Routes */}
+      <main className={location.pathname === '/' ? '' : 'pt-0'}>
+        <Routes>
+          <Route path="/" element={<RealVideoFeed onComment={handleComment} />} />
+          <Route path="/discover" element={<DiscoverPage />} />
+          <Route path="/create" element={<CreatePage />} />
+          <Route path="/inbox" element={<InboxPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/profile/:username" element={<ProfilePage />} />
+        </Routes>
       </main>
 
       {/* Bottom Navigation */}
-      <BottomNavigation activeTab={activeTab} onTabChange={setActiveTab} />
+      <BottomNavigation activeTab={activeTab} onTabChange={handleTabChange} />
 
       {/* Comment Sheet */}
       <CommentSheet
@@ -94,16 +100,19 @@ function AppContent() {
   );
 }
 
+// Main App component wrapping everything in Router
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
-      <Toaster 
-        position="top-center"
-        richColors
-        closeButton
-        theme="dark"
-      />
+      <Router>
+        <AppContent />
+        <Toaster 
+          position="top-center"
+          richColors
+          closeButton
+          theme="dark"
+        />
+      </Router>
     </AuthProvider>
   );
 }
