@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext'; // Follow ke liye zaruri
 import { Loader2, Music2, Play as PlayIcon } from 'lucide-react';
 import { toast } from 'sonner'; 
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => void }) {
+  const { user: currentUser } = useAuth(); // Auth context se user le rahe hain
   const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true); // Play/Pause state
-  const [showPlayIcon, setShowPlayIcon] = useState(false); // Visual feedback ke liye
+  const [isPlaying, setIsPlaying] = useState(true); 
+  const [showPlayIcon, setShowPlayIcon] = useState(false); 
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -27,29 +29,62 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
       if (error) throw error;
       
       if (data) {
-        // --- GRID CLICK LOGIC START ---
+        // --- FEATURE 1: SEARCH & URL FILTER ---
         const urlParams = new URLSearchParams(window.location.search);
         const videoIdFromUrl = urlParams.get('video');
+        const searchTerm = urlParams.get('search')?.toLowerCase();
 
+        let filteredData = data;
+
+        // Agar search keyword hai toh filter karein
+        if (searchTerm) {
+          filteredData = data.filter(v => 
+            v.user_name?.toLowerCase().includes(searchTerm) || 
+            v.caption?.toLowerCase().includes(searchTerm)
+          );
+        }
+
+        // Grid Click Logic
         if (videoIdFromUrl) {
-          const clickedVideoIndex = data.findIndex(v => v.id === videoIdFromUrl);
+          const clickedVideoIndex = filteredData.findIndex(v => v.id === videoIdFromUrl);
           if (clickedVideoIndex !== -1) {
-            // Reorder list: Clicked video ko sabse upar le aao
-            const clickedVideo = data.splice(clickedVideoIndex, 1)[0];
-            data.unshift(clickedVideo);
+            const clickedVideo = filteredData.splice(clickedVideoIndex, 1)[0];
+            filteredData.unshift(clickedVideo);
           }
         }
-        // --- GRID CLICK LOGIC END ---
         
-        setVideos(data);
+        setVideos(filteredData);
       }
       
     } catch (error) {
-      console.error('Error fetching videos from Supabase:', error);
+      console.error('Error fetching videos:', error);
     } finally {
       setLoading(false);
     }
   };
+
+  // --- FEATURE 2: AUTO-NEXT LOGIC ---
+  useEffect(() => {
+    const handleYTMessage = (event: MessageEvent) => {
+      // YouTube player se message listen karte hain
+      if (event.origin !== "https://www.youtube.com") return;
+      try {
+        const data = JSON.parse(event.data);
+        // infoDelivery aur state 0 ka matlab video khatam (Ended)
+        if (data.event === "infoDelivery" && data.info?.playerState === 0) {
+          if (containerRef.current && activeIndex < videos.length - 1) {
+            containerRef.current.scrollTo({
+              top: (activeIndex + 1) * window.innerHeight,
+              behavior: 'smooth'
+            });
+          }
+        }
+      } catch (err) {}
+    };
+
+    window.addEventListener("message", handleYTMessage);
+    return () => window.removeEventListener("message", handleYTMessage);
+  }, [activeIndex, videos]);
 
   const handleScroll = () => {
     if (!containerRef.current) return;
@@ -57,20 +92,53 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
-      setIsPlaying(true); // Agli video automatically play hogi
+      setIsPlaying(true); 
     }
   };
 
-  // --- PLAY/PAUSE LOGIC ---
   const togglePlayPause = () => {
     setIsPlaying(!isPlaying);
     setShowPlayIcon(true);
-    setTimeout(() => setShowPlayIcon(false), 500); // 0.5 sec baad icon hide ho jayega
+    setTimeout(() => setShowPlayIcon(false), 500); 
+  };
+
+  // --- FEATURE 3: FOLLOW/UNFOLLOW LOGIC ---
+  const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
+    e.stopPropagation();
+    if (!currentUser) {
+      toast.error("Please login to follow creators");
+      return;
+    }
+    if (currentUser.id === targetUserId) {
+      toast.error("Bhai, khud ko kaise follow karoge?");
+      return;
+    }
+
+    try {
+      // Check if already following
+      const { data: existingFollow } = await supabase
+        .from('follows')
+        .select('*')
+        .eq('follower_id', currentUser.id)
+        .eq('following_id', targetUserId)
+        .maybeSingle();
+
+      if (existingFollow) {
+        await supabase.from('follows').delete().eq('id', existingFollow.id);
+        toast.success("Unfollowed");
+      } else {
+        await supabase.from('follows').insert([
+          { follower_id: currentUser.id, following_id: targetUserId }
+        ]);
+        toast.success("Following!");
+      }
+    } catch (err) {
+      toast.error("Kuch gadbad hui");
+    }
   };
 
   const handleVideoShare = async (video: any) => {
     const shareUrl = `${window.location.origin}/video/${video.id}`;
-    
     if (navigator.share) {
       try {
         await navigator.share({
@@ -78,16 +146,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
           text: `Check out this video by @${video.user_name}`,
           url: shareUrl
         });
-      } catch (err) {
-        console.log("Share cancelled");
-      }
+      } catch (err) { console.log("Share cancelled"); }
     } else {
       try {
         await navigator.clipboard.writeText(shareUrl);
         toast.success("Link copied to clipboard!");
-      } catch (err) {
-        toast.error("Failed to copy link");
-      }
+      } catch (err) { toast.error("Failed to copy link"); }
     }
   };
 
@@ -95,7 +159,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center bg-black">
         <Loader2 className="w-12 h-12 text-blue-500 animate-spin mb-4" />
-        <p className="text-gray-400 font-bold">CHITI LOADING...</p>
+        <p className="text-gray-400 font-bold tracking-widest uppercase">Chiti Loading...</p>
       </div>
     );
   }
@@ -104,8 +168,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
     return (
       <div className="fixed inset-0 flex items-center justify-center bg-black text-white p-8">
         <div className="text-center">
-          <h2 className="text-2xl font-bold mb-2">No Videos Yet</h2>
-          <p className="text-gray-400 mb-4">Upload something to see it here!</p>
+          <h2 className="text-2xl font-bold mb-2 uppercase italic">Koi Video Nahi Mili</h2>
+          <p className="text-gray-400 mb-4">Search badaliye ya naya upload kijiye!</p>
         </div>
       </div>
     );
@@ -122,20 +186,18 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
         <div 
           key={video.id} 
           className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black"
-          onClick={togglePlayPause} // Pure screen par click se Play/Pause
+          onClick={togglePlayPause} 
         >
           
-          {/* FULL SCREEN YOUTUBE PLAYER */}
           <div className="absolute inset-0 w-full h-full flex items-center justify-center overflow-hidden pointer-events-none">
             <iframe
               className="w-full h-full scale-[1.6] origin-center object-cover" 
-              src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${index === activeIndex && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1`}
+              src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${index === activeIndex && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=0&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1`}
               title="Chiti Short"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             ></iframe>
           </div>
 
-          {/* PLAY/PAUSE CENTER ICON ANIMATION */}
           {showPlayIcon && (
             <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
               <div className="bg-black/40 p-5 rounded-full animate-ping">
@@ -144,7 +206,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
             </div>
           )}
 
-          {/* User Info Overlay - Bottom */}
           <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/90 via-black/40 to-transparent text-white z-10 pointer-events-none">
             <div className="flex items-center gap-3 mb-3 pointer-events-auto">
               <img 
@@ -155,7 +216,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
               <div className="flex flex-col">
                 <span className="font-black text-lg tracking-tight">@{video.user_name}</span>
               </div>
-              <button className="ml-2 bg-white text-black px-4 py-1 rounded-full text-xs font-bold active:scale-90 transition">Follow</button>
+              <button 
+                onClick={(e) => handleFollowToggle(e, video.user_id)}
+                className="ml-2 bg-blue-600 text-white px-4 py-1 rounded-full text-xs font-bold active:scale-90 transition shadow-lg shadow-blue-500/20"
+              >
+                Follow
+              </button>
             </div>
             
             <p className="text-sm mb-4 line-clamp-2 pr-20 font-medium opacity-90">{video.caption}</p>
@@ -166,7 +232,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
             </div>
           </div>
 
-          {/* Action Buttons (Right Side) */}
           <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
             <VideoActions
               videoId={video.id}
