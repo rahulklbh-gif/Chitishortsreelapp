@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { 
   Settings, Grid, Play, Loader2, Check, 
-  User, Camera, ArrowLeft, X, Trash2 
+  User, Camera, ArrowLeft, X, Trash2, Heart
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -56,9 +56,10 @@ export function ProfilePage() {
         setProfile(targetProfile);
         setNewName(targetProfile.full_name || '');
         
+        // Videos load karein - Views aur Likes count ke saath
         const { data: posts } = await supabase
           .from('posts')
-          .select('*')
+          .select('*, views_count, likes_count')
           .eq('user_id', targetProfile.id)
           .order('created_at', { ascending: false });
         
@@ -74,9 +75,9 @@ export function ProfilePage() {
     }
   };
 
-  // --- DELETE VIDEO LOGIC ADDED ---
+  // --- DELETE VIDEO LOGIC ---
   const handleDeletePost = async (e: React.MouseEvent, postId: string) => {
-    e.stopPropagation(); // Isse video play nahi hogi click karne par
+    e.stopPropagation(); // Isse navigation trigger nahi hoga
     
     const confirmDelete = window.confirm("Bhai, kya aap sach mein ye video delete karna chahte hain?");
     if (!confirmDelete) return;
@@ -86,11 +87,10 @@ export function ProfilePage() {
         .from('posts')
         .delete()
         .eq('id', postId)
-        .eq('user_id', currentUser?.id); // Security check
+        .eq('user_id', currentUser?.id);
 
       if (error) throw error;
 
-      // Turant list se video hatane ke liye
       setUserPosts(prev => prev.filter(post => post.id !== postId));
       toast.success("Video delete ho gayi!");
     } catch (error: any) {
@@ -108,7 +108,7 @@ export function ProfilePage() {
 
       if (error) throw error;
       
-      setProfile(prev => ({ ...prev, full_name: newName }));
+      setProfile((prev: any) => ({ ...prev, full_name: newName }));
       setIsEditing(false);
       toast.success("Naam save ho gaya!");
     } catch (error: any) {
@@ -142,7 +142,7 @@ export function ProfilePage() {
 
       if (updateError) throw updateError;
       
-      setProfile(prev => ({ ...prev, avatar_url: publicUrl }));
+      setProfile((prev: any) => ({ ...prev, avatar_url: publicUrl }));
       toast.success("Photo lag gayi!");
     } catch (error: any) {
       toast.error("Upload fail: " + error.message);
@@ -273,9 +273,9 @@ export function ProfilePage() {
               key={post.id} 
               className="relative aspect-[9/16] bg-gray-900 overflow-hidden group"
             >
-              {/* Video Thumbnail */}
+              {/* Video Thumbnail - Click to open in feed */}
               <img 
-                onClick={() => navigate(`/video/${post.id}`)} 
+                onClick={() => navigate(`/?video=${post.id}`)} 
                 src={post.thumbnail_url || `https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} 
                 className="w-full h-full object-cover transition-transform group-hover:scale-105 cursor-pointer" 
               />
@@ -290,9 +290,23 @@ export function ProfilePage() {
                 </button>
               )}
 
-              <div className="absolute bottom-2 left-2 flex items-center gap-1">
-                <Play size={10} fill="white" />
-                <span className="text-[10px] font-bold text-white shadow-black drop-shadow-lg">Views</span>
+              {/* VIEWS & LIKES COUNT OVERLAY */}
+              <div className="absolute bottom-0 left-0 right-0 p-1.5 flex justify-between items-center bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
+                {/* Left side: Views */}
+                <div className="flex items-center gap-1">
+                  <Play size={10} fill="white" className="text-white" />
+                  <span className="text-[10px] font-bold text-white drop-shadow-md">
+                    {post.views_count || 0}
+                  </span>
+                </div>
+                
+                {/* Right side: Likes */}
+                <div className="flex items-center gap-1">
+                  <Heart size={10} fill="white" className="text-white" />
+                  <span className="text-[10px] font-bold text-white drop-shadow-md">
+                    {post.likes_count || 0}
+                  </span>
+                </div>
               </div>
             </div>
           ))}
