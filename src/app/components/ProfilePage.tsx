@@ -21,31 +21,37 @@ export function ProfilePage() {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Profile refresh par data na khone ke liye primary logic
+  // Sabse zaruri fix: Jab refresh hota hai, tab currentUser load hone mein time leta hai
   useEffect(() => {
-    loadProfileAndPosts();
-  }, [username, currentUser?.id]); // id par depend rakha hai refresh handle karne ke liye
+    // Agar username nahi hai aur currentUser load ho raha hai, toh thoda intezar karein
+    const handleInitialLoad = async () => {
+      await loadProfileAndPosts();
+    };
+    handleInitialLoad();
+  }, [username, currentUser?.id]); 
 
   const loadProfileAndPosts = async () => {
     setLoading(true);
     try {
-      let targetProfile;
+      let targetProfile = null;
       
+      // 1. Agar URL mein username hai (jaise: /profile/rahul)
       if (username) {
-        // Kisi aur ki profile ya username link se access
         const { data, error } = await supabase
           .from('profiles')
           .select('*')
           .eq('username', username)
-          .maybeSingle(); // error ki jagah null dega agar nahi mila
+          .maybeSingle();
         targetProfile = data;
-      } else if (currentUser) {
-        // Khud ki profile (Refresh case)
+      } 
+      
+      // 2. Agar URL mein username nahi hai, toh login user ki profile dikhayein
+      if (!targetProfile && currentUser) {
         const { data, error } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', currentUser.id)
-          .single();
+          .maybeSingle();
         targetProfile = data;
       }
 
@@ -61,9 +67,12 @@ export function ProfilePage() {
           .order('created_at', { ascending: false });
         
         setUserPosts(posts || []);
+      } else {
+        setProfile(null);
       }
     } catch (error) {
       console.error("Profile Load Error:", error);
+      toast.error("Profile load karne mein dikkat hui");
     } finally {
       setLoading(false);
     }
@@ -72,6 +81,7 @@ export function ProfilePage() {
   const handleUpdateProfile = async () => {
     if (!currentUser || !profile) return;
     try {
+      // Database update
       const { error } = await supabase
         .from('profiles')
         .update({ full_name: newName })
@@ -79,12 +89,12 @@ export function ProfilePage() {
 
       if (error) throw error;
       
-      // Update state immediately
+      // Turant UI update
       setProfile(prev => ({ ...prev, full_name: newName }));
       setIsEditing(false);
-      toast.success("Profile saved!");
+      toast.success("Naam save ho gaya!");
     } catch (error: any) {
-      toast.error("Failed to save name");
+      toast.error("Save nahi ho paya: " + error.message);
     }
   };
 
@@ -108,7 +118,7 @@ export function ProfilePage() {
         .from('avatars')
         .getPublicUrl(fileName);
 
-      // Save to database permanently
+      // Save photo URL to profiles table
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
@@ -117,84 +127,155 @@ export function ProfilePage() {
       if (updateError) throw updateError;
       
       setProfile(prev => ({ ...prev, avatar_url: publicUrl }));
-      toast.success("Photo updated!");
+      toast.success("Photo lag gayi!");
     } catch (error: any) {
-      toast.error("Upload failed");
+      toast.error("Upload fail: " + error.message);
     } finally {
       setIsUploading(false);
     }
   };
 
-  if (loading) return <div className="h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" /></div>;
+  if (loading) {
+    return (
+      <div className="h-screen bg-black flex flex-col items-center justify-center">
+        <Loader2 className="animate-spin text-blue-500 mb-2" size={40} />
+        <p className="text-gray-500 text-sm">Chiti Shorts is loading...</p>
+      </div>
+    );
+  }
 
-  // Agar profile nahi mili (404 condition handle karne ke liye)
-  if (!profile && !loading) {
+  // 404 Screen Fix
+  if (!profile) {
     return (
       <div className="h-screen bg-black text-white flex flex-col items-center justify-center p-6 text-center">
-        <h1 className="text-4xl font-black mb-4">404</h1>
-        <p className="text-gray-400 mb-6">User not found or you're not logged in.</p>
-        <button onClick={() => navigate('/')} className="bg-blue-600 px-6 py-2 rounded-full font-bold">Go Home</button>
+        <div className="w-20 h-20 bg-gray-900 rounded-full flex items-center justify-center mb-4">
+          <User size={40} className="text-gray-600" />
+        </div>
+        <h1 className="text-2xl font-black mb-2 uppercase">Profile Nahi Mili</h1>
+        <p className="text-gray-400 mb-6 text-sm">Shayad aapne login nahi kiya hai ya ye user exist nahi karta.</p>
+        <button 
+          onClick={() => navigate('/')} 
+          className="bg-blue-600 w-full max-w-xs py-3 rounded-xl font-black uppercase tracking-wider"
+        >
+          Wapas Home Jayein
+        </button>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-black text-white pb-24">
-      {/* ... (Baki UI code wahi rahega jo pehle tha) ... */}
-      <div className="p-4 pt-8 flex items-center justify-between border-b border-white/10 sticky top-0 bg-black z-10">
+      {/* Header */}
+      <div className="p-4 pt-8 flex items-center justify-between border-b border-white/10 sticky top-0 bg-black z-20">
         <div className="flex items-center gap-4">
           <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer" />
-          <h1 className="text-lg font-black italic text-blue-400 uppercase tracking-tighter">@{profile?.username}</h1>
+          <h1 className="text-lg font-black italic text-blue-400 uppercase tracking-tighter">
+            @{profile?.username || 'user'}
+          </h1>
         </div>
-        <button onClick={() => setIsEditing(!isEditing)} className="p-2 bg-white/5 rounded-full">
-           {isEditing ? <X className="text-red-500" /> : <Settings />}
-        </button>
+        {profile?.id === currentUser?.id && (
+          <button onClick={() => setIsEditing(!isEditing)} className="p-2 bg-white/5 rounded-full">
+             {isEditing ? <X className="text-red-500" /> : <Settings size={20} />}
+          </button>
+        )}
       </div>
 
+      {/* Profile Info */}
       <div className="p-6 flex items-center gap-8">
         <div className="relative">
-          <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-blue-500">
+          <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-blue-600 bg-gray-900 shadow-[0_0_15px_rgba(37,99,235,0.3)]">
             {profile?.avatar_url ? (
               <img src={profile.avatar_url} className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full bg-gray-800 flex items-center justify-center"><User size={40} /></div>
+              <div className="w-full h-full flex items-center justify-center"><User size={40} className="text-gray-700" /></div>
             )}
           </div>
+          {isUploading && (
+            <div className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center">
+              <Loader2 className="animate-spin text-white" size={20} />
+            </div>
+          )}
           {profile?.id === currentUser?.id && (
-            <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-1 -right-1 bg-blue-600 p-2 rounded-full border-2 border-black">
+            <button 
+              onClick={() => fileInputRef.current?.click()} 
+              className="absolute -bottom-1 -right-1 bg-blue-600 p-2 rounded-full border-2 border-black"
+            >
               <Camera size={14} />
             </button>
           )}
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handlePhotoUpload} />
         </div>
+        
         <div className="flex-1 flex justify-around text-center">
-          <div><p className="text-xl font-black">{userPosts.length}</p><p className="text-[10px] text-gray-500 font-bold uppercase">Posts</p></div>
-          <div><p className="text-xl font-black">{profile?.followers_count || 0}</p><p className="text-[10px] text-gray-500 font-bold uppercase">Followers</p></div>
+          <div>
+            <p className="text-xl font-black">{userPosts.length}</p>
+            <p className="text-[10px] text-gray-500 font-bold uppercase">Videos</p>
+          </div>
+          <div>
+            <p className="text-xl font-black">{profile?.followers_count || 0}</p>
+            <p className="text-[10px] text-gray-500 font-bold uppercase">Followers</p>
+          </div>
         </div>
       </div>
 
+      {/* Name & Bio */}
       <div className="px-6 mb-6">
         {isEditing ? (
-          <div className="flex gap-2">
-            <input value={newName} onChange={e => setNewName(e.target.value)} className="bg-white/10 p-2 rounded flex-1 outline-none border border-white/20 focus:border-blue-500" />
-            <button onClick={handleUpdateProfile} className="bg-blue-600 px-4 rounded font-bold"><Check size={20} /></button>
+          <div className="flex gap-2 bg-gray-900 p-1 rounded-lg border border-white/10">
+            <input 
+              value={newName} 
+              onChange={e => setNewName(e.target.value)} 
+              className="bg-transparent p-2 rounded flex-1 outline-none text-sm"
+              placeholder="Apna naam likhein..."
+              autoFocus
+            />
+            <button onClick={handleUpdateProfile} className="bg-blue-600 px-4 rounded-md font-bold text-white">
+              <Check size={18} />
+            </button>
           </div>
         ) : (
           <>
-            <h2 className="text-xl font-black uppercase italic">{profile?.full_name || 'Anonymous User'}</h2>
-            <p className="text-sm text-gray-400 font-medium">Chiti Shorts Creator 🎥</p>
+            <h2 className="text-xl font-black uppercase italic tracking-tight">
+              {profile?.full_name || 'Naya User'}
+            </h2>
+            <p className="text-xs text-blue-500 font-bold mt-1">CHITI SHORTS CREATOR ⚡</p>
+            <p className="text-sm text-gray-400 mt-2 leading-relaxed">
+              {profile?.bio || "Video banayein aur viral ho jayein! 🔥"}
+            </p>
           </>
         )}
       </div>
 
-      <div className="flex justify-center border-t border-white/10 py-3"><Grid size={24} className="text-blue-500" /></div>
-      <div className="grid grid-cols-3 gap-0.5 px-0.5">
-        {userPosts.map(post => (
-          <div key={post.id} onClick={() => navigate(`/video/${post.id}`)} className="relative aspect-[9/16] bg-gray-900 overflow-hidden cursor-pointer">
-            <img src={`https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} className="w-full h-full object-cover" />
-          </div>
-        ))}
+      {/* Videos Grid */}
+      <div className="flex justify-center border-t border-white/10 py-3 bg-white/5">
+        <Grid size={24} className="text-blue-500" />
       </div>
+      
+      {userPosts.length > 0 ? (
+        <div className="grid grid-cols-3 gap-0.5 px-0.5">
+          {userPosts.map(post => (
+            <div 
+              key={post.id} 
+              onClick={() => navigate(`/video/${post.id}`)} 
+              className="relative aspect-[9/16] bg-gray-900 overflow-hidden cursor-pointer group"
+            >
+              <img 
+                src={post.thumbnail_url || `https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} 
+                className="w-full h-full object-cover transition-transform group-hover:scale-105" 
+              />
+              <div className="absolute bottom-2 left-2 flex items-center gap-1">
+                <Play size={10} fill="white" />
+                <span className="text-[10px] font-bold">Views</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="py-20 text-center">
+          <Play size={40} className="mx-auto text-gray-800 mb-4" />
+          <p className="text-gray-500 font-bold uppercase text-xs">Abhi tak koi video nahi hai</p>
+        </div>
+      )}
     </div>
   );
 }
