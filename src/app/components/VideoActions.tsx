@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
-// Props mein onShare ko add kiya gaya hai
+// Props mein onShare receive karna zaruri hai
 export function VideoActions({ videoId, initialLikes, onComment, onShare }: any) {
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(initialLikes || 0);
@@ -45,15 +45,9 @@ export function VideoActions({ videoId, initialLikes, onComment, onShare }: any)
     localStorage.setItem('likedVideos', JSON.stringify(likedVideos));
 
     try {
-      const { error } = await supabase
-        .from('posts')
-        .update({ likes_count: newCount })
-        .eq('id', videoId);
-      
-      if (error) throw error;
+      await supabase.from('posts').update({ likes_count: newCount }).eq('id', videoId);
     } catch (err) {
       console.error(err);
-      toast.error("Like update failed");
     } finally {
       setIsUpdating(false);
     }
@@ -61,57 +55,42 @@ export function VideoActions({ videoId, initialLikes, onComment, onShare }: any)
 
   return (
     <div className="flex flex-col items-center gap-5 relative">
-      
-      {/* Floating Hearts Animation */}
+      {/* Surprise Hearts Animation */}
       {hearts.map(heart => (
-        <div 
-          key={heart.id}
-          className="absolute bottom-10 text-red-500 text-2xl animate-bounce-up pointer-events-none"
-          style={{ left: `${heart.left}px` }}
-        >
-          ❤️
-        </div>
+        <div key={heart.id} className="absolute bottom-10 text-red-500 text-2xl animate-bounce-up pointer-events-none" style={{ left: `${heart.left}px` }}>❤️</div>
       ))}
 
       {/* Like Button */}
       <button onClick={handleLike} className="flex flex-col items-center group">
         <div className={`p-3 rounded-full transition-all duration-300 ${isLiked ? 'scale-125' : 'scale-100'}`}>
-          <Heart 
-            className={`w-9 h-9 ${isLiked ? 'fill-red-500 text-red-500' : 'text-white'}`} 
-            strokeWidth={2.5} 
-          />
+          <Heart className={`w-9 h-9 ${isLiked ? 'fill-red-500 text-red-500' : 'text-white'}`} strokeWidth={2.5} />
         </div>
-        <span className="text-white text-xs font-black drop-shadow-md">{likeCount}</span>
+        <span className="text-white text-xs font-black">{likeCount}</span>
       </button>
 
-      {/* Comment Button (Reply) */}
-      <button 
-        onClick={() => videoId ? onComment(videoId) : toast.error("Video ID missing")} 
-        className="flex flex-col items-center group"
-      >
-        <div className="p-3 transition-transform group-active:scale-90">
+      {/* Comment/Reply Button */}
+      <button onClick={() => videoId ? onComment(videoId) : toast.error("ID missing")} className="flex flex-col items-center group">
+        <div className="p-3 active:scale-90 transition-transform">
           <MessageCircle className="w-9 h-9 text-white" strokeWidth={2.5} />
         </div>
-        <span className="text-white text-xs font-black drop-shadow-md">Reply</span>
+        <span className="text-white text-xs font-black">Reply</span>
       </button>
 
-      {/* FIXED: Share Button calling onShare Prop */}
+      {/* FIXED: Share Button (Asli Mobile Share Menu) */}
       <button 
         onClick={() => {
-          if (onShare) {
-            onShare(); // Ye wahi native share menu kholega jo humne RealVideoFeed mein banaya hai
-          } else {
-            // Safety fallback agar prop miss ho jaye
+          if (onShare) onShare();
+          else {
             navigator.clipboard.writeText(window.location.href);
             toast.success("Link Copied!");
           }
         }} 
         className="flex flex-col items-center group"
       >
-        <div className="p-3 transition-transform group-active:scale-90">
+        <div className="p-3 active:scale-90 transition-transform">
           <Share2 className="w-9 h-9 text-white" strokeWidth={2.5} />
         </div>
-        <span className="text-white text-xs font-black drop-shadow-md">Share</span>
+        <span className="text-white text-xs font-black">Share</span>
       </button>
 
       <style>{`
@@ -119,9 +98,7 @@ export function VideoActions({ videoId, initialLikes, onComment, onShare }: any)
           0% { transform: translateY(0) scale(1); opacity: 1; }
           100% { transform: translateY(-180px) scale(2); opacity: 0; }
         }
-        .animate-bounce-up {
-          animation: bounce-up 0.8s ease-out forwards;
-        }
+        .animate-bounce-up { animation: bounce-up 0.8s ease-out forwards; }
       `}</style>
     </div>
   );
