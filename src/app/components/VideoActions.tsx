@@ -2,9 +2,11 @@ import { Heart, MessageCircle, Share2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext'; // User ki ID lene ke liye
 
-// Props mein onShare receive karna zaruri hai
-export function VideoActions({ videoId, initialLikes, onComment, onShare }: any) {
+// Props mein videoOwnerId add kiya hai
+export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, onShare }: any) {
+  const { user } = useAuth(); // Current login user
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(initialLikes || 0);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -26,6 +28,7 @@ export function VideoActions({ videoId, initialLikes, onComment, onShare }: any)
     setIsLiked(newIsLiked);
     setLikeCount(newCount);
 
+    // Hearts Animation
     if (newIsLiked) {
       const newHearts = Array.from({ length: 5 }).map((_, i) => ({
         id: Date.now() + i,
@@ -35,6 +38,7 @@ export function VideoActions({ videoId, initialLikes, onComment, onShare }: any)
       setTimeout(() => setHearts([]), 1000);
     }
 
+    // LocalStorage Update
     const likedVideos = JSON.parse(localStorage.getItem('likedVideos') || '[]');
     if (newIsLiked) {
       if (!likedVideos.includes(videoId)) likedVideos.push(videoId);
@@ -45,7 +49,20 @@ export function VideoActions({ videoId, initialLikes, onComment, onShare }: any)
     localStorage.setItem('likedVideos', JSON.stringify(likedVideos));
 
     try {
+      // 1. Post Table Update (Like Count)
       await supabase.from('posts').update({ likes_count: newCount }).eq('id', videoId);
+
+      // 2. NOTIFICATION LOGIC (Jab naya like ho)
+      if (newIsLiked && user && videoOwnerId && user.id !== videoOwnerId) {
+        await supabase.from('notifications').insert([
+          {
+            type: 'like',
+            sender_id: user.id,
+            receiver_id: videoOwnerId,
+            post_id: videoId
+          }
+        ]);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -68,7 +85,7 @@ export function VideoActions({ videoId, initialLikes, onComment, onShare }: any)
         <span className="text-white text-xs font-black">{likeCount}</span>
       </button>
 
-      {/* Comment/Reply Button */}
+      {/* Reply Button */}
       <button onClick={() => videoId ? onComment(videoId) : toast.error("ID missing")} className="flex flex-col items-center group">
         <div className="p-3 active:scale-90 transition-transform">
           <MessageCircle className="w-9 h-9 text-white" strokeWidth={2.5} />
@@ -76,7 +93,7 @@ export function VideoActions({ videoId, initialLikes, onComment, onShare }: any)
         <span className="text-white text-xs font-black">Reply</span>
       </button>
 
-      {/* FIXED: Share Button (Asli Mobile Share Menu) */}
+      {/* Share Button */}
       <button 
         onClick={() => {
           if (onShare) onShare();
@@ -99,7 +116,7 @@ export function VideoActions({ videoId, initialLikes, onComment, onShare }: any)
           100% { transform: translateY(-180px) scale(2); opacity: 0; }
         }
         .animate-bounce-up { animation: bounce-up 0.8s ease-out forwards; }
-      `}</style>
+      `}`}</style>
     </div>
   );
 }
