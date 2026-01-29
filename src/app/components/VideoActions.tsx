@@ -2,7 +2,7 @@ import { Heart, MessageCircle, Share2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { useAuth } from '@/app/context/AuthContext'; // Path check kar lena, aapke project mein context kahan hai
+import { useAuth } from '@/contexts/AuthContext'; // Aapke folder structure ke hisaab se sahi path
 
 export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, onShare }: any) {
   const { user } = useAuth(); 
@@ -46,10 +46,10 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
     localStorage.setItem('likedVideos', JSON.stringify(likedVideos));
 
     try {
-      // 1. Update Post Likes
+      // 1. Database mein Like update
       await supabase.from('posts').update({ likes_count: newCount }).eq('id', videoId);
 
-      // 2. Notification Logic
+      // 2. Notification bhejna (Agar user logged in hai aur apna hi video like nahi kar raha)
       if (newIsLiked && user && videoOwnerId && user.id !== videoOwnerId) {
         await supabase.from('notifications').insert([
           {
@@ -69,24 +69,28 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
 
   return (
     <div className="flex flex-col items-center gap-5 relative">
+      {/* Hearts Animation */}
       {hearts.map(heart => (
         <div key={heart.id} className="absolute bottom-10 text-red-500 text-2xl animate-bounce-up pointer-events-none" style={{ left: `${heart.left}px` }}>❤️</div>
       ))}
 
-      <button onClick={handleLike} className="flex flex-col items-center group">
+      {/* Like Button */}
+      <button onClick={handleLike} className="flex flex-col items-center group outline-none">
         <div className={`p-3 rounded-full transition-all duration-300 ${isLiked ? 'scale-125' : 'scale-100'}`}>
           <Heart className={`w-9 h-9 ${isLiked ? 'fill-red-500 text-red-500' : 'text-white'}`} strokeWidth={2.5} />
         </div>
         <span className="text-white text-xs font-black">{likeCount}</span>
       </button>
 
-      <button onClick={() => videoId ? onComment(videoId) : toast.error("ID missing")} className="flex flex-col items-center group">
-        <div className="p-3 active:scale-90 transition-transform">
-          <MessageCircle className="w-9 h-9 text-white" strokeWidth={2.5} />
+      {/* Comment Button */}
+      <button onClick={() => videoId ? onComment(videoId) : toast.error("ID missing")} className="flex flex-col items-center group outline-none">
+        <div className="p-3 active:scale-90 transition-transform text-white">
+          <MessageCircle className="w-9 h-9" strokeWidth={2.5} />
         </div>
         <span className="text-white text-xs font-black">Reply</span>
       </button>
 
+      {/* Share Button */}
       <button 
         onClick={() => {
           if (onShare) onShare();
@@ -95,10 +99,10 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
             toast.success("Link Copied!");
           }
         }} 
-        className="flex flex-col items-center group"
+        className="flex flex-col items-center group outline-none"
       >
-        <div className="p-3 active:scale-90 transition-transform">
-          <Share2 className="w-9 h-9 text-white" strokeWidth={2.5} />
+        <div className="p-3 active:scale-90 transition-transform text-white">
+          <Share2 className="w-9 h-9" strokeWidth={2.5} />
         </div>
         <span className="text-white text-xs font-black">Share</span>
       </button>
