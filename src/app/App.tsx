@@ -16,22 +16,24 @@ import { useAuth } from '@/contexts/AuthContext';
 function AppContent() {
   const [commentSheetOpen, setCommentSheetOpen] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<string>('');
+  // --- YE STATE ADD KI HAI ---
+  const [videoOwnerId, setVideoOwnerId] = useState<string>(''); 
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const { user, signOut } = useAuth();
   
-  // React Router ke hooks
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Active tab ko URL se match karne ke liye logic
   const activeTab = location.pathname === '/' ? 'home' : 
                     location.pathname.startsWith('/discover') ? 'discover' :
                     location.pathname.startsWith('/create') ? 'create' :
                     location.pathname.startsWith('/inbox') ? 'inbox' :
                     location.pathname.startsWith('/profile') ? 'profile' : 'home';
 
-  const handleComment = (videoId: string) => {
+  // --- FUNCTION KO UPDATE KIYA HAI ---
+  const handleComment = (videoId: string, ownerId: string) => {
     setSelectedVideoId(videoId);
+    setVideoOwnerId(ownerId); // Owner ID yahan save hogi
     setCommentSheetOpen(true);
   };
 
@@ -42,7 +44,6 @@ function AppContent() {
 
   return (
     <div className="relative min-h-screen bg-black">
-      {/* App Header - Only show on home tab */}
       {location.pathname === '/' && (
         <div className="fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-black/90 to-transparent p-4">
           <div className="flex items-center justify-between">
@@ -69,9 +70,9 @@ function AppContent() {
         </div>
       )}
 
-      {/* Main Content using Routes */}
       <main className={location.pathname === '/' ? '' : 'pt-0'}>
         <Routes>
+          {/* handleComment ab do values bhejega */}
           <Route path="/" element={<RealVideoFeed onComment={handleComment} />} />
           <Route path="/discover" element={<DiscoverPage />} />
           <Route path="/create" element={<CreatePage />} />
@@ -81,17 +82,16 @@ function AppContent() {
         </Routes>
       </main>
 
-      {/* Bottom Navigation */}
       <BottomNavigation activeTab={activeTab} onTabChange={handleTabChange} />
 
-      {/* Comment Sheet */}
+      {/* --- COMMENT SHEET ME videoOwnerId PASS KIYA HAI --- */}
       <CommentSheet
         videoId={selectedVideoId}
+        videoOwnerId={videoOwnerId}
         isOpen={commentSheetOpen}
         onClose={() => setCommentSheetOpen(false)}
       />
 
-      {/* Auth Modal */}
       <AuthModal
         isOpen={authModalOpen}
         onClose={() => setAuthModalOpen(false)}
@@ -100,7 +100,6 @@ function AppContent() {
   );
 }
 
-// Main App component wrapping everything in Router
 function App() {
   return (
     <AuthProvider>
