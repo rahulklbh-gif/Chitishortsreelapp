@@ -2,11 +2,10 @@ import { Heart, MessageCircle, Share2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { useAuth } from '@/contexts/AuthContext'; // User ki ID lene ke liye
+import { useAuth } from '@/app/context/AuthContext'; // Path check kar lena, aapke project mein context kahan hai
 
-// Props mein videoOwnerId add kiya hai
 export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, onShare }: any) {
-  const { user } = useAuth(); // Current login user
+  const { user } = useAuth(); 
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(initialLikes || 0);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -28,7 +27,6 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
     setIsLiked(newIsLiked);
     setLikeCount(newCount);
 
-    // Hearts Animation
     if (newIsLiked) {
       const newHearts = Array.from({ length: 5 }).map((_, i) => ({
         id: Date.now() + i,
@@ -38,7 +36,6 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
       setTimeout(() => setHearts([]), 1000);
     }
 
-    // LocalStorage Update
     const likedVideos = JSON.parse(localStorage.getItem('likedVideos') || '[]');
     if (newIsLiked) {
       if (!likedVideos.includes(videoId)) likedVideos.push(videoId);
@@ -49,10 +46,10 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
     localStorage.setItem('likedVideos', JSON.stringify(likedVideos));
 
     try {
-      // 1. Post Table Update (Like Count)
+      // 1. Update Post Likes
       await supabase.from('posts').update({ likes_count: newCount }).eq('id', videoId);
 
-      // 2. NOTIFICATION LOGIC (Jab naya like ho)
+      // 2. Notification Logic
       if (newIsLiked && user && videoOwnerId && user.id !== videoOwnerId) {
         await supabase.from('notifications').insert([
           {
@@ -64,7 +61,7 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
         ]);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Like error:", err);
     } finally {
       setIsUpdating(false);
     }
@@ -72,12 +69,10 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
 
   return (
     <div className="flex flex-col items-center gap-5 relative">
-      {/* Surprise Hearts Animation */}
       {hearts.map(heart => (
         <div key={heart.id} className="absolute bottom-10 text-red-500 text-2xl animate-bounce-up pointer-events-none" style={{ left: `${heart.left}px` }}>❤️</div>
       ))}
 
-      {/* Like Button */}
       <button onClick={handleLike} className="flex flex-col items-center group">
         <div className={`p-3 rounded-full transition-all duration-300 ${isLiked ? 'scale-125' : 'scale-100'}`}>
           <Heart className={`w-9 h-9 ${isLiked ? 'fill-red-500 text-red-500' : 'text-white'}`} strokeWidth={2.5} />
@@ -85,7 +80,6 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
         <span className="text-white text-xs font-black">{likeCount}</span>
       </button>
 
-      {/* Reply Button */}
       <button onClick={() => videoId ? onComment(videoId) : toast.error("ID missing")} className="flex flex-col items-center group">
         <div className="p-3 active:scale-90 transition-transform">
           <MessageCircle className="w-9 h-9 text-white" strokeWidth={2.5} />
@@ -93,7 +87,6 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
         <span className="text-white text-xs font-black">Reply</span>
       </button>
 
-      {/* Share Button */}
       <button 
         onClick={() => {
           if (onShare) onShare();
@@ -116,7 +109,7 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
           100% { transform: translateY(-180px) scale(2); opacity: 0; }
         }
         .animate-bounce-up { animation: bounce-up 0.8s ease-out forwards; }
-      `}`}</style>
+      `}</style>
     </div>
   );
 }
