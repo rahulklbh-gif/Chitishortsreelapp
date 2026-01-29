@@ -1,30 +1,55 @@
-import { Heart, MessageCircle, UserPlus, AtSign, PlayCircle, Loader2 } from 'lucide-react';
+import { Heart, MessageCircle, UserPlus, PlayCircle, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
-import { useNavigate } from 'react-router-dom';
 
 export function InboxPage() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'all' | 'messages'>('all');
 
+  // Initial Fetch + Real-time Subscription
   useEffect(() => {
-    if (user) fetchNotifications();
+    if (user) {
+      fetchNotifications();
+
+      // REAL-TIME: Database mein naya row aate hi screen update hogi
+      const channel = supabase
+        .channel('schema-db-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `receiver_id=eq.${user.id}`,
+          },
+          () => {
+            fetchNotifications(); // Naya data aate hi fetch call
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
   }, [user]);
 
   const fetchNotifications = async () => {
-    setLoading(true);
     try {
-      // Is query mein hum 'profiles' table se sender ka naam aur avatar le rahe hain
       const { data, error } = await supabase
         .from('notifications')
         .select(`
           *,
-          posts (youtube_video_id)
+          sender:profiles!sender_id (
+            username,
+            avatar_url
+          ),
+          post:post_id (
+            youtube_video_id
+          )
         `)
         .eq('receiver_id', user?.id)
         .order('created_at', { ascending: false });
@@ -32,64 +57,63 @@ export function InboxPage() {
       if (error) throw error;
       setNotifications(data || []);
     } catch (err) {
-      console.error(err);
+      console.error('Fetch error:', err);
     } finally {
       setLoading(false);
     }
   };
 
+  if (loading) return (
+    <div className="flex justify-center items-center h-screen bg-black text-white">
+      <Loader2 className="animate-spin text-purple-500" size={40} />
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-black text-white pb-20">
-      <div className="sticky top-0 bg-black z-10 p-4 border-b border-gray-800 text-center">
-        <h1 className="text-xl font-black tracking-tighter uppercase">Inbox</h1>
+      <div className="sticky top-0 bg-black z-10 p-4 border-b border-gray-800">
+        <h1 className="text-xl font-black italic">INBOX</h1>
       </div>
 
-      {/* Tabs Logic */}
-      <div className="flex border-b border-gray-800">
-        <button 
-          onClick={() => setActiveTab('all')}
-          className={`flex-1 py-3 font-bold transition ${activeTab === 'all' ? 'border-b-2 border-white text-white' : 'text-gray-500'}`}
-        >
-          All Activity
-        </button>
-        <button 
-          onClick={() => setActiveTab('messages')}
-          className={`flex-1 py-3 font-bold transition ${activeTab === 'messages' ? 'border-b-2 border-white text-white' : 'text-gray-500'}`}
-        >
-          Messages
-        </button>
-      </div>
-
-      <div className="p-2">
-        {activeTab === 'all' ? (
-          loading ? (
-            <div className="flex justify-center p-10"><Loader2 className="animate-spin text-purple-500" /></div>
-          ) : notifications.length > 0 ? (
-            notifications.map((notif) => (
-              <div key={notif.id} className="flex items-center gap-3 p-3 hover:bg-gray-900 rounded-lg">
-                <div className="w-12 h-12 rounded-full bg-gray-800 flex-shrink-0 border border-gray-700 overflow-hidden">
-                   <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${notif.sender_id}`} alt="avatar" />
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm">
-                    <span className="font-bold">A user</span> {notif.type === 'like' ? 'liked your video' : notif.type === 'comment' ? 'commented on your post' : 'followed you'}
-                  </p>
-                  <p className="text-xs text-gray-500">{formatDistanceToNow(new Date(notif.created_at))} ago</p>
-                </div>
-                {notif.posts?.youtube_video_id && (
-                  <img src={`https://img.youtube.com/vi/${notif.posts.youtube_video_id}/default.jpg`} className="w-10 h-14 rounded object-cover" />
-                )}
+      <div className="divide-y divide-gray-900">
+        {notifications.length > 0 ? (
+          notifications.map((notif) => (
+            <div key={notif.id} className="flex items-center gap-3 p-4 hover:bg-gray-900 transition active:bg-gray-800">
+              {/* Profile Photo - Ab asli dikhegi */}
+              <img 
+                src={notif.sender?.avatar_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
+                className="w-12 h-12 rounded-full object-cover border border-gray-700"
+              />
+              
+              <div className="flex-1">
+                <p className="text-sm">
+                  <span className="font-bold">@{notif.sender?.username || 'user'}</span>{' '}
+                  <span className="text-gray-300">
+                    {notif.type === 'like' && 'liked your video'}
+                    {notif.type === 'follow' && 'started following you'}
+                    {notif.type === 'comment' && `commented: ${notif.content}`}
+                  </span>
+                </p>
+                <p className="text-[10px] text-gray-500 mt-1 uppercase font-bold tracking-tighter">
+                  {formatDistanceToNow(new Date(notif.created_at))} ago
+                </p>
               </div>
-            ))
-          ) : (
-             <div className="text-center py-20 text-gray-500">No activity yet</div>
-          )
+
+              {/* Video Thumbnail - Asli YouTube image */}
+              {notif.post?.youtube_video_id && (
+                <div className="w-12 h-16 bg-gray-800 rounded overflow-hidden flex-shrink-0 border border-gray-700">
+                  <img 
+                    src={`https://img.youtube.com/vi/${notif.post.youtube_video_id}/default.jpg`} 
+                    className="w-full h-full object-cover" 
+                  />
+                </div>
+              )}
+            </div>
+          ))
         ) : (
-          /* Messages View */
-          <div className="text-center py-20">
-            <MessageCircle className="w-16 h-16 mx-auto text-gray-800 mb-4" />
-            <h2 className="text-lg font-bold">No Messages</h2>
-            <p className="text-gray-500 text-sm px-10">Direct messages between you and your friends will appear here.</p>
+          <div className="flex flex-col items-center justify-center pt-20 text-gray-600">
+             <MessageCircle size={60} strokeWidth={1} />
+             <p className="mt-4 font-bold">No activity yet</p>
           </div>
         )}
       </div>
