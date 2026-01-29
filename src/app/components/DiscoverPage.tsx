@@ -38,7 +38,7 @@ export function DiscoverPage() {
       if (searchQuery) {
         performSearch();
       }
-    }, 500); // User ke rukne ka wait karega (Debounce)
+    }, 500); 
 
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery]);
@@ -91,8 +91,9 @@ export function DiscoverPage() {
                 {searchResults.map((video) => (
                   <div 
                     key={video.id}
-                    onClick={() => navigate(`/video-feed?video=${video.id}`)}
-                    className="relative aspect-[9/16] bg-gray-900 rounded-lg overflow-hidden active:scale-95 transition-transform"
+                    // CLICK LOGIC: Direct video feed par bhej raha hai video ID ke sath
+                    onClick={() => navigate(`/?video=${video.id}`)}
+                    className="relative aspect-[9/16] bg-gray-900 rounded-lg overflow-hidden active:scale-95 transition-transform cursor-pointer"
                   >
                     <img 
                       src={`https://img.youtube.com/vi/${video.youtube_video_id}/mqdefault.jpg`}
@@ -115,7 +116,6 @@ export function DiscoverPage() {
         ) : (
           /* --- ORIGINAL TRENDING & CREATORS VIEW --- */
           <>
-            {/* Trending Section */}
             <section>
               <div className="flex items-center gap-2 mb-4">
                 <TrendingUp className="w-5 h-5 text-pink-500" />
@@ -142,7 +142,6 @@ export function DiscoverPage() {
               </div>
             </section>
 
-            {/* Popular Creators */}
             <section>
               <h2 className="text-xl font-bold mb-4">Popular Creators</h2>
               <div className="space-y-3">
