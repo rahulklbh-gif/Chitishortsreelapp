@@ -5,7 +5,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Music2, Play as PlayIcon } from 'lucide-react';
 import { toast } from 'sonner'; 
 
-export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => void }) {
+// Props interface ko update kiya taaki videoOwnerId handle ho sake
+export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
   const { user: currentUser } = useAuth();
   const [videos, setVideos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -189,9 +190,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
             <VideoActions
               videoId={video.id}
               initialLikes={video.likes_count || 0}
-              // --- MAINE YE LINE ADD KI HAI ---
               videoOwnerId={video.user_id} 
-              onComment={() => onComment(video.id)}
+              // Ab yahan se video.user_id ko bhi bhej rahe hain function mein
+              onComment={() => onComment(video.id, video.user_id)}
               onShare={() => handleVideoShare(video)}
             />
           </div>
