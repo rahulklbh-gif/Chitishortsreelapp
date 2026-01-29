@@ -90,9 +90,21 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
         });
         toast.success("Unfollowed");
       } else {
+        // 1. Follow Insert
         await supabase.from('follows').insert([
           { follower_id: currentUser.id, following_id: targetUserId }
         ]);
+
+        // 2. FOLLOW NOTIFICATION (Naya Logic)
+        await supabase.from('notifications').insert([
+          {
+            type: 'follow',
+            sender_id: currentUser.id,
+            receiver_id: targetUserId,
+            content: 'started following you'
+          }
+        ]);
+
         setFollowedUsers(prev => new Set(prev).add(targetUserId));
         toast.success("Following!");
       }
@@ -130,7 +142,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
           className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black"
           onClick={togglePlayPause} 
         >
-          {/* --- SIMPLE VIDEO PLAYER (NO ZOOM, NO MASK) --- */}
+          {/* Video Player */}
           <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-black">
             <iframe
               className="w-full h-full object-contain" 
@@ -172,11 +184,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string) => v
             </div>
           </div>
 
-          {/* Buttons */}
+          {/* Buttons Section */}
           <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
             <VideoActions
               videoId={video.id}
               initialLikes={video.likes_count || 0}
+              // --- MAINE YE LINE ADD KI HAI ---
+              videoOwnerId={video.user_id} 
               onComment={() => onComment(video.id)}
               onShare={() => handleVideoShare(video)}
             />
