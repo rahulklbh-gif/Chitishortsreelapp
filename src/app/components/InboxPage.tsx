@@ -1,75 +1,73 @@
-import { Heart, MessageCircle, UserPlus, AtSign } from 'lucide-react';
-
-interface Notification {
-  id: string;
-  type: 'like' | 'comment' | 'follow' | 'mention';
-  username: string;
-  avatar: string;
-  text: string;
-  timestamp: string;
-  videoThumbnail?: string;
-}
+import { Heart, MessageCircle, UserPlus, AtSign, PlayCircle, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
+import { formatDistanceToNow } from 'date-fns';
+import { useNavigate } from 'react-router-dom';
 
 export function InboxPage() {
-  const notifications: Notification[] = [
-    {
-      id: '1',
-      type: 'like',
-      username: 'sarah_creates',
-      avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100',
-      text: 'liked your video',
-      timestamp: '2m ago',
-      videoThumbnail: 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=100',
-    },
-    {
-      id: '2',
-      type: 'comment',
-      username: 'john_doe',
-      avatar: 'https://images.unsplash.com/photo-1599566150163-29194dcaad36?w=100',
-      text: 'commented: "Amazing content! 🔥"',
-      timestamp: '15m ago',
-      videoThumbnail: 'https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=100',
-    },
-    {
-      id: '3',
-      type: 'follow',
-      username: 'dance_mike',
-      avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100',
-      text: 'started following you',
-      timestamp: '1h ago',
-    },
-    {
-      id: '4',
-      type: 'mention',
-      username: 'creative_anna',
-      avatar: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100',
-      text: 'mentioned you in a comment',
-      timestamp: '2h ago',
-      videoThumbnail: 'https://images.unsplash.com/photo-1611162616305-c69b3fa7fbe0?w=100',
-    },
-    {
-      id: '5',
-      type: 'like',
-      username: 'fitness_coach',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100',
-      text: 'and 47 others liked your video',
-      timestamp: '3h ago',
-      videoThumbnail: 'https://images.unsplash.com/photo-1611162618071-b39a2ec055fb?w=100',
-    },
-  ];
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (user) {
+      fetchNotifications();
+    }
+  }, [user]);
+
+  const fetchNotifications = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select(`
+          id,
+          type,
+          content,
+          created_at,
+          sender_id,
+          post_id,
+          posts (youtube_video_id)
+        `)
+        .eq('receiver_id', user?.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setNotifications(data || []);
+    } catch (err) {
+      console.error('Error fetching notifications:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getIcon = (type: string) => {
     switch (type) {
       case 'like':
-        return <Heart className="w-5 h-5 text-red-500 fill-red-500" />;
+        return <Heart className="w-4 h-4 text-red-500 fill-red-500" />;
       case 'comment':
-        return <MessageCircle className="w-5 h-5 text-blue-500" />;
+        return <MessageCircle className="w-4 h-4 text-blue-500 fill-blue-500" />;
       case 'follow':
-        return <UserPlus className="w-5 h-5 text-purple-500" />;
+        return <UserPlus className="w-4 h-4 text-purple-500" />;
+      case 'new_post':
+        return <PlayCircle className="w-4 h-4 text-green-500 fill-green-500" />;
       case 'mention':
-        return <AtSign className="w-5 h-5 text-pink-500" />;
+        return <AtSign className="w-4 h-4 text-pink-500" />;
       default:
         return null;
+    }
+  };
+
+  const getNotificationText = (notif: any) => {
+    switch (notif.type) {
+      case 'like': return 'liked your video';
+      case 'comment': return `commented: "${notif.content || ''}"`;
+      case 'follow': return 'started following you';
+      case 'new_post': return 'uploaded a new video! Check it out.';
+      case 'mention': return 'mentioned you in a comment';
+      default: return '';
     }
   };
 
@@ -77,12 +75,12 @@ export function InboxPage() {
     <div className="min-h-screen bg-black text-white pb-20">
       {/* Header */}
       <div className="sticky top-0 bg-black z-10 p-4 border-b border-gray-800">
-        <h1 className="text-2xl font-bold">Notifications</h1>
+        <h1 className="text-2xl font-bold italic tracking-tighter">INBOX</h1>
       </div>
 
       {/* Tabs */}
       <div className="flex border-b border-gray-800">
-        <button className="flex-1 py-3 font-semibold border-b-2 border-white">
+        <button className="flex-1 py-3 font-semibold border-b-2 border-purple-600">
           All Activity
         </button>
         <button className="flex-1 py-3 font-semibold text-gray-500 border-b-2 border-transparent">
@@ -90,58 +88,70 @@ export function InboxPage() {
         </button>
       </div>
 
-      {/* Notifications List */}
-      <div className="divide-y divide-gray-800">
-        {notifications.map((notification) => (
-          <div key={notification.id} className="p-4 flex items-center gap-3 hover:bg-gray-900/50">
-            {/* Avatar */}
-            <div className="relative flex-shrink-0">
-              <img
-                src={notification.avatar}
-                alt={notification.username}
-                className="w-12 h-12 rounded-full object-cover"
-              />
-              <div className="absolute -bottom-1 -right-1 bg-black rounded-full p-0.5">
-                {getIcon(notification.type)}
+      {/* Loading State */}
+      {loading ? (
+        <div className="flex justify-center p-10">
+          <Loader2 className="animate-spin text-purple-500" size={32} />
+        </div>
+      ) : notifications.length > 0 ? (
+        <div className="divide-y divide-gray-900">
+          {notifications.map((notif) => (
+            <div 
+              key={notif.id} 
+              className="p-4 flex items-center gap-3 hover:bg-gray-900/40 transition cursor-pointer"
+              onClick={() => notif.post_id && navigate(`/?video=${notif.post_id}`)}
+            >
+              {/* Profile Avatar (Mocking avatar for now as sender metadata needs extra join) */}
+              <div className="relative flex-shrink-0">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-xs font-bold">
+                  User
+                </div>
+                <div className="absolute -bottom-1 -right-1 bg-black rounded-full p-1 border border-gray-800">
+                  {getIcon(notif.type)}
+                </div>
               </div>
+
+              {/* Content */}
+              <div className="flex-1 min-w-0">
+                <p className="text-sm">
+                  <span className="font-bold">Someone</span>{' '}
+                  <span className="text-gray-300">{getNotificationText(notif)}</span>
+                </p>
+                <p className="text-[10px] text-gray-500 mt-0.5 uppercase font-bold tracking-widest">
+                  {formatDistanceToNow(new Date(notif.created_at))} ago
+                </p>
+              </div>
+
+              {/* Video Thumbnail (Asli YouTube Thumbnail) */}
+              {notif.posts?.youtube_video_id && (
+                <div className="w-12 h-16 rounded overflow-hidden flex-shrink-0 border border-gray-800 bg-gray-900">
+                  <img
+                    src={`https://img.youtube.com/vi/${notif.posts.youtube_video_id}/default.jpg`}
+                    alt="Video"
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
+
+              {/* Follow Back Button */}
+              {notif.type === 'follow' && (
+                <button className="px-4 py-1.5 bg-blue-600 rounded-full text-xs font-black uppercase flex-shrink-0 active:scale-90 transition">
+                  Follow
+                </button>
+              )}
             </div>
-
-            {/* Content */}
-            <div className="flex-1 min-w-0">
-              <p className="text-sm">
-                <span className="font-semibold">{notification.username}</span>{' '}
-                <span className="text-gray-400">{notification.text}</span>
-              </p>
-              <p className="text-xs text-gray-500 mt-0.5">{notification.timestamp}</p>
-            </div>
-
-            {/* Video Thumbnail */}
-            {notification.videoThumbnail && (
-              <img
-                src={notification.videoThumbnail}
-                alt="Video"
-                className="w-12 h-16 rounded object-cover flex-shrink-0"
-              />
-            )}
-
-            {/* Follow Back Button */}
-            {notification.type === 'follow' && (
-              <button className="px-4 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full text-sm font-semibold flex-shrink-0">
-                Follow
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Empty State for Messages */}
-      <div className="p-8 text-center">
-        <MessageCircle className="w-16 h-16 mx-auto text-gray-700 mb-3" />
-        <h3 className="font-semibold text-lg mb-1">No messages yet</h3>
-        <p className="text-gray-500 text-sm">
-          Direct messages will appear here when you start chatting
-        </p>
-      </div>
+          ))}
+        </div>
+      ) : (
+        /* Empty State */
+        <div className="p-12 text-center">
+          <AtSign className="w-16 h-16 mx-auto text-gray-800 mb-3" />
+          <h3 className="font-bold text-lg mb-1">Nothing to see here</h3>
+          <p className="text-gray-500 text-sm">
+            Notifications about likes, comments, and followers will appear here.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
