@@ -1,10 +1,11 @@
 import { X, Send, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase'; // Naya path
+import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 
-export function CommentSheet({ videoId, isOpen, onClose }: any) {
+// Props mein videoOwnerId add kiya gaya hai
+export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
   const { user } = useAuth();
   const [comments, setComments] = useState<any[]>([]);
   const [newComment, setNewComment] = useState('');
@@ -49,15 +50,30 @@ export function CommentSheet({ videoId, isOpen, onClose }: any) {
         text: newComment
       };
 
-      const { data, error } = await supabase
+      // 1. Comment Save Karo
+      const { data: commentRes, error: commentError } = await supabase
         .from('comments')
         .insert([commentData])
         .select()
         .single();
 
-      if (error) throw error;
+      if (commentError) throw commentError;
 
-      setComments([data, ...comments]);
+      // 2. NOTIFICATION LOGIC (Naya Kaam)
+      // Agar video owner khud comment kar raha hai toh notification nahi bhejenge
+      if (videoOwnerId && user.id !== videoOwnerId) {
+        await supabase.from('notifications').insert([
+          {
+            type: 'comment',
+            sender_id: user.id,
+            receiver_id: videoOwnerId,
+            post_id: videoId,
+            content: newComment // Inbox mein comment text dikhane ke liye
+          }
+        ]);
+      }
+
+      setComments([commentRes, ...comments]);
       setNewComment('');
       toast.success('Comment added!');
     } catch (error: any) {
@@ -78,7 +94,9 @@ export function CommentSheet({ videoId, isOpen, onClose }: any) {
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/5">
           <span className="font-bold text-white text-md">Comments ({comments.length})</span>
-          <button onClick={onClose} className="p-1 bg-white/5 rounded-full"><X className="w-5 h-5 text-gray-400" /></button>
+          <button onClick={onClose} className="p-1 bg-white/5 rounded-full">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
         </div>
 
         {/* List */}
@@ -90,7 +108,7 @@ export function CommentSheet({ videoId, isOpen, onClose }: any) {
           ) : (
             comments.map((c) => (
               <div key={c.id} className="flex gap-3 animate-in fade-in duration-300">
-                <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs">
+                <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
                   {c.username[0].toUpperCase()}
                 </div>
                 <div>
@@ -105,7 +123,7 @@ export function CommentSheet({ videoId, isOpen, onClose }: any) {
           )}
         </div>
 
-        {/* Input */}
+        {/* Input Form */}
         <form onSubmit={handleSubmit} className="p-4 bg-[#121212] border-t border-white/5 pb-8">
           <div className="flex gap-2 bg-white/5 rounded-2xl p-2 items-center border border-white/10">
             <input
@@ -116,8 +134,12 @@ export function CommentSheet({ videoId, isOpen, onClose }: any) {
               disabled={!user}
               className="flex-1 bg-transparent text-white px-3 py-1 focus:outline-none text-sm"
             />
-            <button type="submit" disabled={!newComment.trim() || submitting || !user} className="p-2 bg-blue-600 rounded-xl text-white disabled:opacity-30">
-              <Send className="w-4 h-4" />
+            <button 
+              type="submit" 
+              disabled={!newComment.trim() || submitting || !user} 
+              className="p-2 bg-blue-600 rounded-xl text-white disabled:opacity-30"
+            >
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </button>
           </div>
         </form>
