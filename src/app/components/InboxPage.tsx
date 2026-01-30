@@ -1,8 +1,7 @@
-import { Heart, MessageCircle, UserPlus, PlayCircle, Loader2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { formatDistanceToNow } from 'date-fns';
+import { Loader2, MessageCircle } from 'lucide-react';
 
 export function InboxPage() {
   const { user } = useAuth();
@@ -12,126 +11,54 @@ export function InboxPage() {
   useEffect(() => {
     if (user) {
       fetchNotifications();
-
-      // REAL-TIME: Database mein naya row aate hi screen update hogi
-      const channel = supabase
-        .channel('schema-db-changes')
-        .on(
-          'postgres_changes',
-          {
-            event: 'INSERT',
-            schema: 'public',
-            table: 'notifications',
-            filter: `receiver_id=eq.${user.id}`,
-          },
-          () => {
-            console.log("Naya notification aaya!");
-            fetchNotifications(); 
-          }
-        )
-        .subscribe();
-
-      return () => {
-        supabase.removeChannel(channel);
-      };
     }
   }, [user]);
 
   const fetchNotifications = async () => {
-    if (!user) return;
     try {
-      // Yahan humne Join ko thoda asaan banaya hai taaki profiles ka data pakka aaye
+      setLoading(true);
+      // Ekdum simple query bina kisi complex join ke
       const { data, error } = await supabase
         .from('notifications')
-        .select(`
-          *,
-          sender:sender_id (
-            username,
-            avatar_url
-          ),
-          post:post_id (
-            youtube_video_id
-          )
-        `)
-        .eq('receiver_id', user.id)
+        .select('*') 
+        .eq('receiver_id', user?.id)
         .order('created_at', { ascending: false });
 
-      if (error) {
-        console.error('Supabase Query Error:', error.message);
-        throw error;
-      }
-
-      console.log("Fetched Data:", data); // Check karne ke liye console mein dekhein
+      if (error) throw error;
       setNotifications(data || []);
     } catch (err) {
-      console.error('Fetch error:', err);
+      console.error('Error fetching:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) return (
-    <div className="flex justify-center items-center h-screen bg-black text-white">
-      <Loader2 className="animate-spin text-purple-500" size={40} />
-    </div>
-  );
+  if (loading) return <div className="flex justify-center p-10 text-white"><Loader2 className="animate-spin" /></div>;
 
   return (
-    <div className="min-h-screen bg-black text-white pb-20">
-      <div className="sticky top-0 bg-black z-10 p-4 border-b border-gray-800">
-        <h1 className="text-xl font-black italic uppercase tracking-widest">Inbox</h1>
-      </div>
-
-      <div className="divide-y divide-gray-900">
-        {notifications.length > 0 ? (
-          notifications.map((notif) => (
-            <div key={notif.id} className="flex items-center gap-3 p-4 hover:bg-gray-900/50 transition active:bg-gray-800">
-              {/* Profile Photo */}
-              <div className="relative">
-                <img 
-                  src={notif.sender?.avatar_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
-                  className="w-12 h-12 rounded-full object-cover border border-gray-700"
-                  alt="avatar"
-                />
-                <div className="absolute -bottom-1 -right-1 bg-black rounded-full p-1">
-                  {notif.type === 'like' && <Heart size={12} className="fill-red-500 text-red-500" />}
-                  {notif.type === 'follow' && <UserPlus size={12} className="text-blue-500" />}
-                  {notif.type === 'comment' && <MessageCircle size={12} className="text-green-500" />}
-                </div>
-              </div>
-              
-              <div className="flex-1">
-                <p className="text-sm leading-tight">
-                  <span className="font-bold text-gray-100">@{notif.sender?.username || 'user'}</span>{' '}
-                  <span className="text-gray-400">
-                    {notif.type === 'like' && 'liked your video'}
-                    {notif.type === 'follow' && 'started following you'}
-                    {notif.type === 'comment' && `commented: ${notif.content}`}
-                  </span>
-                </p>
-                <p className="text-[10px] text-gray-500 mt-1 uppercase font-bold">
-                  {notif.created_at ? formatDistanceToNow(new Date(notif.created_at), { addSuffix: true }) : ''}
-                </p>
-              </div>
-
-              {/* Video Thumbnail */}
-              {notif.post?.youtube_video_id && (
-                <div className="w-10 h-14 bg-gray-800 rounded overflow-hidden flex-shrink-0 border border-gray-700">
-                  <img 
-                    src={`https://img.youtube.com/vi/${notif.post.youtube_video_id}/default.jpg`} 
-                    className="w-full h-full object-cover opacity-80" 
-                  />
-                </div>
-              )}
+    <div className="min-h-screen bg-black text-white p-4">
+      <h1 className="text-xl font-bold mb-6 italic">INBOX</h1>
+      
+      {notifications.length === 0 ? (
+        <div className="text-center text-gray-500 mt-20">
+          <MessageCircle className="mx-auto mb-2 opacity-20" size={50} />
+          <p>Abhi tak koi activity nahi hui</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {notifications.map((n) => (
+            <div key={n.id} className="bg-gray-900 p-4 rounded-xl border border-white/5">
+              <p className="text-sm">
+                <span className="text-blue-400 font-bold">New {n.type}!</span>
+              </p>
+              <p className="text-gray-300 mt-1">{n.content || 'Somebody interacted with you'}</p>
+              <p className="text-[10px] text-gray-500 mt-2">
+                {new Date(n.created_at).toLocaleTimeString()}
+              </p>
             </div>
-          ))
-        ) : (
-          <div className="flex flex-col items-center justify-center pt-32 text-gray-600 px-10 text-center">
-             <MessageCircle size={48} strokeWidth={1.5} className="mb-4 opacity-20" />
-             <p className="text-sm font-medium">No activity yet. Your notifications will appear here.</p>
-          </div>
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
