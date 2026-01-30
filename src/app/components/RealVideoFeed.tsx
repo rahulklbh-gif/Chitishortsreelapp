@@ -19,7 +19,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     fetchVideos();
   }, []);
 
-  // Jab user login/logout ho tab follows fetch karein
   useEffect(() => {
     if (currentUser) {
       fetchFollows();
@@ -90,7 +89,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
     try {
       if (isCurrentlyFollowing) {
-        // Unfollow Logic
         const { error } = await supabase.from('follows')
           .delete()
           .eq('follower_id', currentUser.id)
@@ -105,18 +103,18 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         });
         toast.success("Unfollowed");
       } else {
-        // 1. Follow Insert
         const { error } = await supabase.from('follows').insert([
           { follower_id: currentUser.id, following_id: targetUserId }
         ]);
 
         if (error) throw error;
 
-        // 2. FOLLOW NOTIFICATION (Ye auto jayegi)
+        // --- PROBLEM 3 FIX: SENDER NAME ADDED ---
         await supabase.from('notifications').insert([
           {
             type: 'follow',
             sender_id: currentUser.id,
+            sender_name: currentUser.user_metadata.username || currentUser.email?.split('@')[0] || "Someone",
             receiver_id: targetUserId,
             content: 'started following you'
           }
@@ -160,7 +158,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black"
           onClick={togglePlayPause} 
         >
-          {/* Video Player */}
           <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-black">
             <iframe
               className="w-full h-full object-contain pointer-events-none" 
@@ -178,7 +175,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             </div>
           )}
 
-          {/* User Info */}
           <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/80 to-transparent text-white z-10 pointer-events-none">
             <div className="flex items-center gap-3 mb-3 pointer-events-auto">
               <img 
@@ -202,7 +198,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             </div>
           </div>
 
-          {/* Buttons Section */}
           <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
             <VideoActions
               videoId={video.id}
