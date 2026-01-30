@@ -2,7 +2,7 @@ import { Heart, MessageCircle, Share2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
-import { useAuth } from '@/contexts/AuthContext'; // Aapke folder structure ke hisaab se sahi path
+import { useAuth } from '@/contexts/AuthContext';
 
 export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, onShare }: any) {
   const { user } = useAuth(); 
@@ -11,19 +11,37 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
   const [isUpdating, setIsUpdating] = useState(false);
   const [hearts, setHearts] = useState<any[]>([]);
 
+  // Database se check karna ki user ne pehle like kiya hai ya nahi
   useEffect(() => {
-    const likedVideos = JSON.parse(localStorage.getItem('likedVideos') || '[]');
-    setIsLiked(likedVideos.includes(videoId));
+    if (user && videoId) {
+      checkIfLiked();
+    }
     setLikeCount(initialLikes || 0);
-  }, [videoId, initialLikes]);
+  }, [videoId, initialLikes, user]);
+
+  const checkIfLiked = async () => {
+    const { data, error } = await supabase
+      .from('likes') // Make sure aapke paas 'likes' table ho (optional but better)
+      .select('*')
+      .eq('post_id', videoId)
+      .eq('user_id', user?.id)
+      .single();
+    
+    if (data) setIsLiked(true);
+  };
 
   const handleLike = async () => {
+    if (!user) {
+      toast.error("Pehle login karein!");
+      return;
+    }
     if (isUpdating) return;
     setIsUpdating(true);
 
     const newIsLiked = !isLiked;
     const newCount = isLiked ? Math.max(0, likeCount - 1) : likeCount + 1;
     
+    // UI Update (Fast feel ke liye)
     setIsLiked(newIsLiked);
     setLikeCount(newCount);
 
@@ -36,32 +54,29 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
       setTimeout(() => setHearts([]), 1000);
     }
 
-    const likedVideos = JSON.parse(localStorage.getItem('likedVideos') || '[]');
-    if (newIsLiked) {
-      if (!likedVideos.includes(videoId)) likedVideos.push(videoId);
-    } else {
-      const index = likedVideos.indexOf(videoId);
-      if (index > -1) likedVideos.splice(index, 1);
-    }
-    localStorage.setItem('likedVideos', JSON.stringify(likedVideos));
-
     try {
-      // 1. Database mein Like update
+      // 1. Post Table ka count update karein
       await supabase.from('posts').update({ likes_count: newCount }).eq('id', videoId);
 
-      // 2. Notification bhejna (Agar user logged in hai aur apna hi video like nahi kar raha)
-      if (newIsLiked && user && videoOwnerId && user.id !== videoOwnerId) {
-        await supabase.from('notifications').insert([
-          {
-            type: 'like',
-            sender_id: user.id,
-            receiver_id: videoOwnerId,
-            post_id: videoId
-          }
-        ]);
+      if (newIsLiked) {
+        // 2. Notification bhejna
+        if (videoOwnerId && user.id !== videoOwnerId) {
+          await supabase.from('notifications').insert([
+            {
+              type: 'like',
+              sender_id: user.id,
+              receiver_id: videoOwnerId,
+              post_id: videoId,
+              content: 'liked your video' // Ye Inbox mein dikhega
+            }
+          ]);
+        }
       }
     } catch (err) {
       console.error("Like error:", err);
+      // Rollback UI if error
+      setIsLiked(!newIsLiked);
+      setLikeCount(likeCount);
     } finally {
       setIsUpdating(false);
     }
@@ -83,28 +98,25 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
       </button>
 
       {/* Comment Button */}
-      <button onClick={() => videoId ? onComment(videoId) : toast.error("ID missing")} className="flex flex-col items-center group outline-none">
+      <button 
+        onClick={() => videoId ? onComment(videoId, videoOwnerId) : toast.error("ID missing")} 
+        className="flex flex-col items-center group outline-none"
+      >
         <div className="p-3 active:scale-90 transition-transform text-white">
           <MessageCircle className="w-9 h-9" strokeWidth={2.5} />
         </div>
-        <span className="text-white text-xs font-black">Reply</span>
+        <span className="text-white text-xs font-black italic">Reply</span>
       </button>
 
       {/* Share Button */}
       <button 
-        onClick={() => {
-          if (onShare) onShare();
-          else {
-            navigator.clipboard.writeText(window.location.href);
-            toast.success("Link Copied!");
-          }
-        }} 
+        onClick={() => onShare ? onShare() : toast.error("Share function missing")} 
         className="flex flex-col items-center group outline-none"
       >
         <div className="p-3 active:scale-90 transition-transform text-white">
           <Share2 className="w-9 h-9" strokeWidth={2.5} />
         </div>
-        <span className="text-white text-xs font-black">Share</span>
+        <span className="text-white text-xs font-black italic">Share</span>
       </button>
 
       <style>{`
