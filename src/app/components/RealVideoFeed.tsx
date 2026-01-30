@@ -5,7 +5,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Music2, Play as PlayIcon } from 'lucide-react';
 import { toast } from 'sonner'; 
 
-// Props interface ko update kiya taaki videoOwnerId handle ho sake
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
   const { user: currentUser } = useAuth();
   const [videos, setVideos] = useState<any[]>([]);
@@ -18,7 +17,15 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
   useEffect(() => {
     fetchVideos();
-    if (currentUser) fetchFollows();
+  }, []);
+
+  // Jab user login/logout ho tab follows fetch karein
+  useEffect(() => {
+    if (currentUser) {
+      fetchFollows();
+    } else {
+      setFollowedUsers(new Set());
+    }
   }, [currentUser]);
 
   const fetchVideos = async () => {
@@ -41,11 +48,15 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const fetchFollows = async () => {
     if (!currentUser) return;
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('follows')
         .select('following_id')
         .eq('follower_id', currentUser.id);
-      if (data) setFollowedUsers(new Set(data.map(f => f.following_id)));
+      
+      if (error) throw error;
+      if (data) {
+        setFollowedUsers(new Set(data.map(f => f.following_id)));
+      }
     } catch (err) {
       console.error("Error fetching follows:", err);
     }
@@ -79,11 +90,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
     try {
       if (isCurrentlyFollowing) {
-        await supabase.from('follows')
+        // Unfollow Logic
+        const { error } = await supabase.from('follows')
           .delete()
           .eq('follower_id', currentUser.id)
           .eq('following_id', targetUserId);
         
+        if (error) throw error;
+
         setFollowedUsers(prev => {
           const next = new Set(prev);
           next.delete(targetUserId);
@@ -92,11 +106,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         toast.success("Unfollowed");
       } else {
         // 1. Follow Insert
-        await supabase.from('follows').insert([
+        const { error } = await supabase.from('follows').insert([
           { follower_id: currentUser.id, following_id: targetUserId }
         ]);
 
-        // 2. FOLLOW NOTIFICATION (Naya Logic)
+        if (error) throw error;
+
+        // 2. FOLLOW NOTIFICATION (Ye auto jayegi)
         await supabase.from('notifications').insert([
           {
             type: 'follow',
@@ -110,6 +126,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         toast.success("Following!");
       }
     } catch (err) {
+      console.error(err);
       toast.error("Action fail ho gaya");
     }
   };
@@ -146,7 +163,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           {/* Video Player */}
           <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-black">
             <iframe
-              className="w-full h-full object-contain" 
+              className="w-full h-full object-contain pointer-events-none" 
               src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${index === activeIndex && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1`}
               title="Chiti Short"
               allow="autoplay; encrypted-media"
@@ -191,14 +208,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               videoId={video.id}
               initialLikes={video.likes_count || 0}
               videoOwnerId={video.user_id} 
-              // Ab yahan se video.user_id ko bhi bhej rahe hain function mein
               onComment={() => onComment(video.id, video.user_id)}
               onShare={() => handleVideoShare(video)}
             />
           </div>
         </div>
       ))}
-      <style>{`.no-scrollbar::-webkit-scrollbar { display: none; } iframe { pointer-events: none; }`}</style>
+      <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
 }
