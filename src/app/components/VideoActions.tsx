@@ -11,7 +11,6 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
   const [isUpdating, setIsUpdating] = useState(false);
   const [hearts, setHearts] = useState<any[]>([]);
 
-  // Page load par check karega ki aapne like kiya hai ya nahi
   useEffect(() => {
     if (user && videoId) {
       checkIfLiked();
@@ -21,12 +20,12 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
 
   const checkIfLiked = async () => {
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from('likes')
         .select('*')
         .eq('post_id', videoId)
         .eq('user_id', user?.id)
-        .maybeSingle(); // error se bachne ke liye maybeSingle use kiya
+        .maybeSingle();
       
       if (data) setIsLiked(true);
       else setIsLiked(false);
@@ -60,33 +59,35 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
     }
 
     try {
-      // 1. Database mein Like ka permanent record (SABSE ZARURI)
       if (newIsLiked) {
+        // 1. Likes table mein permanent record
         await supabase.from('likes').insert([{ user_id: user.id, post_id: videoId }]);
         
-        // 2. Notification bhejna
+        // 2. PROBLEM 3 FIX: Notification with SENDER NAME
         if (videoOwnerId && user.id !== videoOwnerId) {
           await supabase.from('notifications').insert([
             {
               type: 'like',
               sender_id: user.id,
+              sender_name: user.user_metadata.username || user.email?.split('@')[0] || "Someone",
               receiver_id: videoOwnerId,
               post_id: videoId,
-              content: 'liked your video'
+              content: 'liked your video',
+              is_read: false // Problem 4 ke liye taiyari
             }
           ]);
         }
       } else {
-        // Like hatao database se
+        // Unlike: entry delete karo
         await supabase.from('likes').delete().eq('post_id', videoId).eq('user_id', user.id);
       }
 
-      // 3. Posts Table mein count update karo
+      // 3. Posts Table ka count sync karo
       await supabase.from('posts').update({ likes_count: newCount }).eq('id', videoId);
 
     } catch (err) {
       console.error("Like error:", err);
-      // Galti hone par UI purana wala kar do
+      // Galti par purana state wapas
       setIsLiked(!newIsLiked);
       setLikeCount(likeCount);
     } finally {
@@ -109,7 +110,7 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
         <span className="text-white text-xs font-black">{likeCount}</span>
       </button>
 
-      {/* Comment Button (Same as before) */}
+      {/* Reply/Comment Button (Unchanged) */}
       <button 
         onClick={() => videoId ? onComment(videoId, videoOwnerId) : toast.error("ID missing")} 
         className="flex flex-col items-center group outline-none"
@@ -120,7 +121,7 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
         <span className="text-white text-xs font-black italic">Reply</span>
       </button>
 
-      {/* Share Button (Same as before) */}
+      {/* Share Button (Unchanged) */}
       <button 
         onClick={() => onShare ? onShare() : toast.error("Share function missing")} 
         className="flex flex-col items-center group outline-none"
