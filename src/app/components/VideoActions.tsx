@@ -11,7 +11,7 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
   const [isUpdating, setIsUpdating] = useState(false);
   const [hearts, setHearts] = useState<any[]>([]);
 
-  // Database se check karna ki user ne pehle like kiya hai ya nahi
+  // Page load par check karega ki aapne like kiya hai ya nahi
   useEffect(() => {
     if (user && videoId) {
       checkIfLiked();
@@ -20,14 +20,19 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
   }, [videoId, initialLikes, user]);
 
   const checkIfLiked = async () => {
-    const { data, error } = await supabase
-      .from('likes') // Make sure aapke paas 'likes' table ho (optional but better)
-      .select('*')
-      .eq('post_id', videoId)
-      .eq('user_id', user?.id)
-      .single();
-    
-    if (data) setIsLiked(true);
+    try {
+      const { data, error } = await supabase
+        .from('likes')
+        .select('*')
+        .eq('post_id', videoId)
+        .eq('user_id', user?.id)
+        .maybeSingle(); // error se bachne ke liye maybeSingle use kiya
+      
+      if (data) setIsLiked(true);
+      else setIsLiked(false);
+    } catch (err) {
+      console.error("Check like error:", err);
+    }
   };
 
   const handleLike = async () => {
@@ -39,9 +44,9 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
     setIsUpdating(true);
 
     const newIsLiked = !isLiked;
-    const newCount = isLiked ? Math.max(0, likeCount - 1) : likeCount + 1;
+    const newCount = newIsLiked ? likeCount + 1 : Math.max(0, likeCount - 1);
     
-    // UI Update (Fast feel ke liye)
+    // UI fast update
     setIsLiked(newIsLiked);
     setLikeCount(newCount);
 
@@ -55,10 +60,10 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
     }
 
     try {
-      // 1. Post Table ka count update karein
-      await supabase.from('posts').update({ likes_count: newCount }).eq('id', videoId);
-
+      // 1. Database mein Like ka permanent record (SABSE ZARURI)
       if (newIsLiked) {
+        await supabase.from('likes').insert([{ user_id: user.id, post_id: videoId }]);
+        
         // 2. Notification bhejna
         if (videoOwnerId && user.id !== videoOwnerId) {
           await supabase.from('notifications').insert([
@@ -67,14 +72,21 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
               sender_id: user.id,
               receiver_id: videoOwnerId,
               post_id: videoId,
-              content: 'liked your video' // Ye Inbox mein dikhega
+              content: 'liked your video'
             }
           ]);
         }
+      } else {
+        // Like hatao database se
+        await supabase.from('likes').delete().eq('post_id', videoId).eq('user_id', user.id);
       }
+
+      // 3. Posts Table mein count update karo
+      await supabase.from('posts').update({ likes_count: newCount }).eq('id', videoId);
+
     } catch (err) {
       console.error("Like error:", err);
-      // Rollback UI if error
+      // Galti hone par UI purana wala kar do
       setIsLiked(!newIsLiked);
       setLikeCount(likeCount);
     } finally {
@@ -97,7 +109,7 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
         <span className="text-white text-xs font-black">{likeCount}</span>
       </button>
 
-      {/* Comment Button */}
+      {/* Comment Button (Same as before) */}
       <button 
         onClick={() => videoId ? onComment(videoId, videoOwnerId) : toast.error("ID missing")} 
         className="flex flex-col items-center group outline-none"
@@ -108,7 +120,7 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
         <span className="text-white text-xs font-black italic">Reply</span>
       </button>
 
-      {/* Share Button */}
+      {/* Share Button (Same as before) */}
       <button 
         onClick={() => onShare ? onShare() : toast.error("Share function missing")} 
         className="flex flex-col items-center group outline-none"
