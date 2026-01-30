@@ -11,14 +11,14 @@ export function InboxPage() {
   useEffect(() => {
     if (user) {
       fetchNotifications();
-      markNotificationsAsRead(); // Inbox kholte hi red dot hatane ke liye
+      markNotificationsAsRead(); 
     }
   }, [user]);
 
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      // FIX: Hum 'sender_id' ke zariye profiles table se naam aur avatar la rahe hain
+      // BADLAV: post_id se posts table ka youtube_video_id bhi fetch kar rahe hain
       const { data, error } = await supabase
         .from('notifications')
         .select(`
@@ -26,6 +26,9 @@ export function InboxPage() {
           sender:sender_id (
             username,
             avatar_url
+          ),
+          post:post_id (
+            youtube_video_id
           )
         `) 
         .eq('receiver_id', user?.id)
@@ -43,7 +46,6 @@ export function InboxPage() {
   const markNotificationsAsRead = async () => {
     if (!user) return;
     try {
-      // Saare unread notifications ko true kar do
       await supabase
         .from('notifications')
         .update({ is_read: true })
@@ -57,8 +59,8 @@ export function InboxPage() {
   if (loading) return <div className="flex justify-center p-10 text-white"><Loader2 className="animate-spin" /></div>;
 
   return (
-    <div className="min-h-screen bg-black text-white p-4">
-      <h1 className="text-xl font-bold mb-6 italic">INBOX</h1>
+    <div className="min-h-screen bg-black text-white p-4 pb-24">
+      <h1 className="text-xl font-bold mb-6 italic tracking-widest">INBOX</h1>
       
       {notifications.length === 0 ? (
         <div className="text-center text-gray-500 mt-20">
@@ -68,11 +70,12 @@ export function InboxPage() {
       ) : (
         <div className="space-y-4">
           {notifications.map((n) => (
-            <div key={n.id} className="flex items-center gap-3 bg-gray-900 p-4 rounded-xl border border-white/5">
+            <div key={n.id} className="flex items-center gap-3 bg-gray-900/60 p-4 rounded-xl border border-white/5">
               {/* Sender Avatar */}
               <img 
                 src={n.sender?.avatar_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
-                className="w-10 h-10 rounded-full border border-gray-700"
+                className="w-10 h-10 rounded-full border border-gray-700 object-cover"
+                alt="user"
               />
               
               <div className="flex-1">
@@ -85,8 +88,19 @@ export function InboxPage() {
                 </p>
               </div>
 
-              {/* Red Dot if unread (Optional display) */}
-              {!n.is_read && <div className="w-2 h-2 bg-blue-500 rounded-full"></div>}
+              {/* FIX: Video Thumbnail display on the right */}
+              {n.post?.youtube_video_id && (
+                <div className="w-10 h-14 rounded overflow-hidden border border-white/10 bg-gray-800 flex-shrink-0">
+                  <img 
+                    src={`https://img.youtube.com/vi/${n.post.youtube_video_id}/mqdefault.jpg`}
+                    className="w-full h-full object-cover"
+                    alt="video preview"
+                  />
+                </div>
+              )}
+
+              {/* Red Dot if unread */}
+              {!n.is_read && <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>}
             </div>
           ))}
         </div>
