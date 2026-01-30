@@ -21,7 +21,6 @@ export function ProfilePage() {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Sabse zaruri fix: Jab refresh hota hai, tab currentUser load hone mein time leta hai
   useEffect(() => {
     const handleInitialLoad = async () => {
       await loadProfileAndPosts();
@@ -35,9 +34,10 @@ export function ProfilePage() {
       let targetProfile = null;
       
       if (username) {
+        // BADLAV: total_likes ko explicit select kiya hai
         const { data, error } = await supabase
           .from('profiles')
-          .select('*')
+          .select('*, total_likes, followers_count')
           .eq('username', username)
           .maybeSingle();
         targetProfile = data;
@@ -46,7 +46,7 @@ export function ProfilePage() {
       if (!targetProfile && currentUser) {
         const { data, error } = await supabase
           .from('profiles')
-          .select('*')
+          .select('*, total_likes, followers_count')
           .eq('id', currentUser.id)
           .maybeSingle();
         targetProfile = data;
@@ -56,7 +56,6 @@ export function ProfilePage() {
         setProfile(targetProfile);
         setNewName(targetProfile.full_name || '');
         
-        // Videos load karein - Views aur Likes count ke saath
         const { data: posts } = await supabase
           .from('posts')
           .select('*, views_count, likes_count')
@@ -75,10 +74,8 @@ export function ProfilePage() {
     }
   };
 
-  // --- DELETE VIDEO LOGIC ---
   const handleDeletePost = async (e: React.MouseEvent, postId: string) => {
-    e.stopPropagation(); // Isse navigation trigger nahi hoga
-    
+    e.stopPropagation(); 
     const confirmDelete = window.confirm("Bhai, kya aap sach mein ye video delete karna chahte hain?");
     if (!confirmDelete) return;
 
@@ -90,7 +87,6 @@ export function ProfilePage() {
         .eq('user_id', currentUser?.id);
 
       if (error) throw error;
-
       setUserPosts(prev => prev.filter(post => post.id !== postId));
       toast.success("Video delete ho gayi!");
     } catch (error: any) {
@@ -107,7 +103,6 @@ export function ProfilePage() {
         .eq('id', currentUser.id);
 
       if (error) throw error;
-      
       setProfile((prev: any) => ({ ...prev, full_name: newName }));
       setIsEditing(false);
       toast.success("Naam save ho gaya!");
@@ -119,29 +114,22 @@ export function ProfilePage() {
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !currentUser) return;
-
     setIsUploading(true);
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${currentUser.id}/${Date.now()}.${fileExt}`;
-      
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(fileName, file, { upsert: true });
-
       if (uploadError) throw uploadError;
-
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
         .getPublicUrl(fileName);
-
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: publicUrl })
         .eq('id', currentUser.id);
-
       if (updateError) throw updateError;
-      
       setProfile((prev: any) => ({ ...prev, avatar_url: publicUrl }));
       toast.success("Photo lag gayi!");
     } catch (error: any) {
@@ -167,11 +155,7 @@ export function ProfilePage() {
           <User size={40} className="text-gray-600" />
         </div>
         <h1 className="text-2xl font-black mb-2 uppercase">Profile Nahi Mili</h1>
-        <p className="text-gray-400 mb-6 text-sm">Shayad aapne login nahi kiya hai ya ye user exist nahi karta.</p>
-        <button 
-          onClick={() => navigate('/')} 
-          className="bg-blue-600 w-full max-w-xs py-3 rounded-xl font-black uppercase tracking-wider"
-        >
+        <button onClick={() => navigate('/')} className="bg-blue-600 w-full max-w-xs py-3 rounded-xl font-black uppercase tracking-wider">
           Wapas Home Jayein
         </button>
       </div>
@@ -196,39 +180,37 @@ export function ProfilePage() {
       </div>
 
       {/* Profile Info */}
-      <div className="p-6 flex items-center gap-8">
-        <div className="relative">
-          <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-blue-600 bg-gray-900 shadow-[0_0_15px_rgba(37,99,235,0.3)]">
+      <div className="p-6 flex items-center gap-6">
+        <div className="relative shrink-0">
+          <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-blue-600 bg-gray-900">
             {profile?.avatar_url ? (
               <img src={profile.avatar_url} className="w-full h-full object-cover" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center"><User size={40} className="text-gray-700" /></div>
+              <div className="w-full h-full flex items-center justify-center"><User size={30} className="text-gray-700" /></div>
             )}
           </div>
-          {isUploading && (
-            <div className="absolute inset-0 bg-black/60 rounded-full flex items-center justify-center">
-              <Loader2 className="animate-spin text-white" size={20} />
-            </div>
-          )}
           {profile?.id === currentUser?.id && (
-            <button 
-              onClick={() => fileInputRef.current?.click()} 
-              className="absolute -bottom-1 -right-1 bg-blue-600 p-2 rounded-full border-2 border-black"
-            >
-              <Camera size={14} />
+            <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-1 -right-1 bg-blue-600 p-1.5 rounded-full border-2 border-black">
+              <Camera size={12} />
             </button>
           )}
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handlePhotoUpload} />
         </div>
         
-        <div className="flex-1 flex justify-around text-center">
-          <div>
-            <p className="text-xl font-black">{userPosts.length}</p>
-            <p className="text-[10px] text-gray-500 font-bold uppercase">Videos</p>
+        {/* STATS SECTION: Ab yahan 3 items dikhenge */}
+        <div className="flex-1 flex justify-between px-2">
+          <div className="flex flex-col items-center">
+            <p className="text-lg font-black">{userPosts.length}</p>
+            <p className="text-[9px] text-gray-500 font-bold uppercase">Videos</p>
           </div>
-          <div>
-            <p className="text-xl font-black">{profile?.followers_count || 0}</p>
-            <p className="text-[10px] text-gray-500 font-bold uppercase">Followers</p>
+          <div className="flex flex-col items-center">
+            <p className="text-lg font-black">{profile?.followers_count || 0}</p>
+            <p className="text-[9px] text-gray-500 font-bold uppercase">Followers</p>
+          </div>
+          {/* NAYA: LIKES COUNT DISPLAY */}
+          <div className="flex flex-col items-center">
+            <p className="text-lg font-black text-pink-500">{profile?.total_likes || 0}</p>
+            <p className="text-[9px] text-gray-500 font-bold uppercase">Likes</p>
           </div>
         </div>
       </div>
@@ -253,69 +235,48 @@ export function ProfilePage() {
             <h2 className="text-xl font-black uppercase italic tracking-tight">
               {profile?.full_name || 'Naya User'}
             </h2>
-            <p className="text-xs text-blue-500 font-bold mt-1">CHITI SHORTS CREATOR ⚡</p>
-            <p className="text-sm text-gray-400 mt-2 leading-relaxed">
-              {profile?.bio || "Video banayein aur viral ho jayein! 🔥"}
-            </p>
+            <p className="text-xs text-blue-500 font-bold mt-1 uppercase tracking-widest">Creator ⚡</p>
           </>
         )}
       </div>
 
       {/* Videos Grid */}
-      <div className="flex justify-center border-t border-white/10 py-3 bg-white/5">
-        <Grid size={24} className="text-blue-500" />
+      <div className="flex justify-center border-t border-white/10 py-3">
+        <Grid size={20} className="text-gray-500" />
       </div>
       
       {userPosts.length > 0 ? (
         <div className="grid grid-cols-3 gap-0.5 px-0.5">
           {userPosts.map(post => (
-            <div 
-              key={post.id} 
-              className="relative aspect-[9/16] bg-gray-900 overflow-hidden group"
-            >
-              {/* Video Thumbnail - Click to open in feed */}
+            <div key={post.id} className="relative aspect-[9/16] bg-gray-900 overflow-hidden group">
               <img 
                 onClick={() => navigate(`/?video=${post.id}`)} 
                 src={post.thumbnail_url || `https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} 
-                className="w-full h-full object-cover transition-transform group-hover:scale-105 cursor-pointer" 
+                className="w-full h-full object-cover cursor-pointer" 
               />
-
-              {/* DELETE BUTTON - Trash Icon */}
               {profile?.id === currentUser?.id && (
                 <button 
                   onClick={(e) => handleDeletePost(e, post.id)}
-                  className="absolute top-2 right-2 p-1.5 bg-red-600/90 rounded-full shadow-lg z-10 active:scale-90 transition-transform"
+                  className="absolute top-1 right-1 p-1.5 bg-red-600 rounded-full z-10"
                 >
-                  <Trash2 size={14} className="text-white" />
+                  <Trash2 size={12} className="text-white" />
                 </button>
               )}
-
-              {/* VIEWS & LIKES COUNT OVERLAY */}
-              <div className="absolute bottom-0 left-0 right-0 p-1.5 flex justify-between items-center bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
-                {/* Left side: Views */}
+              <div className="absolute bottom-0 left-0 right-0 p-1.5 flex justify-between items-center bg-gradient-to-t from-black/80 to-transparent">
                 <div className="flex items-center gap-1">
-                  <Play size={10} fill="white" className="text-white" />
-                  <span className="text-[10px] font-bold text-white drop-shadow-md">
-                    {post.views_count || 0}
-                  </span>
+                  <Play size={8} fill="white" className="text-white" />
+                  <span className="text-[9px] font-bold text-white">{post.views_count || 0}</span>
                 </div>
-                
-                {/* Right side: Likes */}
                 <div className="flex items-center gap-1">
-                  <Heart size={10} fill="white" className="text-white" />
-                  <span className="text-[10px] font-bold text-white drop-shadow-md">
-                    {post.likes_count || 0}
-                  </span>
+                  <Heart size={8} fill="white" className="text-white" />
+                  <span className="text-[9px] font-bold text-white">{post.likes_count || 0}</span>
                 </div>
               </div>
             </div>
           ))}
         </div>
       ) : (
-        <div className="py-20 text-center">
-          <Play size={40} className="mx-auto text-gray-800 mb-4" />
-          <p className="text-gray-500 font-bold uppercase text-xs">Abhi tak koi video nahi hai</p>
-        </div>
+        <div className="py-20 text-center text-gray-600 text-xs font-bold uppercase">Koi video nahi hai</div>
       )}
     </div>
   );
