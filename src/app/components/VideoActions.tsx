@@ -63,7 +63,7 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
         // 1. Likes table mein permanent record
         await supabase.from('likes').insert([{ user_id: user.id, post_id: videoId }]);
         
-        // 2. PROBLEM 3 FIX: Notification with SENDER NAME
+        // 2. Notification with SENDER NAME
         if (videoOwnerId && user.id !== videoOwnerId) {
           await supabase.from('notifications').insert([
             {
@@ -73,21 +73,24 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
               receiver_id: videoOwnerId,
               post_id: videoId,
               content: 'liked your video',
-              is_read: false // Problem 4 ke liye taiyari
+              is_read: false
             }
           ]);
         }
+        
+        // 3. Naya Badlav: RPC function ko call karke ginti badhao
+        await supabase.rpc('increment_likes', { post_id: videoId });
+
       } else {
         // Unlike: entry delete karo
         await supabase.from('likes').delete().eq('post_id', videoId).eq('user_id', user.id);
+        
+        // Unlike hone par count -1 karne ke liye (Optionally ek decrement function bhi bana sakte hain)
+        await supabase.from('posts').update({ likes_count: newCount }).eq('id', videoId);
       }
-
-      // 3. Posts Table ka count sync karo
-      await supabase.from('posts').update({ likes_count: newCount }).eq('id', videoId);
 
     } catch (err) {
       console.error("Like error:", err);
-      // Galti par purana state wapas
       setIsLiked(!newIsLiked);
       setLikeCount(likeCount);
     } finally {
@@ -110,7 +113,7 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
         <span className="text-white text-xs font-black">{likeCount}</span>
       </button>
 
-      {/* Reply/Comment Button (Unchanged) */}
+      {/* Reply/Comment Button */}
       <button 
         onClick={() => videoId ? onComment(videoId, videoOwnerId) : toast.error("ID missing")} 
         className="flex flex-col items-center group outline-none"
@@ -121,7 +124,7 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
         <span className="text-white text-xs font-black italic">Reply</span>
       </button>
 
-      {/* Share Button (Unchanged) */}
+      {/* Share Button */}
       <button 
         onClick={() => onShare ? onShare() : toast.error("Share function missing")} 
         className="flex flex-col items-center group outline-none"
