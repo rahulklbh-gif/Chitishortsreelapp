@@ -19,6 +19,8 @@ export function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false); // Follow state
+  const [isFollowLoading, setIsFollowLoading] = useState(false); // Follow loading
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -34,8 +36,7 @@ export function ProfilePage() {
       let targetProfile = null;
       
       if (username) {
-        // BADLAV: total_likes ko explicit select kiya hai
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('profiles')
           .select('*, total_likes, followers_count')
           .eq('username', username)
@@ -44,7 +45,7 @@ export function ProfilePage() {
       } 
       
       if (!targetProfile && currentUser) {
-        const { data, error } = await supabase
+        const { data } = await supabase
           .from('profiles')
           .select('*, total_likes, followers_count')
           .eq('id', currentUser.id)
@@ -56,6 +57,17 @@ export function ProfilePage() {
         setProfile(targetProfile);
         setNewName(targetProfile.full_name || '');
         
+        // Follow status check
+        if (currentUser && currentUser.id !== targetProfile.id) {
+          const { data: followData } = await supabase
+            .from('follows')
+            .select('*')
+            .eq('follower_id', currentUser.id)
+            .eq('following_id', targetProfile.id)
+            .maybeSingle();
+          setIsFollowing(!!followData);
+        }
+
         const { data: posts } = await supabase
           .from('posts')
           .select('*, views_count, likes_count')
@@ -71,6 +83,46 @@ export function ProfilePage() {
       toast.error("Profile load karne mein dikkat hui");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // NAYA: Follow handle karne ka function
+  const handleFollow = async () => {
+    if (!currentUser || !profile) return toast.error("Login zaroori hai");
+    if (isFollowLoading) return;
+    setIsFollowLoading(true);
+
+    try {
+      if (isFollowing) {
+        // Unfollow
+        await supabase.from('follows').delete()
+          .eq('follower_id', currentUser.id)
+          .eq('following_id', profile.id);
+        
+        setIsFollowing(false);
+        setProfile((prev: any) => ({ ...prev, followers_count: Math.max(0, (prev.followers_count || 0) - 1) }));
+      } else {
+        // Follow
+        await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: profile.id }]);
+        
+        // Database RPC call for +1
+        await supabase.rpc('increment_followers', { user_id: profile.id });
+        
+        setIsFollowing(true);
+        setProfile((prev: any) => ({ ...prev, followers_count: (prev.followers_count || 0) + 1 }));
+        
+        // Notification
+        await supabase.from('notifications').insert([{
+          type: 'follow',
+          sender_id: currentUser.id,
+          receiver_id: profile.id,
+          content: 'started following you'
+        }]);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsFollowLoading(false);
     }
   };
 
@@ -197,7 +249,6 @@ export function ProfilePage() {
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handlePhotoUpload} />
         </div>
         
-        {/* STATS SECTION: Ab yahan 3 items dikhenge */}
         <div className="flex-1 flex justify-between px-2">
           <div className="flex flex-col items-center">
             <p className="text-lg font-black">{userPosts.length}</p>
@@ -207,12 +258,26 @@ export function ProfilePage() {
             <p className="text-lg font-black">{profile?.followers_count || 0}</p>
             <p className="text-[9px] text-gray-500 font-bold uppercase">Followers</p>
           </div>
-          {/* NAYA: LIKES COUNT DISPLAY */}
           <div className="flex flex-col items-center">
             <p className="text-lg font-black text-pink-500">{profile?.total_likes || 0}</p>
             <p className="text-[9px] text-gray-500 font-bold uppercase">Likes</p>
           </div>
         </div>
+      </div>
+
+      {/* Action Button: Follow or Edit */}
+      <div className="px-6 mb-4">
+        {profile?.id !== currentUser?.id ? (
+          <button 
+            onClick={handleFollow}
+            disabled={isFollowLoading}
+            className={`w-full py-2 rounded-lg font-black uppercase tracking-widest text-xs transition-all ${
+              isFollowing ? 'bg-white/10 text-white' : 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+            }`}
+          >
+            {isFollowLoading ? 'Wait...' : isFollowing ? 'Unfollow' : 'Follow'}
+          </button>
+        ) : null}
       </div>
 
       {/* Name & Bio */}
