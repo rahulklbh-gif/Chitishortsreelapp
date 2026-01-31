@@ -1,8 +1,9 @@
 import { useRef, useEffect, useState } from 'react';
 import { VideoActions } from './VideoActions';
 import { Volume2, VolumeX } from 'lucide-react';
-import { supabase } from '@/lib/supabase'; // Naya Import
-import { useAuth } from '@/contexts/AuthContext'; // User check ke liye
+import { supabase } from '@/lib/supabase'; 
+import { useAuth } from '@/contexts/AuthContext'; 
+import { toast } from 'sonner';
 
 export interface Video {
   id: string;
@@ -16,7 +17,7 @@ export interface Video {
   comments: number;
   shares: number;
   hashtags: string[];
-  user_id?: string; // Database ID ke liye
+  user_id?: string; 
 }
 
 interface VideoPlayerProps {
@@ -27,13 +28,12 @@ interface VideoPlayerProps {
 
 export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { user: currentUser } = useAuth(); // Current user lo
+  const { user: currentUser } = useAuth(); 
   const [isMuted, setIsMuted] = useState(true);
 
-  // 1. Views Badhane ka logic
+  // 1. Views Badhane ka logic (Bilkul Safe)
   useEffect(() => {
     if (isActive && video.id) {
-      // Jab video play ho, RPC function call karo
       supabase.rpc('increment_views', { post_id: video.id });
     }
   }, [isActive, video.id]);
@@ -49,6 +49,46 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
     }
   }, [isActive]);
 
+  // 2. Follow Handle karne ka asli logic (Database Connection)
+  const handleFollow = async () => {
+    if (!currentUser) {
+      toast.error("Pehle login karein!");
+      return;
+    }
+    if (!video.user_id || currentUser.id === video.user_id) return;
+
+    try {
+      const { error } = await supabase.from('follows').insert([
+        { follower_id: currentUser.id, following_id: video.user_id }
+      ]);
+
+      if (error) {
+        if (error.code === '23505') { // Pehle se follow hai
+          toast.info("Aap pehle hi follow kar rahe hain");
+        } else {
+          throw error;
+        }
+      } else {
+        // Database mein count +1 karo
+        await supabase.rpc('increment_followers', { user_id: video.user_id });
+        
+        // Notification bhejo
+        await supabase.from('notifications').insert([{
+          type: 'follow',
+          sender_id: currentUser.id,
+          sender_name: currentUser.user_metadata.username || currentUser.email?.split('@')[0] || "Someone",
+          receiver_id: video.user_id,
+          content: 'started following you'
+        }]);
+        
+        toast.success(`@${video.username} ko follow kar liya!`);
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("Follow nahi ho paya");
+    }
+  };
+
   const toggleMute = () => {
     setIsMuted(!isMuted);
   };
@@ -60,6 +100,9 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
         text: video.caption,
         url: window.location.href,
       });
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      toast.success("Link copy ho gaya!");
     }
   };
 
@@ -98,13 +141,13 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
         </div>
       </div>
 
-      {/* 2. VideoActions ko Database se connect kiya */}
       <VideoActions
         videoId={video.id}
         initialLikes={video.likes}
-        videoOwnerId={video.user_id} // owner id pass karein
+        videoOwnerId={video.user_id} 
         onComment={onComment}
         onShare={handleShare}
+        onFollow={handleFollow} // Naya follow logic pass kiya
       />
     </div>
   );
