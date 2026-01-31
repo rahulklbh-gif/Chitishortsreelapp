@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Volume2, VolumeX, Play } from 'lucide-react';
-import { videoCacheManager, supabase } from '@/lib/supabase'; // Supabase add kiya
+import { videoCacheManager, supabase } from '@/lib/supabase';
+import { toast } from 'sonner'; // Error dikhane ke liye
 
 interface OptimizedVideoPlayerProps {
   videoUrl: string;
@@ -30,38 +31,35 @@ export function OptimizedVideoPlayer({
   const [hasLoaded, setHasLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Viewport detection using Intersection Observer
   useEffect(() => {
     if (!containerRef.current) return;
-
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          // Video is 100% visible in viewport
           setIsInViewport(entry.isIntersecting && entry.intersectionRatio === 1);
         });
       },
-      {
-        threshold: 1.0, // Trigger when 100% visible
-        rootMargin: '0px'
-      }
+      { threshold: 1.0, rootMargin: '0px' }
     );
-
     observer.observe(containerRef.current);
-
     return () => observer.disconnect();
   }, []);
 
-  // --- NAYA BADLAV: Sirf ye 5 lines add ki hain Views ke liye ---
+  // --- MOBILE DEBUGGER FOR VIEWS ---
   useEffect(() => {
     if (isInViewport && isActive && videoId) {
-      // Database mein ginti badhane ka trigger
-      supabase.rpc('increment_views', { post_id: videoId });
+      const triggerView = async () => {
+        const { error } = await supabase.rpc('increment_views', { post_id: videoId });
+        if (error) {
+          // Agar error aaye toh mobile screen par dikhega
+          console.error("View Error:", error.message);
+          toast.error("View Count Error: " + error.message);
+        }
+      };
+      triggerView();
     }
   }, [isInViewport, isActive, videoId]);
-  // -----------------------------------------------------------
 
-  // Control video playback based on viewport visibility and active state
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -70,7 +68,6 @@ export function OptimizedVideoPlayer({
       video.play().then(() => {
         setIsPlaying(true);
       }).catch(error => {
-        console.log('Autoplay prevented:', error);
         setIsPlaying(false);
       });
     } else {
@@ -79,15 +76,12 @@ export function OptimizedVideoPlayer({
     }
   }, [isInViewport, isActive, hasLoaded]);
 
-  // Load video only when in viewport and active
   useEffect(() => {
     if (isInViewport && isActive && !hasLoaded) {
-      // Check cache first
       const cachedUrl = videoCacheManager.get(videoId);
       if (cachedUrl) {
         setHasLoaded(true);
       } else {
-        // Cache the URL
         videoCacheManager.set(videoId, videoUrl);
         setHasLoaded(true);
       }
@@ -106,7 +100,6 @@ export function OptimizedVideoPlayer({
     if (onVideoClick) {
       onVideoClick();
     } else {
-      // Toggle play/pause
       const video = videoRef.current;
       if (video) {
         if (isPlaying) {
@@ -121,22 +114,12 @@ export function OptimizedVideoPlayer({
   };
 
   const filterStyles: Record<string, string> = {
-    none: '',
-    grayscale: 'grayscale(100%)',
-    sepia: 'sepia(100%)',
-    blur: 'blur(2px)',
-    brightness: 'brightness(1.2)',
-    contrast: 'contrast(1.3)',
-    saturate: 'saturate(1.5)',
+    none: '', grayscale: 'grayscale(100%)', sepia: 'sepia(100%)',
+    blur: 'blur(2px)', brightness: 'brightness(1.2)', contrast: 'contrast(1.3)', saturate: 'saturate(1.5)',
   };
 
   return (
-    <div
-      ref={containerRef}
-      className="relative w-full h-full bg-black"
-      onClick={handleVideoClick}
-    >
-      {/* Video Element */}
+    <div ref={containerRef} className="relative w-full h-full bg-black" onClick={handleVideoClick}>
       <video
         ref={videoRef}
         className="absolute inset-0 w-full h-full object-cover"
@@ -145,20 +128,16 @@ export function OptimizedVideoPlayer({
         muted={isMuted}
         playsInline
         preload="none"
-        style={{
-          filter: filterStyles[filter] || ''
-        }}
+        style={{ filter: filterStyles[filter] || '' }}
         onLoadedData={() => setHasLoaded(true)}
       />
 
-      {/* Loading Placeholder */}
       {!hasLoaded && isInViewport && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
         </div>
       )}
 
-      {/* Play Icon Overlay (when paused) */}
       {!isPlaying && hasLoaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/20">
           <div className="bg-white/30 backdrop-blur-sm rounded-full p-4">
@@ -167,35 +146,18 @@ export function OptimizedVideoPlayer({
         </div>
       )}
 
-      {/* Video Info Overlay */}
       <div className="absolute bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
         <div className="text-white space-y-2">
           <p className="font-semibold">@{username || 'Unknown'}</p>
-          {caption && (
-            <p className="text-sm line-clamp-2">{caption}</p>
-          )}
-          {music && (
-            <p className="text-xs text-gray-300 flex items-center">
-              <span className="mr-2">♪</span>
-              {music}
-            </p>
-          )}
+          {caption && <p className="text-sm line-clamp-2">{caption}</p>}
+          {music && <p className="text-xs text-gray-300 flex items-center"><span className="mr-2">♪</span>{music}</p>}
         </div>
       </div>
 
-      {/* Mute/Unmute Button */}
-      <button
-        onClick={toggleMute}
-        className="absolute top-4 right-4 bg-black/50 backdrop-blur-sm p-3 rounded-full hover:bg-black/70 transition z-10"
-      >
-        {isMuted ? (
-          <VolumeX className="w-5 h-5 text-white" />
-        ) : (
-          <Volume2 className="w-5 h-5 text-white" />
-        )}
+      <button onClick={toggleMute} className="absolute top-4 right-4 bg-black/50 backdrop-blur-sm p-3 rounded-full hover:bg-black/70 transition z-10">
+        {isMuted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
       </button>
 
-      {/* Data Saver Indicator */}
       {!hasLoaded && !isInViewport && (
         <div className="absolute top-4 left-4 bg-green-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-xs text-white font-medium">
           📊 Data Saver Active
