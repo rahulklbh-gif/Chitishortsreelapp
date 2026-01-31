@@ -19,8 +19,8 @@ export function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState('');
   const [isUploading, setIsUploading] = useState(false);
-  const [isFollowing, setIsFollowing] = useState(false); // Follow state
-  const [isFollowLoading, setIsFollowLoading] = useState(false); // Follow loading
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [isFollowLoading, setIsFollowLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -35,6 +35,7 @@ export function ProfilePage() {
     try {
       let targetProfile = null;
       
+      // Username ke basis par profile uthana
       if (username) {
         const { data } = await supabase
           .from('profiles')
@@ -44,6 +45,7 @@ export function ProfilePage() {
         targetProfile = data;
       } 
       
+      // Agar username nahi hai to current user ki profile
       if (!targetProfile && currentUser) {
         const { data } = await supabase
           .from('profiles')
@@ -68,6 +70,7 @@ export function ProfilePage() {
           setIsFollowing(!!followData);
         }
 
+        // Posts load karna views aur likes ke saath
         const { data: posts } = await supabase
           .from('posts')
           .select('*, views_count, likes_count')
@@ -86,7 +89,6 @@ export function ProfilePage() {
     }
   };
 
-  // NAYA: Follow handle karne ka function
   const handleFollow = async () => {
     if (!currentUser || !profile) return toast.error("Login zaroori hai");
     if (isFollowLoading) return;
@@ -94,50 +96,49 @@ export function ProfilePage() {
 
     try {
       if (isFollowing) {
-        // Unfollow
+        // Unfollow logic
         await supabase.from('follows').delete()
           .eq('follower_id', currentUser.id)
           .eq('following_id', profile.id);
         
         setIsFollowing(false);
+        // UI par turant count kam karna
         setProfile((prev: any) => ({ ...prev, followers_count: Math.max(0, (prev.followers_count || 0) - 1) }));
       } else {
-        // Follow
+        // Follow logic
         await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: profile.id }]);
         
-        // Database RPC call for +1
+        // Database RPC call for +1 (Jo humne SQL mein banaya hai)
         await supabase.rpc('increment_followers', { user_id: profile.id });
         
         setIsFollowing(true);
+        // UI par turant count badhana
         setProfile((prev: any) => ({ ...prev, followers_count: (prev.followers_count || 0) + 1 }));
         
-        // Notification
+        // Notification bhejnas
         await supabase.from('notifications').insert([{
           type: 'follow',
           sender_id: currentUser.id,
+          sender_name: currentUser.user_metadata.username || currentUser.email?.split('@')[0] || "Someone",
           receiver_id: profile.id,
           content: 'started following you'
         }]);
       }
     } catch (err) {
       console.error(err);
+      toast.error("Process fail ho gaya");
     } finally {
       setIsFollowLoading(false);
     }
   };
 
+  // ... (handleDeletePost, handleUpdateProfile, handlePhotoUpload - Sab same hai)
   const handleDeletePost = async (e: React.MouseEvent, postId: string) => {
     e.stopPropagation(); 
     const confirmDelete = window.confirm("Bhai, kya aap sach mein ye video delete karna chahte hain?");
     if (!confirmDelete) return;
-
     try {
-      const { error } = await supabase
-        .from('posts')
-        .delete()
-        .eq('id', postId)
-        .eq('user_id', currentUser?.id);
-
+      const { error } = await supabase.from('posts').delete().eq('id', postId).eq('user_id', currentUser?.id);
       if (error) throw error;
       setUserPosts(prev => prev.filter(post => post.id !== postId));
       toast.success("Video delete ho gayi!");
@@ -149,11 +150,7 @@ export function ProfilePage() {
   const handleUpdateProfile = async () => {
     if (!currentUser || !profile) return;
     try {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ full_name: newName })
-        .eq('id', currentUser.id);
-
+      const { error } = await supabase.from('profiles').update({ full_name: newName }).eq('id', currentUser.id);
       if (error) throw error;
       setProfile((prev: any) => ({ ...prev, full_name: newName }));
       setIsEditing(false);
@@ -170,17 +167,10 @@ export function ProfilePage() {
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${currentUser.id}/${Date.now()}.${fileExt}`;
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(fileName, file, { upsert: true });
+      const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, file, { upsert: true });
       if (uploadError) throw uploadError;
-      const { data: { publicUrl } } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(fileName);
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ avatar_url: publicUrl })
-        .eq('id', currentUser.id);
+      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+      const { error: updateError } = await supabase.from('profiles').update({ avatar_url: publicUrl }).eq('id', currentUser.id);
       if (updateError) throw updateError;
       setProfile((prev: any) => ({ ...prev, avatar_url: publicUrl }));
       toast.success("Photo lag gayi!");
@@ -191,28 +181,20 @@ export function ProfilePage() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="h-screen bg-black flex flex-col items-center justify-center">
-        <Loader2 className="animate-spin text-blue-500 mb-2" size={40} />
-        <p className="text-gray-500 text-sm">Chiti Shorts is loading...</p>
-      </div>
-    );
-  }
+  if (loading) return (
+    <div className="h-screen bg-black flex flex-col items-center justify-center">
+      <Loader2 className="animate-spin text-blue-500 mb-2" size={40} />
+      <p className="text-gray-500 text-sm">Chiti Shorts is loading...</p>
+    </div>
+  );
 
-  if (!profile) {
-    return (
-      <div className="h-screen bg-black text-white flex flex-col items-center justify-center p-6 text-center">
-        <div className="w-20 h-20 bg-gray-900 rounded-full flex items-center justify-center mb-4">
-          <User size={40} className="text-gray-600" />
-        </div>
-        <h1 className="text-2xl font-black mb-2 uppercase">Profile Nahi Mili</h1>
-        <button onClick={() => navigate('/')} className="bg-blue-600 w-full max-w-xs py-3 rounded-xl font-black uppercase tracking-wider">
-          Wapas Home Jayein
-        </button>
-      </div>
-    );
-  }
+  if (!profile) return (
+    <div className="h-screen bg-black text-white flex flex-col items-center justify-center p-6 text-center">
+      <div className="w-20 h-20 bg-gray-900 rounded-full flex items-center justify-center mb-4"><User size={40} className="text-gray-600" /></div>
+      <h1 className="text-2xl font-black mb-2 uppercase">Profile Nahi Mili</h1>
+      <button onClick={() => navigate('/')} className="bg-blue-600 w-full max-w-xs py-3 rounded-xl font-black uppercase tracking-wider">Wapas Home Jayein</button>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-black text-white pb-24">
@@ -220,9 +202,7 @@ export function ProfilePage() {
       <div className="p-4 pt-8 flex items-center justify-between border-b border-white/10 sticky top-0 bg-black z-20">
         <div className="flex items-center gap-4">
           <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer" />
-          <h1 className="text-lg font-black italic text-blue-400 uppercase tracking-tighter">
-            @{profile?.username || 'user'}
-          </h1>
+          <h1 className="text-lg font-black italic text-blue-400 uppercase tracking-tighter">@{profile?.username || 'user'}</h1>
         </div>
         {profile?.id === currentUser?.id && (
           <button onClick={() => setIsEditing(!isEditing)} className="p-2 bg-white/5 rounded-full">
@@ -231,20 +211,14 @@ export function ProfilePage() {
         )}
       </div>
 
-      {/* Profile Info */}
+      {/* Profile Info & Stats */}
       <div className="p-6 flex items-center gap-6">
         <div className="relative shrink-0">
           <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-blue-600 bg-gray-900">
-            {profile?.avatar_url ? (
-              <img src={profile.avatar_url} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center"><User size={30} className="text-gray-700" /></div>
-            )}
+            {profile?.avatar_url ? <img src={profile.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><User size={30} className="text-gray-700" /></div>}
           </div>
           {profile?.id === currentUser?.id && (
-            <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-1 -right-1 bg-blue-600 p-1.5 rounded-full border-2 border-black">
-              <Camera size={12} />
-            </button>
+            <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-1 -right-1 bg-blue-600 p-1.5 rounded-full border-2 border-black"><Camera size={12} /></button>
           )}
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handlePhotoUpload} />
         </div>
@@ -265,7 +239,7 @@ export function ProfilePage() {
         </div>
       </div>
 
-      {/* Action Button: Follow or Edit */}
+      {/* Follow/Edit Button */}
       <div className="px-6 mb-4">
         {profile?.id !== currentUser?.id ? (
           <button 
@@ -280,62 +254,36 @@ export function ProfilePage() {
         ) : null}
       </div>
 
-      {/* Name & Bio */}
+      {/* Name Section */}
       <div className="px-6 mb-6">
         {isEditing ? (
           <div className="flex gap-2 bg-gray-900 p-1 rounded-lg border border-white/10">
-            <input 
-              value={newName} 
-              onChange={e => setNewName(e.target.value)} 
-              className="bg-transparent p-2 rounded flex-1 outline-none text-sm"
-              placeholder="Apna naam likhein..."
-              autoFocus
-            />
-            <button onClick={handleUpdateProfile} className="bg-blue-600 px-4 rounded-md font-bold text-white">
-              <Check size={18} />
-            </button>
+            <input value={newName} onChange={e => setNewName(e.target.value)} className="bg-transparent p-2 rounded flex-1 outline-none text-sm" placeholder="Apna naam likhein..." autoFocus />
+            <button onClick={handleUpdateProfile} className="bg-blue-600 px-4 rounded-md font-bold text-white"><Check size={18} /></button>
           </div>
         ) : (
           <>
-            <h2 className="text-xl font-black uppercase italic tracking-tight">
-              {profile?.full_name || 'Naya User'}
-            </h2>
+            <h2 className="text-xl font-black uppercase italic tracking-tight">{profile?.full_name || 'Naya User'}</h2>
             <p className="text-xs text-blue-500 font-bold mt-1 uppercase tracking-widest">Creator ⚡</p>
           </>
         )}
       </div>
 
-      {/* Videos Grid */}
-      <div className="flex justify-center border-t border-white/10 py-3">
-        <Grid size={20} className="text-gray-500" />
-      </div>
+      {/* Grid Header */}
+      <div className="flex justify-center border-t border-white/10 py-3"><Grid size={20} className="text-gray-500" /></div>
       
+      {/* Videos Display */}
       {userPosts.length > 0 ? (
         <div className="grid grid-cols-3 gap-0.5 px-0.5">
           {userPosts.map(post => (
             <div key={post.id} className="relative aspect-[9/16] bg-gray-900 overflow-hidden group">
-              <img 
-                onClick={() => navigate(`/?video=${post.id}`)} 
-                src={post.thumbnail_url || `https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} 
-                className="w-full h-full object-cover cursor-pointer" 
-              />
+              <img onClick={() => navigate(`/?video=${post.id}`)} src={post.thumbnail_url || `https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} className="w-full h-full object-cover cursor-pointer" />
               {profile?.id === currentUser?.id && (
-                <button 
-                  onClick={(e) => handleDeletePost(e, post.id)}
-                  className="absolute top-1 right-1 p-1.5 bg-red-600 rounded-full z-10"
-                >
-                  <Trash2 size={12} className="text-white" />
-                </button>
+                <button onClick={(e) => handleDeletePost(e, post.id)} className="absolute top-1 right-1 p-1.5 bg-red-600 rounded-full z-10"><Trash2 size={12} className="text-white" /></button>
               )}
               <div className="absolute bottom-0 left-0 right-0 p-1.5 flex justify-between items-center bg-gradient-to-t from-black/80 to-transparent">
-                <div className="flex items-center gap-1">
-                  <Play size={8} fill="white" className="text-white" />
-                  <span className="text-[9px] font-bold text-white">{post.views_count || 0}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Heart size={8} fill="white" className="text-white" />
-                  <span className="text-[9px] font-bold text-white">{post.likes_count || 0}</span>
-                </div>
+                <div className="flex items-center gap-1"><Play size={8} fill="white" className="text-white" /><span className="text-[9px] font-bold text-white">{post.views_count || 0}</span></div>
+                <div className="flex items-center gap-1"><Heart size={8} fill="white" className="text-white" /><span className="text-[9px] font-bold text-white">{post.likes_count || 0}</span></div>
               </div>
             </div>
           ))}
