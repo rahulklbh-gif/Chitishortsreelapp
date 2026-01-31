@@ -27,7 +27,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     }
   }, [currentUser]);
 
-  // Views badhane ke liye jab active video change ho
+  // NAYA BADLAV: Views trigger karne ke liye (Safe Logic)
   useEffect(() => {
     if (videos.length > 0 && videos[activeIndex]) {
       supabase.rpc('increment_views', { post_id: videos[activeIndex].id });
@@ -116,10 +116,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
         if (error) throw error;
 
-        // --- GINTI BADHANE KA CODE (Follower Count) ---
+        // --- GINTI BADHANE KA CODE ---
         await supabase.rpc('increment_followers', { user_id: targetUserId });
 
-        // --- PROBLEM 3 FIX: SENDER NAME ADDED ---
         await supabase.from('notifications').insert([
           {
             type: 'follow',
