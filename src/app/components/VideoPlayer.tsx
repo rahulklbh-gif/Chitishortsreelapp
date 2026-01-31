@@ -1,6 +1,8 @@
 import { useRef, useEffect, useState } from 'react';
 import { VideoActions } from './VideoActions';
 import { Volume2, VolumeX } from 'lucide-react';
+import { supabase } from '@/lib/supabase'; // Naya Import
+import { useAuth } from '@/contexts/AuthContext'; // User check ke liye
 
 export interface Video {
   id: string;
@@ -14,6 +16,7 @@ export interface Video {
   comments: number;
   shares: number;
   hashtags: string[];
+  user_id?: string; // Database ID ke liye
 }
 
 interface VideoPlayerProps {
@@ -24,20 +27,21 @@ interface VideoPlayerProps {
 
 export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const { user: currentUser } = useAuth(); // Current user lo
   const [isMuted, setIsMuted] = useState(true);
-  const [isFollowing, setIsFollowing] = useState(false);
 
+  // 1. Views Badhane ka logic
   useEffect(() => {
-    const followedUsers = JSON.parse(localStorage.getItem('followedUsers') || '[]');
-    setIsFollowing(followedUsers.includes(video.username));
-  }, [video.username]);
+    if (isActive && video.id) {
+      // Jab video play ho, RPC function call karo
+      supabase.rpc('increment_views', { post_id: video.id });
+    }
+  }, [isActive, video.id]);
 
   useEffect(() => {
     if (videoRef.current) {
       if (isActive) {
-        videoRef.current.play().catch(() => {
-          // Autoplay failed, likely due to browser policy
-        });
+        videoRef.current.play().catch(() => {});
       } else {
         videoRef.current.pause();
         videoRef.current.currentTime = 0;
@@ -45,13 +49,8 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
     }
   }, [isActive]);
 
-  const handleFollow = () => {
-    const followedUsers = JSON.parse(localStorage.getItem('followedUsers') || '[]');
-    if (!isFollowing) {
-      followedUsers.push(video.username);
-      localStorage.setItem('followedUsers', JSON.stringify(followedUsers));
-      setIsFollowing(true);
-    }
+  const toggleMute = () => {
+    setIsMuted(!isMuted);
   };
 
   const handleShare = () => {
@@ -64,13 +63,8 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
     }
   };
 
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
-  };
-
   return (
     <div className="relative w-full h-full bg-black">
-      {/* Video */}
       <video
         ref={videoRef}
         src={video.url}
@@ -82,28 +76,20 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
         onClick={toggleMute}
       />
 
-      {/* Mute/Unmute Button */}
       <button
         onClick={toggleMute}
         className="absolute top-20 right-3 w-10 h-10 bg-black/50 rounded-full flex items-center justify-center z-10"
       >
-        {isMuted ? (
-          <VolumeX className="w-5 h-5 text-white" />
-        ) : (
-          <Volume2 className="w-5 h-5 text-white" />
-        )}
+        {isMuted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
       </button>
 
-      {/* Video Info - Bottom Left */}
       <div className="absolute bottom-20 left-3 right-20 z-10">
         <div className="space-y-2">
           <h3 className="text-white font-semibold text-lg">@{video.username}</h3>
           <p className="text-white text-sm line-clamp-2">{video.caption}</p>
           <div className="flex flex-wrap gap-2">
             {video.hashtags.map((tag) => (
-              <span key={tag} className="text-white text-sm font-semibold">
-                #{tag}
-              </span>
+              <span key={tag} className="text-white text-sm font-semibold">#{tag}</span>
             ))}
           </div>
           <div className="flex items-center gap-2 text-white text-sm">
@@ -112,19 +98,13 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
         </div>
       </div>
 
-      {/* Action Buttons - Right Side */}
+      {/* 2. VideoActions ko Database se connect kiya */}
       <VideoActions
         videoId={video.id}
-        likes={video.likes}
-        comments={video.comments}
-        username={video.username}
-        avatar={video.avatar}
-        musicTitle={video.musicTitle}
-        isFollowing={isFollowing}
-        onLike={() => {}}
+        initialLikes={video.likes}
+        videoOwnerId={video.user_id} // owner id pass karein
         onComment={onComment}
         onShare={handleShare}
-        onFollow={handleFollow}
       />
     </div>
   );
