@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Volume2, VolumeX, Play } from 'lucide-react';
-import { videoCacheManager } from '@/lib/supabase';
+import { videoCacheManager, supabase } from '@/lib/supabase'; // Supabase add kiya
 
 interface OptimizedVideoPlayerProps {
   videoUrl: string;
@@ -51,6 +51,15 @@ export function OptimizedVideoPlayer({
 
     return () => observer.disconnect();
   }, []);
+
+  // --- NAYA BADLAV: Sirf ye 5 lines add ki hain Views ke liye ---
+  useEffect(() => {
+    if (isInViewport && isActive && videoId) {
+      // Database mein ginti badhane ka trigger
+      supabase.rpc('increment_views', { post_id: videoId });
+    }
+  }, [isInViewport, isActive, videoId]);
+  // -----------------------------------------------------------
 
   // Control video playback based on viewport visibility and active state
   useEffect(() => {
@@ -135,7 +144,7 @@ export function OptimizedVideoPlayer({
         loop
         muted={isMuted}
         playsInline
-        preload="none" // EXTREME DATA SAVER: Don't preload anything
+        preload="none"
         style={{
           filter: filterStyles[filter] || ''
         }}
