@@ -23,28 +23,26 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- 🔥 COMPLETE UNIQUE VIEW LOGIC ---
+  // --- 🔥 UNIQUE VIEW LOGIC (FIXED) ---
   useEffect(() => {
     const triggerView = async () => {
-      // Logic: Jab video load ho aur user logged in ho tabhi count hoga
-      if (videos.length > 0 && videos[activeIndex] && currentUser) {
+      // Sirf tab chalega jab video aur user dono ho
+      if (videos.length > 0 && videos[activeIndex] && currentUser?.id) {
         const vidId = videos[activeIndex].id;
         const userId = currentUser.id;
 
-        console.log("Checking unique view for:", vidId);
+        console.log("Attempting to count unique view for:", vidId);
 
-        // RPC call jo humne SQL mein banaya hai
         const { error } = await supabase.rpc('increment_views', { 
           post_id: vidId, 
           viewer_id: userId 
         });
         
         if (error) {
-          // Agar pehle se dekh chuka hai toh database 'Unique Constraint' error dega
-          // Use hum skip kar denge taaki error message na dikhe
+          // Unique constraint violation error yahan console mein dikhega (Expected behaviour)
           console.log("View status:", error.message);
         } else {
-          console.log("New unique view counted!");
+          console.log("Success: Unique view added to database.");
         }
       }
     };
@@ -142,7 +140,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
           onClick={togglePlayPause} 
         >
-          {/* Iframe Logic (No Changes) */}
           <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-black">
             <iframe
               className="w-full h-full pointer-events-none transition-opacity duration-500"
@@ -195,4 +192,4 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
-}
+    }
