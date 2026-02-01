@@ -23,29 +23,33 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- VIEW COUNT LOGIC WITH ALERT FOR TESTING ---
+  // --- 🔥 CORRECTED UNIQUE VIEW LOGIC ---
   useEffect(() => {
     const triggerView = async () => {
-      if (videos.length > 0 && videos[activeIndex]) {
+      // Logic: Jab user login ho aur video load ho jaye
+      if (videos.length > 0 && videos[activeIndex] && currentUser) {
         const vidId = videos[activeIndex].id;
-        console.log("Triggering view for:", vidId);
+        const userId = currentUser.id;
 
-        const { error } = await supabase.rpc('increment_views', { post_id: vidId });
+        // Hum post_id aur viewer_id dono bhej rahe hain
+        const { error } = await supabase.rpc('increment_views', { 
+          post_id: vidId, 
+          viewer_id: userId 
+        });
         
         if (error) {
-          console.error("View Error:", error.message);
-          // Agar database mein function nahi hai toh ye error dikhayega
-          toast.error("Database Error: View count nahi badha");
+          // Agar database mein 'Unique Constraint' trigger hota hai, toh error console mein aayega
+          // Hum toast nahi dikhayenge taaki user experience kharab na ho
+          console.log("View logic note:", error.message);
         } else {
-          console.log("View successfully counted!");
-          // Testing ke liye toast (baad mein hata sakte hain)
-          toast.success("View Counted!"); 
+          console.log("Unique view successfully counted for:", vidId);
         }
       }
     };
 
     triggerView();
-  }, [activeIndex, videos.length]); // Videos load hote hi aur scroll karte hi chalega
+    // Dependency mein currentUser?.id zaroori hai
+  }, [activeIndex, videos.length, currentUser?.id]); 
 
   const fetchVideos = async () => {
     try {
@@ -91,7 +95,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     setTimeout(() => setShowPlayIcon(false), 500); 
   };
 
-  // ... (handleFollowToggle aur handleVideoShare same rahenge) ...
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
     e.stopPropagation();
     if (!currentUser) { toast.error("Pehle login karein!"); return; }
@@ -138,12 +141,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
           onClick={togglePlayPause} 
         >
-          {/* VIDEO WRAPPER FIX: Iframe size and Zoom fix */}
           <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-black">
             <iframe
               className="w-full h-full pointer-events-none transition-opacity duration-500"
               style={{ 
-                aspectRatio: '9/16', // TikTok/Shorts ratio
+                aspectRatio: '9/16',
                 height: '100vh',
                 width: 'auto',
                 minWidth: '100%' 
@@ -154,7 +156,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             ></iframe>
           </div>
 
-          {/* Overlays (Play Icon, User Info, Actions) same as before... */}
           {showPlayIcon && (
             <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
               <div className="bg-black/40 p-5 rounded-full animate-ping">
@@ -186,4 +187,4 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
-}
+    }
