@@ -31,33 +31,33 @@ export function OptimizedVideoPlayer({
   const [hasLoaded, setHasLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Viewport detection
+  // Viewport detection - Isse pata chalta hai video screen par hai ya nahi
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          setIsInViewport(entry.isIntersecting && entry.intersectionRatio === 1);
+          // threshold 0.6 rakha hai taaki video 60% dikhte hi trigger ho jaye (Mobile friendly)
+          setIsInViewport(entry.isIntersecting && entry.intersectionRatio >= 0.6);
         });
       },
-      { threshold: 1.0, rootMargin: '0px' }
+      { threshold: [0.6, 1.0], rootMargin: '0px' }
     );
     observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, []);
 
-  // --- VIEWS UPDATE LOGIC (VIEWS_COUNT KE LIYE) ---
+  // --- VIEWS UPDATE LOGIC ---
   useEffect(() => {
     if (isInViewport && isActive && videoId) {
       const triggerView = async () => {
-        // SQL Function 'increment_views' ko call kar rahe hain
         const { error } = await supabase.rpc('increment_views', { 
           post_id: videoId 
         });
         
         if (error) {
           console.error("View Error:", error.message);
-          // Mobile par test karne ke liye niche wala alert on kar sakte hain
+          // Agar database mein koi galti hogi toh ye alert dikhega
           // alert("View Database Error: " + error.message);
         } else {
           console.log("View count updated successfully");
@@ -75,7 +75,7 @@ export function OptimizedVideoPlayer({
     if (isInViewport && isActive && hasLoaded) {
       video.play().then(() => {
         setIsPlaying(true);
-      }).catch(error => {
+      }).catch(() => {
         setIsPlaying(false);
       });
     } else {
@@ -128,15 +128,16 @@ export function OptimizedVideoPlayer({
   };
 
   return (
-    <div ref={containerRef} className="relative w-full h-full bg-black" onClick={handleVideoClick}>
+    <div ref={containerRef} className="relative w-full h-full bg-black overflow-hidden" onClick={handleVideoClick}>
       <video
         ref={videoRef}
-        className="absolute inset-0 w-full h-full object-cover"
+        // FIXED: object-contain use kiya hai taaki zoom na ho aur video poori dikhe
+        className="absolute inset-0 w-full h-full object-contain bg-black"
         src={hasLoaded ? videoUrl : undefined}
         loop
         muted={isMuted}
         playsInline
-        preload="none"
+        preload="auto"
         style={{ filter: filterStyles[filter] || '' }}
         onLoadedData={() => setHasLoaded(true)}
       />
@@ -155,21 +156,30 @@ export function OptimizedVideoPlayer({
         </div>
       )}
 
-      <div className="absolute bottom-20 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
-        <div className="text-white space-y-2">
-          <p className="font-semibold">@{username || 'Unknown'}</p>
-          {caption && <p className="text-sm line-clamp-2">{caption}</p>}
-          {music && <p className="text-xs text-gray-300 flex items-center"><span className="mr-2">♪</span>{music}</p>}
+      {/* Overlay Details */}
+      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none z-10">
+        <div className="text-white space-y-2 mb-16">
+          <p className="font-bold text-lg">@{username || 'Unknown'}</p>
+          {caption && <p className="text-sm line-clamp-2 opacity-90">{caption}</p>}
+          {music && (
+            <div className="flex items-center text-xs text-gray-300">
+              <div className="animate-pulse mr-2">♪</div>
+              <span className="truncate w-40">{music}</span>
+            </div>
+          )}
         </div>
       </div>
 
-      <button onClick={toggleMute} className="absolute top-4 right-4 bg-black/50 backdrop-blur-sm p-3 rounded-full hover:bg-black/70 transition z-10">
-        {isMuted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
+      <button 
+        onClick={toggleMute} 
+        className="absolute top-6 right-6 bg-black/40 backdrop-blur-md p-3 rounded-full hover:bg-black/60 transition z-20"
+      >
+        {isMuted ? <VolumeX className="w-6 h-6 text-white" /> : <Volume2 className="w-6 h-6 text-white" />}
       </button>
 
       {!hasLoaded && !isInViewport && (
-        <div className="absolute top-4 left-4 bg-green-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-xs text-white font-medium">
-          📊 Data Saver Active
+        <div className="absolute top-6 left-6 bg-green-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] text-white font-bold tracking-wider z-20">
+          DATA SAVER
         </div>
       )}
     </div>
