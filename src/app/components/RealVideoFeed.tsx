@@ -23,29 +23,34 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- VIEW COUNT LOGIC WITH ALERT FOR TESTING ---
+  // --- 🔥 UNIQUE VIEW COUNT LOGIC ---
   useEffect(() => {
     const triggerView = async () => {
-      if (videos.length > 0 && videos[activeIndex]) {
+      // Logic: Sirf tab chalega jab video ho aur User logged in ho
+      if (videos.length > 0 && videos[activeIndex] && currentUser) {
         const vidId = videos[activeIndex].id;
-        console.log("Triggering view for:", vidId);
+        const userId = currentUser.id;
 
-        const { error } = await supabase.rpc('increment_views', { post_id: vidId });
+        console.log("Attempting unique view for video:", vidId);
+
+        // Naya RPC call jo viewer_id bhi leta hai
+        const { error } = await supabase.rpc('increment_views', { 
+          post_id: vidId,
+          viewer_id: userId 
+        });
         
         if (error) {
-          console.error("View Error:", error.message);
-          // Agar database mein function nahi hai toh ye error dikhayega
-          toast.error("Database Error: View count nahi badha");
+          // Agar error 'Unique Constraint' wala hai, matlab user pehle dekh chuka hai
+          console.log("View update skipped or already counted.");
         } else {
-          console.log("View successfully counted!");
-          // Testing ke liye toast (baad mein hata sakte hain)
-          toast.success("View Counted!"); 
+          console.log("New unique view recorded!");
+          // Optional: toast.success("New view counted!"); 
         }
       }
     };
 
     triggerView();
-  }, [activeIndex, videos.length]); // Videos load hote hi aur scroll karte hi chalega
+  }, [activeIndex, videos.length, currentUser?.id]); // User ID badalne par ya video badalne par trigger hoga
 
   const fetchVideos = async () => {
     try {
@@ -91,7 +96,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     setTimeout(() => setShowPlayIcon(false), 500); 
   };
 
-  // ... (handleFollowToggle aur handleVideoShare same rahenge) ...
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
     e.stopPropagation();
     if (!currentUser) { toast.error("Pehle login karein!"); return; }
@@ -138,12 +142,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
           onClick={togglePlayPause} 
         >
-          {/* VIDEO WRAPPER FIX: Iframe size and Zoom fix */}
+          {/* VIDEO WRAPPER FIX: Aspect Ratio for Shorts */}
           <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-black">
             <iframe
               className="w-full h-full pointer-events-none transition-opacity duration-500"
               style={{ 
-                aspectRatio: '9/16', // TikTok/Shorts ratio
+                aspectRatio: '9/16',
                 height: '100vh',
                 width: 'auto',
                 minWidth: '100%' 
@@ -154,7 +158,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             ></iframe>
           </div>
 
-          {/* Overlays (Play Icon, User Info, Actions) same as before... */}
           {showPlayIcon && (
             <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
               <div className="bg-black/40 p-5 rounded-full animate-ping">
@@ -179,7 +182,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           </div>
 
           <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
-            <VideoActions videoId={video.id} initialLikes={video.likes_count || 0} videoOwnerId={video.user_id} onComment={() => onComment(video.id, video.user_id)} onShare={() => handleVideoShare(video)} />
+            <VideoActions 
+              videoId={video.id} 
+              initialLikes={video.likes_count || 0} 
+              videoOwnerId={video.user_id} 
+              onComment={() => onComment(video.id, video.user_id)} 
+              onShare={() => handleVideoShare(video)} 
+            />
           </div>
         </div>
       ))}
