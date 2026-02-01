@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 
 interface OptimizedVideoPlayerProps {
@@ -6,64 +6,57 @@ interface OptimizedVideoPlayerProps {
   videoId: string;
   isActive: boolean;
   username?: string;
-  caption?: string;
 }
 
 export function OptimizedVideoPlayer({
   videoUrl,
   videoId,
   isActive,
-  username,
-  caption
+  username
 }: OptimizedVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // --- SABSE SIMPLE VIEW COUNT LOGIC (NO CONDITIONS) ---
+  // --- FORCE TEST: Jaise hi video screen par aaye, View count hona chahiye ---
   useEffect(() => {
-    const forceViewCount = async () => {
-      if (!videoId) return;
+    const triggerTest = async () => {
+      // Agar videoId nahi mil rahi hogi toh ye alert aayega
+      if (!videoId) {
+        alert("ERROR: Video ID hi nahi mil rahi!");
+        return;
+      }
 
-      console.log("Attempting view for:", videoId);
+      console.log("Sending View for ID:", videoId);
       
-      const { data, error } = await supabase.rpc('increment_views', { 
+      const { error } = await supabase.rpc('increment_views', { 
         post_id: videoId 
       });
 
       if (error) {
-        // Agar yahan galti hai toh ye alert pakka aayega
-        alert("DATABASE ERROR: " + error.message);
+        // Agar SQL function mein galti hai toh ye alert aayega
+        alert("SQL DATABASE ERROR: " + error.message);
       } else {
-        console.log("VIEW SUCCESS:", videoId);
-        // Chhota sa alert check karne ke liye (Baad mein hata denge)
-        // alert("View Counted for: " + videoId);
+        // Agar sab theek hai toh ye alert aayega
+        alert("SUCCESS: View Count Ho Gaya!");
       }
     };
 
-    // Jab video active ho, tabhi count kare
-    if (isActive) {
-      forceViewCount();
-    }
-  }, [isActive, videoId]);
+    triggerTest();
+  }, [videoId]); // Isme koi condition nahi hai, ye chalna hi chahiye!
 
   return (
     <div className="relative w-full h-screen bg-black flex items-center justify-center">
       <video
         ref={videoRef}
-        className="w-full h-full object-contain"
+        className="w-full h-full object-contain" // Zoom fix: video kategi nahi
         src={videoUrl}
         loop
         muted
         playsInline
-        autoPlay={isActive}
+        autoPlay
       />
-      
-      {/* Video Info Overlay */}
-      <div className="absolute bottom-10 left-4 text-white z-10">
-        <p className="font-bold">@{username || 'user'}</p>
-        <p className="text-sm">{caption}</p>
-        <p className="text-[10px] bg-red-600 px-2 py-1 mt-2 inline-block">
-          ID: {videoId} | Status: {isActive ? 'ACTIVE' : 'WAITING'}
-        </p>
+      <div className="absolute bottom-10 left-4 text-white p-4 bg-black/50">
+        <p>User: {username}</p>
+        <p>Video ID: {videoId}</p>
       </div>
     </div>
   );
