@@ -23,32 +23,33 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- 🔥 CORRECTED UNIQUE VIEW LOGIC ---
+  // --- 🔥 COMPLETE UNIQUE VIEW LOGIC ---
   useEffect(() => {
     const triggerView = async () => {
-      // Logic: Jab user login ho aur video load ho jaye
+      // Logic: Jab video load ho aur user logged in ho tabhi count hoga
       if (videos.length > 0 && videos[activeIndex] && currentUser) {
         const vidId = videos[activeIndex].id;
         const userId = currentUser.id;
 
-        // Hum post_id aur viewer_id dono bhej rahe hain
+        console.log("Checking unique view for:", vidId);
+
+        // RPC call jo humne SQL mein banaya hai
         const { error } = await supabase.rpc('increment_views', { 
           post_id: vidId, 
           viewer_id: userId 
         });
         
         if (error) {
-          // Agar database mein 'Unique Constraint' trigger hota hai, toh error console mein aayega
-          // Hum toast nahi dikhayenge taaki user experience kharab na ho
-          console.log("View logic note:", error.message);
+          // Agar pehle se dekh chuka hai toh database 'Unique Constraint' error dega
+          // Use hum skip kar denge taaki error message na dikhe
+          console.log("View status:", error.message);
         } else {
-          console.log("Unique view successfully counted for:", vidId);
+          console.log("New unique view counted!");
         }
       }
     };
 
     triggerView();
-    // Dependency mein currentUser?.id zaroori hai
   }, [activeIndex, videos.length, currentUser?.id]); 
 
   const fetchVideos = async () => {
@@ -141,6 +142,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
           onClick={togglePlayPause} 
         >
+          {/* Iframe Logic (No Changes) */}
           <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-black">
             <iframe
               className="w-full h-full pointer-events-none transition-opacity duration-500"
@@ -180,11 +182,17 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           </div>
 
           <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
-            <VideoActions videoId={video.id} initialLikes={video.likes_count || 0} videoOwnerId={video.user_id} onComment={() => onComment(video.id, video.user_id)} onShare={() => handleVideoShare(video)} />
+            <VideoActions 
+              videoId={video.id} 
+              initialLikes={video.likes_count || 0} 
+              videoOwnerId={video.user_id} 
+              onComment={() => onComment(video.id, video.user_id)} 
+              onShare={() => handleVideoShare(video)} 
+            />
           </div>
         </div>
       ))}
       <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
-    }
+}
