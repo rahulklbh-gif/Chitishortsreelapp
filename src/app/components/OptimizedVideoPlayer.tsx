@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Volume2, VolumeX, Play } from 'lucide-react';
 import { videoCacheManager, supabase } from '@/lib/supabase';
-import { toast } from 'sonner'; // Error dikhane ke liye
+import { toast } from 'sonner';
 
 interface OptimizedVideoPlayerProps {
   videoUrl: string;
@@ -31,6 +31,7 @@ export function OptimizedVideoPlayer({
   const [hasLoaded, setHasLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
+  // Viewport detection
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new IntersectionObserver(
@@ -45,21 +46,28 @@ export function OptimizedVideoPlayer({
     return () => observer.disconnect();
   }, []);
 
-  // --- MOBILE DEBUGGER FOR VIEWS ---
+  // --- VIEWS UPDATE LOGIC (VIEWS_COUNT KE LIYE) ---
   useEffect(() => {
     if (isInViewport && isActive && videoId) {
       const triggerView = async () => {
-        const { error } = await supabase.rpc('increment_views', { post_id: videoId });
+        // SQL Function 'increment_views' ko call kar rahe hain
+        const { error } = await supabase.rpc('increment_views', { 
+          post_id: videoId 
+        });
+        
         if (error) {
-          // Agar error aaye toh mobile screen par dikhega
           console.error("View Error:", error.message);
-          toast.error("View Count Error: " + error.message);
+          // Mobile par test karne ke liye niche wala alert on kar sakte hain
+          // alert("View Database Error: " + error.message);
+        } else {
+          console.log("View count updated successfully");
         }
       };
       triggerView();
     }
   }, [isInViewport, isActive, videoId]);
 
+  // Video playback controls
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -76,6 +84,7 @@ export function OptimizedVideoPlayer({
     }
   }, [isInViewport, isActive, hasLoaded]);
 
+  // Caching and Loading
   useEffect(() => {
     if (isInViewport && isActive && !hasLoaded) {
       const cachedUrl = videoCacheManager.get(videoId);
