@@ -1,5 +1,20 @@
 import { useState, useRef, useEffect } from 'react';
-import { VideoPlayer, Video } from './VideoPlayer';
+// ERROR FIX: Humne ab OptimizedVideoPlayer import kiya hai
+import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
+
+// Video interface define kar rahe hain taaki TypeScript roye nahi
+export interface Video {
+  id: string;
+  video_url: string;
+  caption: string;
+  user?: {
+    username: string;
+    avatar_url?: string;
+  };
+  music?: string;
+  likes_count?: number;
+  comments_count?: number;
+}
 
 interface VideoFeedProps {
   videos: Video[];
@@ -23,14 +38,11 @@ export function VideoFeed({ videos, onComment }: VideoFeedProps) {
     const currentY = e.touches[0].clientY;
     const diff = startY.current - currentY;
 
-    // Scroll threshold
     if (Math.abs(diff) > 50) {
       if (diff > 0 && currentIndex < videos.length - 1) {
-        // Scroll down - next video
         setCurrentIndex(currentIndex + 1);
         isDragging.current = false;
       } else if (diff < 0 && currentIndex > 0) {
-        // Scroll up - previous video
         setCurrentIndex(currentIndex - 1);
         isDragging.current = false;
       }
@@ -41,7 +53,6 @@ export function VideoFeed({ videos, onComment }: VideoFeedProps) {
     isDragging.current = false;
   };
 
-  // Wheel event for desktop
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     if (e.deltaY > 30 && currentIndex < videos.length - 1) {
@@ -59,7 +70,7 @@ export function VideoFeed({ videos, onComment }: VideoFeedProps) {
 
   return (
     <div
-      className="fixed inset-0 overflow-hidden"
+      className="fixed inset-0 overflow-hidden bg-black"
       onTouchStart={handleTouchStart}
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
@@ -67,27 +78,32 @@ export function VideoFeed({ videos, onComment }: VideoFeedProps) {
     >
       <div
         ref={containerRef}
-        className="transition-transform duration-300 ease-out"
+        className="transition-transform duration-300 ease-out h-full"
         style={{ willChange: 'transform' }}
       >
         {videos.map((video, index) => (
-          <div key={video.id} className="h-screen w-screen">
-            <VideoPlayer
-              video={video}
+          <div key={video.id} className="h-screen w-screen relative">
+            {/* YAHAN BADLAV KIYA HAI: OptimizedVideoPlayer use kiya */}
+            <OptimizedVideoPlayer
+              videoId={video.id}
+              videoUrl={video.video_url}
               isActive={index === currentIndex}
-              onComment={() => onComment(video.id)}
+              caption={video.caption}
+              username={video.user?.username || 'User'}
+              music={video.music}
+              onVideoClick={() => {}} // Click handle baad mein dekh lenge
             />
           </div>
         ))}
       </div>
 
       {/* Scroll Indicator */}
-      <div className="fixed right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-20">
+      <div className="fixed right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-50 pointer-events-none">
         {videos.map((_, index) => (
           <div
             key={index}
-            className={`w-1 h-8 rounded-full transition-all ${
-              index === currentIndex ? 'bg-white' : 'bg-white/30'
+            className={`w-1 h-8 rounded-full transition-all duration-300 ${
+              index === currentIndex ? 'bg-white h-12' : 'bg-white/20'
             }`}
           />
         ))}
