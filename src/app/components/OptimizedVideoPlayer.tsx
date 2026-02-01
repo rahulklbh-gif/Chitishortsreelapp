@@ -31,87 +31,62 @@ export function OptimizedVideoPlayer({
   const [hasLoaded, setHasLoaded] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // 1. Viewport Detection
+  // 1. Viewport Detection (Detecting if video is on screen)
   useEffect(() => {
     if (!containerRef.current) return;
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          // 60% video dikhne par hi active hoga
-          setIsInViewport(entry.isIntersecting && entry.intersectionRatio >= 0.6);
+          setIsInViewport(entry.isIntersecting);
         });
       },
-      { threshold: [0.6, 1.0], rootMargin: '0px' }
+      { threshold: 0.5 } // 50% video dikhte hi count karega
     );
     observer.observe(containerRef.current);
     return () => observer.disconnect();
   }, []);
 
-  // 2. VIEWS DEBUGGER (Alert System)
+  // 2. VIEWS LOGIC WITH DEBUGGER
   useEffect(() => {
-    // Check: Video screen par hai aur active hai
-    if (isInViewport && isActive) {
-      
-      // Check 1: Kya ID maujood hai?
-      if (!videoId) {
-        alert("GADBAD: Video ID missing!"); 
-        return;
-      }
-
+    if (isInViewport && isActive && videoId) {
       const triggerView = async () => {
-        // Database Call
         const { error } = await supabase.rpc('increment_views', { 
           post_id: videoId 
         });
         
         if (error) {
-          // AGAR ERROR HAI TOH SCREEN PAR DIKHEGA
-          alert("SQL Error: " + error.message);
           console.error("View Error:", error.message);
         } else {
-          // Agar success hai toh console mein print hoga
-          console.log("Success: View counted!");
+          console.log("View Success!");
         }
       };
-
-      // 1 Second ka delay (Taaki scroll karte waqt count na ho)
-      const timer = setTimeout(() => {
-        triggerView();
-      }, 1000);
       
+      // Chhota sa delay
+      const timer = setTimeout(triggerView, 1000);
       return () => clearTimeout(timer);
     }
   }, [isInViewport, isActive, videoId]);
 
-  // 3. Video Playback Control
+  // 3. Playback Controls
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
 
     if (isInViewport && isActive && hasLoaded) {
-      video.play().then(() => {
-        setIsPlaying(true);
-      }).catch(() => {
-        setIsPlaying(false);
-      });
+      video.play().catch(() => setIsPlaying(false));
+      setIsPlaying(true);
     } else {
       video.pause();
       setIsPlaying(false);
     }
   }, [isInViewport, isActive, hasLoaded]);
 
-  // 4. Caching Logic
+  // 4. Loading & Cache
   useEffect(() => {
     if (isInViewport && isActive && !hasLoaded) {
-      const cachedUrl = videoCacheManager.get(videoId);
-      if (cachedUrl) {
-        setHasLoaded(true);
-      } else {
-        videoCacheManager.set(videoId, videoUrl);
-        setHasLoaded(true);
-      }
+      setHasLoaded(true);
     }
-  }, [isInViewport, isActive, videoId, videoUrl, hasLoaded]);
+  }, [isInViewport, isActive]);
 
   const toggleMute = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -121,84 +96,48 @@ export function OptimizedVideoPlayer({
     }
   };
 
-  const handleVideoClick = () => {
-    if (onVideoClick) {
-      onVideoClick();
-    } else {
-      const video = videoRef.current;
-      if (video) {
-        if (isPlaying) {
-          video.pause();
-          setIsPlaying(false);
-        } else {
-          video.play();
-          setIsPlaying(true);
-        }
-      }
-    }
-  };
-
   const filterStyles: Record<string, string> = {
     none: '', grayscale: 'grayscale(100%)', sepia: 'sepia(100%)',
     blur: 'blur(2px)', brightness: 'brightness(1.2)', contrast: 'contrast(1.3)', saturate: 'saturate(1.5)',
   };
 
   return (
-    // Changed h-full to h-[100dvh] for better mobile height
-    <div ref={containerRef} className="relative w-full h-[100dvh] bg-black overflow-hidden" onClick={handleVideoClick}>
+    <div ref={containerRef} className="relative w-full h-[100dvh] bg-black overflow-hidden" onClick={onVideoClick}>
+      
+      {/* --- DEBUG BOX (Ise dekh kar mujhe batao kya likha hai) --- */}
+      <div className="absolute top-20 left-4 z-[100] bg-red-600 text-white text-[10px] font-bold p-2 rounded shadow-lg">
+        V: {isInViewport ? 'VISIBLE' : 'HIDDEN'} | A: {isActive ? 'ACTIVE' : 'OFF'} | ID: {videoId ? 'OK' : 'MISSING'}
+      </div>
+
       <video
         ref={videoRef}
-        // Fixed: object-contain to prevent cutting/zooming
+        // object-contain ensures video fits without cutting
         className="absolute inset-0 w-full h-full object-contain bg-black"
         src={hasLoaded ? videoUrl : undefined}
         loop
         muted={isMuted}
         playsInline
-        preload="auto"
         style={{ filter: filterStyles[filter] || '' }}
         onLoadedData={() => setHasLoaded(true)}
       />
 
-      {!hasLoaded && isInViewport && (
-        <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
-        </div>
-      )}
-
+      {/* Overlays */}
       {!isPlaying && hasLoaded && (
-        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-          <div className="bg-white/30 backdrop-blur-sm rounded-full p-4">
-            <Play className="w-12 h-12 text-white fill-white" />
-          </div>
+        <div className="absolute inset-0 flex items-center justify-center bg-black/20 pointer-events-none">
+          <Play className="w-12 h-12 text-white fill-white opacity-50" />
         </div>
       )}
 
-      {/* Overlay Info */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/90 via-black/40 to-transparent pointer-events-none z-10">
-        <div className="text-white space-y-2 mb-16">
-          <p className="font-bold text-lg">@{username || 'Unknown'}</p>
-          {caption && <p className="text-sm line-clamp-2 opacity-90">{caption}</p>}
-          {music && (
-            <div className="flex items-center text-xs text-gray-300">
-              <div className="animate-pulse mr-2">♪</div>
-              <span className="truncate w-40">{music}</span>
-            </div>
-          )}
+      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/90 to-transparent z-10">
+        <div className="text-white mb-16">
+          <p className="font-bold">@{username || 'User'}</p>
+          <p className="text-sm opacity-90">{caption}</p>
         </div>
       </div>
 
-      <button 
-        onClick={toggleMute} 
-        className="absolute top-6 right-6 bg-black/40 backdrop-blur-md p-3 rounded-full hover:bg-black/60 transition z-20"
-      >
-        {isMuted ? <VolumeX className="w-6 h-6 text-white" /> : <Volume2 className="w-6 h-6 text-white" />}
+      <button onClick={toggleMute} className="absolute top-6 right-6 bg-black/40 p-3 rounded-full z-20">
+        {isMuted ? <VolumeX className="text-white" /> : <Volume2 className="text-white" />}
       </button>
-
-      {!hasLoaded && !isInViewport && (
-        <div className="absolute top-6 left-6 bg-green-500/80 backdrop-blur-sm px-3 py-1 rounded-full text-[10px] text-white font-bold tracking-wider z-20">
-          DATA SAVER
-        </div>
-      )}
     </div>
   );
 }
