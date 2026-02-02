@@ -15,6 +15,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Video Fetching
   useEffect(() => {
     fetchVideos();
   }, []);
@@ -23,32 +24,36 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- 🔥 UNIQUE VIEW LOGIC (FIXED) ---
+  // --- 🔥 LOGIC: VIEW COUNT TRIGGER ---
   useEffect(() => {
-    const triggerView = async () => {
-      // Sirf tab chalega jab video aur user dono ho
-      if (videos.length > 0 && videos[activeIndex] && currentUser?.id) {
-        const vidId = videos[activeIndex].id;
-        const userId = currentUser.id;
+    const recordView = async () => {
+      // Validation: Video data aur User ID honi chahiye
+      if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) {
+        console.log("View skipped: Missing Video or User session");
+        return;
+      }
 
-        console.log("Attempting to count unique view for:", vidId);
+      const currentVideoId = videos[activeIndex].id;
+      const currentUserId = currentUser.id;
 
+      try {
         const { error } = await supabase.rpc('increment_views', { 
-          post_id: vidId, 
-          viewer_id: userId 
+          post_id: currentVideoId, 
+          viewer_id: currentUserId 
         });
-        
+
         if (error) {
-          // Unique constraint violation error yahan console mein dikhega (Expected behaviour)
-          console.log("View status:", error.message);
+          console.error("RPC Error details:", error);
         } else {
-          console.log("Success: Unique view added to database.");
+          console.log(`View recorded for video: ${currentVideoId}`);
         }
+      } catch (err) {
+        console.error("Unexpected error in recordView:", err);
       }
     };
 
-    triggerView();
-  }, [activeIndex, videos.length, currentUser?.id]); 
+    recordView();
+  }, [activeIndex, videos, currentUser?.id]); 
 
   const fetchVideos = async () => {
     try {
@@ -192,4 +197,4 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
-    }
+}
