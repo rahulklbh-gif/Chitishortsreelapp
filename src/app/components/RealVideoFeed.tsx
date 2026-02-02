@@ -15,30 +15,41 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
   
+  // Ek session mein baar-baar view na badhe uske liye
   const viewedVideos = useRef<Set<string>>(new Set());
 
+  // Videos load karna
   useEffect(() => {
     fetchVideos();
   }, []);
 
+  // Follow data load karna
   useEffect(() => {
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
+  // --- 🔥 VIEW COUNT LOGIC (WAISA HI HAI JAISE AAPNE DIYA THA) ---
   useEffect(() => {
     const recordView = async () => {
-      if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
+      if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) {
+        return;
+      }
       const currentVideoId = videos[activeIndex].id;
       const currentUserId = currentUser.id;
-      if (viewedVideos.current.has(currentVideoId)) return;
-
+      if (viewedVideos.current.has(currentVideoId)) {
+        return;
+      }
       try {
-        await supabase.rpc('increment_views', { 
+        const { error } = await supabase.rpc('increment_views', { 
           post_id: currentVideoId, 
           viewer_id: currentUserId 
         });
-        viewedVideos.current.add(currentVideoId);
-      } catch (err) { console.error(err); }
+        if (!error) {
+          viewedVideos.current.add(currentVideoId);
+        }
+      } catch (err) {
+        console.error("Unexpected error:", err);
+      }
     };
     const timer = setTimeout(recordView, 2000);
     return () => clearTimeout(timer);
@@ -51,15 +62,19 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
        .from('posts')
        .select('*')
        .order('created_at', { ascending: false });
+      if (error) throw error;
       if (data) setVideos(data);
-    } catch (error) { console.error(error); } 
-    finally { setLoading(false); }
+    } catch (error) { 
+      console.error('Error fetching videos:', error); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const fetchFollows = async () => {
     if (!currentUser) return;
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
        .from('follows')
        .select('following_id')
        .eq('follower_id', currentUser.id);
@@ -132,24 +147,23 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
-            {/* THUMBNAIL LAYER (New Performance Addition) */}
+            {/* PERFORMANCE LAYER: Thumbnail hamesha niche rahega loading chupane ke liye */}
             <img 
               src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${isActive ? 'opacity-0 z-0' : 'opacity-100 z-20'}`}
-              alt="loading cover"
+              className="absolute inset-0 w-full h-full object-cover z-0 opacity-50 blur-[2px]"
+              alt="loading bg"
             />
 
-            <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-black z-10">
+            <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-transparent z-10">
               <iframe
-                className={`w-full h-full pointer-events-none transition-opacity duration-1000 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                className={`w-full h-full pointer-events-none transition-opacity duration-700 ${isActive ? 'opacity-100' : 'opacity-0'}`}
                 style={{ 
                   aspectRatio: '9/16',
                   height: '100vh',
                   width: 'auto',
-                  minWidth: '100%',
-                  transform: 'scale(1.05)' // Smooth edge fixing
+                  minWidth: '100%' 
                 }}
-                src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}&widget_referrer=${window.location.origin}`}
+                src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}`}
                 title="Chiti Short"
                 allow="autoplay; encrypted-media"
               ></iframe>
@@ -163,7 +177,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
-            <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/90 to-transparent text-white z-20 pointer-events-none">
+            <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/80 to-transparent text-white z-20 pointer-events-none">
               <div className="flex items-center gap-3 mb-3 pointer-events-auto">
                 <img 
                   src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
@@ -177,8 +191,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   {followedUsers.has(video.user_id) ? 'Following' : 'Follow'}
                 </button>
               </div>
-              <p className="text-sm mb-4 line-clamp-2 pr-20">{video.caption}</p>
-              <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md">
+              <p className="text-sm mb-4 line-clamp-2 pr-20 pointer-events-auto">{video.caption}</p>
+              <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md pointer-events-auto">
                 <Music2 size={14} className="animate-spin" style={{ animationDuration: '3s' }} />
                 <span className="truncate">Original Audio - {video.user_name}</span>
               </div>
@@ -196,7 +210,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           </div>
         )
       })}
-      <style>{`.no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }`}</style>
+      <style>{`
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .animate-spin { animation: spin 3s linear infinite; }
+      `}</style>
     </div>
   );
 }
