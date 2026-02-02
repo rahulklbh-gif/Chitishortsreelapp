@@ -12,36 +12,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [activeIndex, setActiveIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
   const [showPlayIcon, setShowPlayIcon] = useState(false);
-  const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set());
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewedVideos = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     fetchVideos();
   }, []);
-
-  useEffect(() => {
-    if (currentUser) fetchFollows();
-  }, [currentUser]);
-
-  // Smooth Scroll and Snap Logic
-  useEffect(() => {
-    const recordView = async () => {
-      if (!videos.length || !videos[activeIndex] || !currentUser) return;
-      const currentVideoId = videos[activeIndex].id;
-      if (viewedVideos.current.has(currentVideoId)) return;
-
-      try {
-        await supabase.rpc('increment_views', { 
-          post_id: currentVideoId, 
-          viewer_id: currentUser.id 
-        });
-        viewedVideos.current.add(currentVideoId);
-      } catch (err) { console.error(err); }
-    };
-    const timer = setTimeout(recordView, 3000); // 3 sec for genuine view
-    return () => clearTimeout(timer);
-  }, [activeIndex, videos, currentUser?.id]);
 
   const fetchVideos = async () => {
     try {
@@ -50,12 +25,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       if (data) setVideos(data);
     } catch (error) { console.error(error); } 
     finally { setLoading(false); }
-  };
-
-  const fetchFollows = async () => {
-    if (!currentUser) return;
-    const { data } = await supabase.from('follows').select('following_id').eq('follower_id', currentUser.id);
-    if (data) setFollowedUsers(new Set(data.map(f => f.following_id)));
   };
 
   const handleScroll = () => {
@@ -68,84 +37,73 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     }
   };
 
-  const togglePlayPause = () => {
-    setIsPlaying(!isPlaying);
-    setShowPlayIcon(true);
-    setTimeout(() => setShowPlayIcon(false), 500);
-  };
-
-  if (loading) return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black">
-      <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-    </div>
-  );
+  if (loading) return <div className="fixed inset-0 bg-black flex items-center justify-center"><div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>;
 
   return (
     <div
       ref={containerRef}
       className="fixed inset-0 overflow-y-scroll snap-y snap-mandatory no-scrollbar bg-black scroll-smooth"
       onScroll={handleScroll}
-      style={{ WebkitOverflowScrolling: 'touch' }} // Mobile smooth scroll
+      style={{ WebkitOverflowScrolling: 'touch' }}
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        // Optimize: Sirf current, upar wala aur niche wala video hi render hoga
-        const shouldRender = Math.abs(index - activeIndex) <= 1;
+        // JUGAAD 1: Isse hum agla aur pichla video background mein load kar rahe hain (Buffer)
+        const isNear = Math.abs(index - activeIndex) <= 1; 
 
         return (
-          <div 
-            key={video.id} 
-            className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
-            onClick={togglePlayPause}
-          >
-            {shouldRender ? (
-              <div className="relative w-full h-full flex items-center justify-center">
-                
-                {/* 1. Static Thumbnail Placeholder (Loading cover) */}
-                {!isActive && (
-                  <div 
-                    className="absolute inset-0 bg-cover bg-center z-10"
-                    style={{ backgroundImage: `url(https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg)` }}
-                  />
-                )}
+          <div key={video.id} className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center">
+            
+            {/* THUMBNAIL LAYER: Ye hamesha niche rahega loading chupane ke liye */}
+            <div 
+              className="absolute inset-0 bg-cover bg-center z-0 transition-opacity duration-300"
+              style={{ 
+                backgroundImage: `url(https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg)`,
+                filter: 'blur(10px) brightness(0.5)'
+              }}
+            />
 
-                {/* 2. Youtube Player with Zero Lag Params */}
+            <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+               {/* ACTUAL THUMBNAIL: Jo video ke aane tak dikhega */}
+               <img 
+                src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
+                className={`absolute w-full h-auto z-10 transition-opacity duration-500 ${isActive ? 'opacity-0 delay-[1500ms]' : 'opacity-100'}`}
+                style={{ aspectRatio: '9/16' }}
+              />
+
+              {/* JUGAAD 2: IFRAME PRE-LOADING LOGIC */}
+              {isNear && (
                 <iframe
-                  className={`w-full h-full transition-opacity duration-700 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                  className={`w-full h-full z-20 transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'}`}
                   style={{ 
-                    height: '100vh', 
-                    width: '177.78vh', // 16:9 Aspect ratio correction for mobile
+                    height: '105vh', // Small zoom to hide bars
+                    width: '100%',
                     minWidth: '100%',
-                    pointerEvents: 'none'
+                    pointerEvents: 'none',
+                    transform: 'scale(1.1)' // Smoothness ke liye
                   }}
-                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isActive ? 0 : 1}&enablejsapi=1&iv_load_policy=3&disablekb=1&origin=${window.location.origin}`}
+                  // JUGAAD 3: Fastest Params (origin, widget_referrer, iv_load_policy)
+                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isActive ? 0 : 1}&enablejsapi=1&origin=${window.location.origin}&iv_load_policy=3&widget_referrer=${window.location.origin}`}
                   allow="autoplay; encrypted-media"
                 ></iframe>
+              )}
+            </div>
 
-                {/* Overlay Elements (UI) */}
-                <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
+            {/* UI Content */}
+            <div className="absolute bottom-0 left-0 right-0 p-6 z-30 pb-20 bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
+              <div className="flex items-center gap-3 mb-3 pointer-events-auto">
+                <img src={video.user_avatar} className="w-11 h-11 rounded-full border border-white" />
+                <span className="font-bold text-white">@{video.user_name}</span>
               </div>
-            ) : (
-              <div className="w-full h-full bg-neutral-900 animate-pulse" /> // Skeleton
-            )}
-
-            {/* User Interface (Caption, Actions, etc.) */}
-            <div className="absolute bottom-0 left-0 right-0 p-6 z-30 pointer-events-none">
-                <div className="flex items-center gap-3 mb-4 pointer-events-auto">
-                   <img src={video.user_avatar} className="w-12 h-12 rounded-full border-2 border-white shadow-xl" />
-                   <div className="flex flex-col">
-                      <span className="font-bold text-white shadow-black text-shadow-sm">@{video.user_name}</span>
-                   </div>
-                </div>
-                <p className="text-white text-sm mb-6 max-w-[80%] pointer-events-auto drop-shadow-lg">{video.caption}</p>
-                <div className="flex items-center gap-2 bg-black/30 backdrop-blur-md w-fit px-3 py-1 rounded-full border border-white/10">
-                  <Music2 size={14} className="text-white animate-spin-slow" />
-                  <span className="text-white text-[10px]">Original Audio - {video.user_name}</span>
-                </div>
+              <p className="text-white text-sm line-clamp-2 mb-4 pointer-events-auto">{video.caption}</p>
+              <div className="flex items-center gap-2 bg-white/10 w-fit px-3 py-1 rounded-full backdrop-blur-md">
+                <Music2 size={12} className="text-white animate-spin" style={{ animationDuration: '3s' }} />
+                <span className="text-white text-[10px]">Original Audio</span>
+              </div>
             </div>
 
             {/* Sidebar Actions */}
-            <div className="absolute right-4 bottom-28 z-40">
+            <div className="absolute right-4 bottom-24 z-40">
               <VideoActions 
                 videoId={video.id} 
                 initialLikes={video.likes_count} 
@@ -153,28 +111,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 onComment={() => onComment(video.id, video.user_id)} 
               />
             </div>
-
-            {/* Play/Pause Icon Animation */}
-            {showPlayIcon && (
-              <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
-                <div className="bg-white/20 p-6 rounded-full backdrop-blur-sm animate-ping">
-                  {isPlaying ? <PlayIcon size={40} fill="white" /> : <div className="w-8 h-8 bg-white rounded-sm" />}
-                </div>
-              </div>
-            )}
           </div>
         );
       })}
-      
-      <style>{`
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        @keyframes spin-slow {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .animate-spin-slow { animation: spin-slow 3s linear infinite; }
-      `}</style>
     </div>
   );
 }
