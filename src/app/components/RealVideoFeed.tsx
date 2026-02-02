@@ -28,7 +28,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- 🔥 VIEW COUNT LOGIC (THEEK KIYA HUA) ---
+  // --- 🔥 VIEW COUNT LOGIC (Surakshit hai - No Changes) ---
   useEffect(() => {
     const recordView = async () => {
       // Basic checks
@@ -62,7 +62,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       }
     };
 
-    // Video par 2 second rukne par hi view count hoga (Fake scrolling rokne ke liye)
+    // Video par 2 second rukne par hi view count hoga
     const timer = setTimeout(recordView, 2000);
     return () => clearTimeout(timer);
 
@@ -152,6 +152,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       className="fixed inset-0 overflow-y-scroll snap-y snap-mandatory no-scrollbar bg-black"
       onScroll={handleScroll}
     >
+      {/* --- 🚀 SPEED OPTIMIZATION (Link Prefetching) --- */}
+      <link rel="preconnect" href="https://www.youtube.com" />
+      <link rel="dns-prefetch" href="https://www.youtube.com" />
+
       {videos.map((video, index) => (
         <div 
           key={video.id} 
@@ -159,6 +163,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           onClick={togglePlayPause} 
         >
           <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-black">
+            
+            {/* --- 🚀 SPEED OPTIMIZATION (Updated Iframe) --- */}
             <iframe
               className="w-full h-full pointer-events-none transition-opacity duration-500"
               style={{ 
@@ -167,10 +173,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 width: 'auto',
                 minWidth: '100%' 
               }}
-              src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${index === activeIndex && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1`}
+              // 'origin' add kiya taaki loop fast ho aur 'loading="eager"' add kiya
+              src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${index === activeIndex && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`}
               title="Chiti Short"
               allow="autoplay; encrypted-media"
+              loading="eager" // Ye video ko pehle se ready rakhta hai
             ></iframe>
+
           </div>
 
           {showPlayIcon && (
