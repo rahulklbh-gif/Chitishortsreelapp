@@ -2,60 +2,98 @@ import { useState, useEffect, useRef } from 'react';
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Music2, Play as PlayIcon } from 'lucide-react';
-import { toast } from 'sonner';
+import { Loader2, Music2, Play as PlayIcon } from 'lucide-react';
+import { toast } from 'sonner'; 
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
   const { user: currentUser } = useAuth();
-  const [videos, setVideos] = useState<any[]>([]);
+  const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [showPlayIcon, setShowPlayIcon] = useState(false);
-  const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set());
+  const [isPlaying, setIsPlaying] = useState(true); 
+  const [showPlayIcon, setShowPlayIcon] = useState(false); 
+  const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Ek session mein baar-baar view na badhe uske liye
   const viewedVideos = useRef<Set<string>>(new Set());
 
+  // Videos load karna
   useEffect(() => {
     fetchVideos();
   }, []);
 
+  // Follow data load karna
   useEffect(() => {
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // Smooth Scroll and Snap Logic
+  // --- 🔥 VIEW COUNT LOGIC (THEEK KIYA HUA) ---
   useEffect(() => {
     const recordView = async () => {
-      if (!videos.length || !videos[activeIndex] || !currentUser) return;
+      // Basic checks
+      if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) {
+        return;
+      }
+
       const currentVideoId = videos[activeIndex].id;
-      if (viewedVideos.current.has(currentVideoId)) return;
+      const currentUserId = currentUser.id;
+
+      // Agar is session mein pehle hi dekh liya toh ruk jao
+      if (viewedVideos.current.has(currentVideoId)) {
+        return;
+      }
 
       try {
-        await supabase.rpc('increment_views', { 
+        const { error } = await supabase.rpc('increment_views', { 
           post_id: currentVideoId, 
-          viewer_id: currentUser.id 
+          viewer_id: currentUserId 
         });
-        viewedVideos.current.add(currentVideoId);
-      } catch (err) { console.error(err); }
+
+        if (error) {
+          console.error("View Error:", error.message);
+        } else {
+          // Success! Ab isse dobara count nahi karenge jab tak page refresh na ho
+          viewedVideos.current.add(currentVideoId);
+          console.log("View counted successfully");
+        }
+      } catch (err) {
+        console.error("Unexpected error:", err);
+      }
     };
-    const timer = setTimeout(recordView, 3000); // 3 sec for genuine view
+
+    // Video par 2 second rukne par hi view count hoga (Fake scrolling rokne ke liye)
+    const timer = setTimeout(recordView, 2000);
     return () => clearTimeout(timer);
-  }, [activeIndex, videos, currentUser?.id]);
+
+  }, [activeIndex, videos, currentUser?.id]); 
 
   const fetchVideos = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase.from('posts').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase
+       .from('posts')
+       .select('*')
+       .order('created_at', { ascending: false });
+
+      if (error) throw error;
       if (data) setVideos(data);
-    } catch (error) { console.error(error); } 
-    finally { setLoading(false); }
+    } catch (error) { 
+      console.error('Error fetching videos:', error); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const fetchFollows = async () => {
     if (!currentUser) return;
-    const { data } = await supabase.from('follows').select('following_id').eq('follower_id', currentUser.id);
-    if (data) setFollowedUsers(new Set(data.map(f => f.following_id)));
+    try {
+      const { data, error } = await supabase
+       .from('follows')
+       .select('following_id')
+       .eq('follower_id', currentUser.id);
+      if (data) setFollowedUsers(new Set(data.map(f => f.following_id)));
+    } catch (err) { console.error(err); }
   };
 
   const handleScroll = () => {
@@ -64,117 +102,118 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
-      setIsPlaying(true);
+      setIsPlaying(true); 
     }
   };
 
   const togglePlayPause = () => {
     setIsPlaying(!isPlaying);
     setShowPlayIcon(true);
-    setTimeout(() => setShowPlayIcon(false), 500);
+    setTimeout(() => setShowPlayIcon(false), 500); 
+  };
+
+  const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
+    e.stopPropagation();
+    if (!currentUser) { toast.error("Pehle login karein!"); return; }
+    if (currentUser.id === targetUserId) return;
+    const isCurrentlyFollowing = followedUsers.has(targetUserId);
+    try {
+      if (isCurrentlyFollowing) {
+        await supabase.from('follows').delete().eq('follower_id', currentUser.id).eq('following_id', targetUserId);
+        setFollowedUsers(prev => { const next = new Set(prev); next.delete(targetUserId); return next; });
+      } else {
+        await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: targetUserId }]);
+        await supabase.rpc('increment_followers', { user_id: targetUserId });
+        setFollowedUsers(prev => new Set(prev).add(targetUserId));
+        toast.success("Following!");
+      }
+    } catch (err) { toast.error("Koshish nakam rahi"); }
+  };
+
+  const handleVideoShare = async (video: any) => {
+    const shareUrl = `${window.location.origin}/video/${video.id}`;
+    if (navigator.share) {
+      try { await navigator.share({ title: 'Chiti Shorts', url: shareUrl }); } catch (err) {}
+    } else {
+      await navigator.clipboard.writeText(shareUrl);
+      toast.success("Link copy ho gaya!");
+    }
   };
 
   if (loading) return (
     <div className="fixed inset-0 flex items-center justify-center bg-black">
-      <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
     </div>
   );
 
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 overflow-y-scroll snap-y snap-mandatory no-scrollbar bg-black scroll-smooth"
+      className="fixed inset-0 overflow-y-scroll snap-y snap-mandatory no-scrollbar bg-black"
       onScroll={handleScroll}
-      style={{ WebkitOverflowScrolling: 'touch' }} // Mobile smooth scroll
     >
-      {videos.map((video, index) => {
-        const isActive = index === activeIndex;
-        // Optimize: Sirf current, upar wala aur niche wala video hi render hoga
-        const shouldRender = Math.abs(index - activeIndex) <= 1;
-
-        return (
-          <div 
-            key={video.id} 
-            className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
-            onClick={togglePlayPause}
-          >
-            {shouldRender ? (
-              <div className="relative w-full h-full flex items-center justify-center">
-                
-                {/* 1. Static Thumbnail Placeholder (Loading cover) */}
-                {!isActive && (
-                  <div 
-                    className="absolute inset-0 bg-cover bg-center z-10"
-                    style={{ backgroundImage: `url(https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg)` }}
-                  />
-                )}
-
-                {/* 2. Youtube Player with Zero Lag Params */}
-                <iframe
-                  className={`w-full h-full transition-opacity duration-700 ${isActive ? 'opacity-100' : 'opacity-0'}`}
-                  style={{ 
-                    height: '100vh', 
-                    width: '177.78vh', // 16:9 Aspect ratio correction for mobile
-                    minWidth: '100%',
-                    pointerEvents: 'none'
-                  }}
-                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isActive ? 0 : 1}&enablejsapi=1&iv_load_policy=3&disablekb=1&origin=${window.location.origin}`}
-                  allow="autoplay; encrypted-media"
-                ></iframe>
-
-                {/* Overlay Elements (UI) */}
-                <div className="absolute inset-0 z-20 bg-gradient-to-t from-black/70 via-transparent to-transparent pointer-events-none" />
-              </div>
-            ) : (
-              <div className="w-full h-full bg-neutral-900 animate-pulse" /> // Skeleton
-            )}
-
-            {/* User Interface (Caption, Actions, etc.) */}
-            <div className="absolute bottom-0 left-0 right-0 p-6 z-30 pointer-events-none">
-                <div className="flex items-center gap-3 mb-4 pointer-events-auto">
-                   <img src={video.user_avatar} className="w-12 h-12 rounded-full border-2 border-white shadow-xl" />
-                   <div className="flex flex-col">
-                      <span className="font-bold text-white shadow-black text-shadow-sm">@{video.user_name}</span>
-                   </div>
-                </div>
-                <p className="text-white text-sm mb-6 max-w-[80%] pointer-events-auto drop-shadow-lg">{video.caption}</p>
-                <div className="flex items-center gap-2 bg-black/30 backdrop-blur-md w-fit px-3 py-1 rounded-full border border-white/10">
-                  <Music2 size={14} className="text-white animate-spin-slow" />
-                  <span className="text-white text-[10px]">Original Audio - {video.user_name}</span>
-                </div>
-            </div>
-
-            {/* Sidebar Actions */}
-            <div className="absolute right-4 bottom-28 z-40">
-              <VideoActions 
-                videoId={video.id} 
-                initialLikes={video.likes_count} 
-                videoOwnerId={video.user_id} 
-                onComment={() => onComment(video.id, video.user_id)} 
-              />
-            </div>
-
-            {/* Play/Pause Icon Animation */}
-            {showPlayIcon && (
-              <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
-                <div className="bg-white/20 p-6 rounded-full backdrop-blur-sm animate-ping">
-                  {isPlaying ? <PlayIcon size={40} fill="white" /> : <div className="w-8 h-8 bg-white rounded-sm" />}
-                </div>
-              </div>
-            )}
+      {videos.map((video, index) => (
+        <div 
+          key={video.id} 
+          className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
+          onClick={togglePlayPause} 
+        >
+          <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-black">
+            <iframe
+              className="w-full h-full pointer-events-none transition-opacity duration-500"
+              style={{ 
+                aspectRatio: '9/16',
+                height: '100vh',
+                width: 'auto',
+                minWidth: '100%' 
+              }}
+              src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${index === activeIndex && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1`}
+              title="Chiti Short"
+              allow="autoplay; encrypted-media"
+            ></iframe>
           </div>
-        );
-      })}
-      
-      <style>{`
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        @keyframes spin-slow {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-        .animate-spin-slow { animation: spin-slow 3s linear infinite; }
-      `}</style>
+
+          {showPlayIcon && (
+            <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+              <div className="bg-black/40 p-5 rounded-full animate-ping">
+                {isPlaying ? <PlayIcon size={40} fill="white" /> : <div className="w-10 h-10 border-l-8 border-r-8 border-white mx-auto"></div>}
+              </div>
+            </div>
+          )}
+
+          <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/80 to-transparent text-white z-10 pointer-events-none">
+            <div className="flex items-center gap-3 mb-3 pointer-events-auto">
+              <img 
+                src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
+                className="w-11 h-11 rounded-full border-2 border-white shadow-lg" 
+              />
+              <span className="font-black text-lg">@{video.user_name}</span>
+              <button 
+                onClick={(e) => handleFollowToggle(e, video.user_id)} 
+                className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black transition-all pointer-events-auto ${followedUsers.has(video.user_id) ? 'bg-gray-700' : 'bg-blue-600'}`}
+              >
+                {followedUsers.has(video.user_id) ? 'Following' : 'Follow'}
+              </button>
+            </div>
+            <p className="text-sm mb-4 line-clamp-2 pr-20">{video.caption}</p>
+            <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md">
+              <Music2 size={14} className="animate-pulse" />
+              <span className="truncate">Original Audio - {video.user_name}</span>
+            </div>
+          </div>
+
+          <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
+            <VideoActions 
+              videoId={video.id} 
+              initialLikes={video.likes_count || 0} 
+              videoOwnerId={video.user_id} 
+              onComment={() => onComment(video.id, video.user_id)} 
+              onShare={() => handleVideoShare(video)} 
+            />
+          </div>
+        </div>
+      ))}
+      <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
 }
