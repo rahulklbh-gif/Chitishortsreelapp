@@ -10,8 +10,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  
-  // --- PLAY/PAUSE STATE ---
+
+  // --- PLAY/PAUSE LOGIC ---
   const [isPlaying, setIsPlaying] = useState(true); 
   const [showPlayIcon, setShowPlayIcon] = useState(false); 
   
@@ -19,7 +19,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const containerRef = useRef<HTMLDivElement>(null);
   const viewedVideos = useRef<Set<string>>(new Set());
 
-  // --- FAST LOADING: DNS Pre-fetch ---
+  // --- PERFORMANCE: Pre-connect to YouTube ---
   useEffect(() => {
     const link = document.createElement('link');
     link.rel = 'preconnect';
@@ -52,7 +52,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           post_id: currentVideoId, 
           viewer_id: currentUserId 
         });
-        if (!error) viewedVideos.current.add(currentVideoId);
+
+        if (!error) {
+          viewedVideos.current.add(currentVideoId);
+        }
       } catch (err) {
         console.error("View error:", err);
       }
@@ -100,6 +103,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     }
   };
 
+  // --- PLAY/PAUSE FUNCTION ---
   const togglePlayPause = () => {
     setIsPlaying(!isPlaying);
     setShowPlayIcon(true);
@@ -149,7 +153,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        // Agla video ready rakhne ke liye logic
+        
+        // --- PRE-LOADING LOGIC: Current, Previous, and Next video loading ---
+        // isActive: jo video dikh raha hai
+        // index === activeIndex + 1: aane wala video (Pre-load)
+        // index === activeIndex - 1: pichhla video (Cache mein rahega)
         const isNear = index >= activeIndex - 1 && index <= activeIndex + 1;
 
         return (
@@ -158,20 +166,27 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
-             {/* --- THUMBNAIL LAYER (Instant visual) --- */}
+             {/* --- FAST LOADING: Thumbnail Layer --- */}
              <img 
               src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
-              className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-700 ${isActive ? 'opacity-0 delay-[1200ms]' : 'opacity-100'}`}
+              className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-700 ${isActive ? 'opacity-0 delay-1000' : 'opacity-100'}`}
               style={{ filter: 'blur(2px) brightness(0.7)' }}
               alt="loading buffer"
             />
 
             <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-transparent z-10">
+              {/* Sirf 'isNear' videos ko DOM mein rakhenge taaki loading fast ho aur memory bache */}
               {isNear && (
                 <iframe
                   className={`w-full h-full pointer-events-none transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'}`}
-                  style={{ aspectRatio: '9/16', height: '100vh', width: 'auto', minWidth: '100%' }}
-                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}&widget_referrer=${window.location.origin}`}
+                  style={{ 
+                    aspectRatio: '9/16',
+                    height: '100vh',
+                    width: 'auto',
+                    minWidth: '100%' 
+                  }}
+                  // Pre-load magic: Hum 'mute' ko use karte hain background loading ke liye
+                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isActive ? 0 : 1}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}&widget_referrer=${window.location.origin}`}
                   title="Chiti Short"
                   loading={isActive ? "eager" : "lazy"}
                   allow="autoplay; encrypted-media"
@@ -192,7 +207,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
-            {/* UI Overlay (Labels, Buttons etc) */}
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/80 to-transparent text-white z-20 pointer-events-none">
               <div className="flex items-center gap-3 mb-3 pointer-events-auto">
                 <img 
