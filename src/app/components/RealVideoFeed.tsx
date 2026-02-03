@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2, Music2 } from 'lucide-react'; // PlayIcon ki zarurat nahi ab
+import { Loader2, Music2, Volume2, VolumeX } from 'lucide-react'; // Mute icons add kiye
 import { toast } from 'sonner'; 
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
@@ -10,7 +10,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  // isPlaying aur showPlayIcon states hata di gayi hain
+  const [isMuted, setIsMuted] = useState(false); // Play/Pause ki jagah Mute state
+  const [showMuteIcon, setShowMuteIcon] = useState(false); 
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
   
@@ -83,11 +84,15 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
-      // setIsPlaying reset karne ki zarurat nahi ab
     }
   };
 
-  // togglePlayPause function hata diya gaya hai
+  // Click karne par Mute/Unmute toggle hoga
+  const toggleMute = () => {
+    setIsMuted(!isMuted);
+    setShowMuteIcon(true);
+    setTimeout(() => setShowMuteIcon(false), 500); 
+  };
 
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
     e.stopPropagation();
@@ -136,7 +141,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           <div 
             key={video.id} 
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
-            // onClick={togglePlayPause} hata diya gaya
+            onClick={toggleMute} 
           >
             <img 
               src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
@@ -153,13 +158,19 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   width: 'auto',
                   minWidth: '100%' 
                 }}
-                src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}`}
+                src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isMuted ? 1 : 0}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}`}
                 title="Chiti Short"
                 allow="autoplay; encrypted-media"
               ></iframe>
             </div>
 
-            {/* showPlayIcon wala UI block hata diya gaya hai */}
+            {showMuteIcon && (
+              <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+                <div className="bg-black/40 p-5 rounded-full animate-ping">
+                  {isMuted ? <VolumeX size={40} color="white" /> : <Volume2 size={40} color="white" />}
+                </div>
+              </div>
+            )}
 
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/80 to-transparent text-white z-20 pointer-events-none">
               <div className="flex items-center gap-3 mb-3 pointer-events-auto">
