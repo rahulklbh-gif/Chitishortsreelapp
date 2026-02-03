@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2, Music2, Play as PlayIcon } from 'lucide-react';
+import { Loader2, Music2 } from 'lucide-react'; // PlayIcon ki zarurat nahi ab
 import { toast } from 'sonner'; 
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
@@ -10,25 +10,20 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(true); 
-  const [showPlayIcon, setShowPlayIcon] = useState(false); 
+  // isPlaying aur showPlayIcon states hata di gayi hain
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
   
-  // Ek session mein baar-baar view na badhe uske liye
   const viewedVideos = useRef<Set<string>>(new Set());
 
-  // Videos load karna
   useEffect(() => {
     fetchVideos();
   }, []);
 
-  // Follow data load karna
   useEffect(() => {
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- 🔥 VIEW COUNT LOGIC (WAISA HI HAI JAISE AAPNE DIYA THA) ---
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) {
@@ -88,15 +83,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
-      setIsPlaying(true); 
+      // setIsPlaying reset karne ki zarurat nahi ab
     }
   };
 
-  const togglePlayPause = () => {
-    setIsPlaying(!isPlaying);
-    setShowPlayIcon(true);
-    setTimeout(() => setShowPlayIcon(false), 500); 
-  };
+  // togglePlayPause function hata diya gaya hai
 
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
     e.stopPropagation();
@@ -145,9 +136,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           <div 
             key={video.id} 
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
-            onClick={togglePlayPause} 
+            // onClick={togglePlayPause} hata diya gaya
           >
-            {/* PERFORMANCE LAYER: Thumbnail hamesha niche rahega loading chupane ke liye */}
             <img 
               src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
               className="absolute inset-0 w-full h-full object-cover z-0 opacity-50 blur-[2px]"
@@ -163,19 +153,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   width: 'auto',
                   minWidth: '100%' 
                 }}
-                src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}`}
+                src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}`}
                 title="Chiti Short"
                 allow="autoplay; encrypted-media"
               ></iframe>
             </div>
 
-            {showPlayIcon && (
-              <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
-                <div className="bg-black/40 p-5 rounded-full animate-ping">
-                  {isPlaying ? <PlayIcon size={40} fill="white" /> : <div className="w-10 h-10 border-l-8 border-r-8 border-white mx-auto"></div>}
-                </div>
-              </div>
-            )}
+            {/* showPlayIcon wala UI block hata diya gaya hai */}
 
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/80 to-transparent text-white z-20 pointer-events-none">
               <div className="flex items-center gap-3 mb-3 pointer-events-auto">
