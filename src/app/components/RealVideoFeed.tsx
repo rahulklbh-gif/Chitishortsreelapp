@@ -153,11 +153,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        
-        // --- PRE-LOADING LOGIC: Current, Previous, and Next video loading ---
-        // isActive: jo video dikh raha hai
-        // index === activeIndex + 1: aane wala video (Pre-load)
-        // index === activeIndex - 1: pichhla video (Cache mein rahega)
         const isNear = index >= activeIndex - 1 && index <= activeIndex + 1;
 
         return (
@@ -166,16 +161,20 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
+             {/* --- BACKGROUND BLUR LAYER: Looks like Instagram --- */}
+             <div 
+              className="absolute inset-0 bg-cover bg-center blur-3xl opacity-40 scale-110"
+              style={{ backgroundImage: `url(https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg)` }}
+            />
+
              {/* --- FAST LOADING: Thumbnail Layer --- */}
              <img 
-              src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
-              className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-700 ${isActive ? 'opacity-0 delay-1000' : 'opacity-100'}`}
-              style={{ filter: 'blur(2px) brightness(0.7)' }}
+              src={`https://i.ytimg.com/vi/${video.youtube_video_id}/maxresdefault.jpg`}
+              className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-700 ${isActive ? 'opacity-0 delay-[2000ms]' : 'opacity-100'}`}
               alt="loading buffer"
             />
 
             <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-transparent z-10">
-              {/* Sirf 'isNear' videos ko DOM mein rakhenge taaki loading fast ho aur memory bache */}
               {isNear && (
                 <iframe
                   className={`w-full h-full pointer-events-none transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'}`}
@@ -185,8 +184,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                     width: 'auto',
                     minWidth: '100%' 
                   }}
-                  // Pre-load magic: Hum 'mute' ko use karte hain background loading ke liye
-                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isActive ? 0 : 1}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}&widget_referrer=${window.location.origin}`}
+                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isActive ? 0 : 1}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}`}
                   title="Chiti Short"
                   loading={isActive ? "eager" : "lazy"}
                   allow="autoplay; encrypted-media"
@@ -197,32 +195,32 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             {/* --- SMALL PLAY/PAUSE ICON --- */}
             {showPlayIcon && (
               <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
-                <div className="bg-black/40 p-3 rounded-full animate-ping backdrop-blur-sm">
-                  {isPlaying ? (
-                    <PlayIcon size={30} fill="white" className="text-white ml-1" />
+                <div className="bg-black/40 p-4 rounded-full animate-ping backdrop-blur-sm">
+                  {!isPlaying ? (
+                    <Pause size={40} fill="white" className="text-white" />
                   ) : (
-                    <Pause size={30} fill="white" className="text-white" />
+                    <PlayIcon size={40} fill="white" className="text-white ml-1" />
                   )}
                 </div>
               </div>
             )}
 
-            <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/80 to-transparent text-white z-20 pointer-events-none">
+            <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/90 via-black/40 to-transparent text-white z-20 pointer-events-none">
               <div className="flex items-center gap-3 mb-3 pointer-events-auto">
                 <img 
                   src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
                   className="w-11 h-11 rounded-full border-2 border-white shadow-lg" 
                 />
-                <span className="font-black text-lg">@{video.user_name}</span>
+                <span className="font-black text-lg shadow-black drop-shadow-lg">@{video.user_name}</span>
                 <button 
                   onClick={(e) => handleFollowToggle(e, video.user_id)} 
-                  className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black transition-all pointer-events-auto ${followedUsers.has(video.user_id) ? 'bg-gray-700' : 'bg-blue-600'}`}
+                  className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black transition-all pointer-events-auto shadow-md ${followedUsers.has(video.user_id) ? 'bg-gray-700/80' : 'bg-blue-600'}`}
                 >
                   {followedUsers.has(video.user_id) ? 'Following' : 'Follow'}
                 </button>
               </div>
-              <p className="text-sm mb-4 line-clamp-2 pr-20">{video.caption}</p>
-              <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md">
+              <p className="text-sm mb-4 line-clamp-2 pr-20 drop-shadow-md">{video.caption}</p>
+              <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
                 <Music2 size={14} className="animate-pulse" />
                 <span className="truncate">Original Audio - {video.user_name}</span>
               </div>
