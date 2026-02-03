@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2, Music2, Volume2, VolumeX } from 'lucide-react'; 
+import { Loader2, Music2, Volume2, VolumeX } from 'lucide-react'; // Mute icons add kiye
 import { toast } from 'sonner'; 
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
@@ -11,44 +11,59 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
   
-  // Mute aur Icon ke liye states
-  const [isMuted, setIsMuted] = useState(false); 
+  // --- CHANGE 1: Play/Pause ki jagah Mute State ---
+  const [isMuted, setIsMuted] = useState(false); // Default: Aawaz chalu rahegi
   const [showMuteIcon, setShowMuteIcon] = useState(false); 
   
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // Ek session mein baar-baar view na badhe uske liye
   const viewedVideos = useRef<Set<string>>(new Set());
 
+  // Videos load karna
   useEffect(() => {
     fetchVideos();
   }, []);
 
+  // Follow data load karna
   useEffect(() => {
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // View count logic (Same as before)
+  // --- 🔥 VIEW COUNT LOGIC (SAME AS BEFORE) ---
   useEffect(() => {
     const recordView = async () => {
-      if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
-      
+      if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) {
+        return;
+      }
+
       const currentVideoId = videos[activeIndex].id;
       const currentUserId = currentUser.id;
-      
-      if (viewedVideos.current.has(currentVideoId)) return;
-      
+
+      if (viewedVideos.current.has(currentVideoId)) {
+        return;
+      }
+
       try {
         const { error } = await supabase.rpc('increment_views', { 
           post_id: currentVideoId, 
           viewer_id: currentUserId 
         });
-        if (!error) viewedVideos.current.add(currentVideoId);
+
+        if (error) {
+          console.error("View Error:", error.message);
+        } else {
+          viewedVideos.current.add(currentVideoId);
+        }
       } catch (err) {
-        console.error("View error:", err);
+        console.error("Unexpected error:", err);
       }
     };
+
     const timer = setTimeout(recordView, 2000);
     return () => clearTimeout(timer);
+
   }, [activeIndex, videos, currentUser?.id]); 
 
   const fetchVideos = async () => {
@@ -58,10 +73,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
        .from('posts')
        .select('*')
        .order('created_at', { ascending: false });
+
       if (error) throw error;
       if (data) setVideos(data);
-    } catch (error) { console.error('Error fetching videos:', error); }
-    finally { setLoading(false); }
+    } catch (error) { 
+      console.error('Error fetching videos:', error); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const fetchFollows = async () => {
@@ -81,14 +100,15 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
+      // Scroll karne par naye video ke liye mute state reset nahi kar rahe, taaki user ki preference bani rahe
     }
   };
 
-  // 🔥 Mute Toggle Function
+  // --- CHANGE 2: Toggle Mute Function ---
   const toggleMute = () => {
     setIsMuted(!isMuted);
     setShowMuteIcon(true);
-    setTimeout(() => setShowMuteIcon(false), 500); // 0.5 second baad icon gayab
+    setTimeout(() => setShowMuteIcon(false), 500); 
   };
 
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
@@ -106,7 +126,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         setFollowedUsers(prev => new Set(prev).add(targetUserId));
         toast.success("Following!");
       }
-    } catch (err) { toast.error("Error updating follow"); }
+    } catch (err) { toast.error("Koshish nakam rahi"); }
   };
 
   const handleVideoShare = async (video: any) => {
@@ -138,30 +158,38 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           <div 
             key={video.id} 
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
-            onClick={toggleMute} 
+            onClick={toggleMute} // Click karne par ab Mute/Unmute hoga
           >
-            {/* Background Thumbnail */}
-            <img 
+             {/* --- FAST LOADING JUGAAD: Thumbnail Layer --- */}
+             {/* Ye image tab tak dikhegi jab tak video load ho raha hai, isse speed tez lagti hai */}
+             <img 
               src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
-              className="absolute inset-0 w-full h-full object-cover z-0 opacity-50 blur-[2px]"
-              alt="loading bg"
+              className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-700 ${isActive ? 'opacity-0 delay-1000' : 'opacity-100'}`}
+              style={{ filter: 'blur(2px) brightness(0.7)' }} // Thoda blur taaki text saaf dikhe
+              alt="loading buffer"
             />
 
             <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-transparent z-10">
               <iframe
-                className={`w-full h-full pointer-events-none transition-opacity duration-700 ${isActive ? 'opacity-100' : 'opacity-0'}`}
-                style={{ aspectRatio: '9/16', height: '100vh', width: 'auto', minWidth: '100%' }}
-                src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isMuted ? 1 : 0}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}`}
+                className={`w-full h-full pointer-events-none transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                style={{ 
+                  aspectRatio: '9/16',
+                  height: '100vh',
+                  width: 'auto',
+                  minWidth: '100%' 
+                }}
+                // Added: origin & widget_referrer for speed, mute controlled by state
+                src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isMuted ? 1 : 0}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}&widget_referrer=${window.location.origin}`}
                 title="Chiti Short"
                 allow="autoplay; encrypted-media"
               ></iframe>
             </div>
 
-            {/* Mute/Unmute Icon Overlay */}
+            {/* --- MUTE ICON OVERLAY --- */}
             {showMuteIcon && (
               <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
                 <div className="bg-black/40 p-5 rounded-full animate-ping">
-                  {isMuted ? <VolumeX size={40} color="white" /> : <Volume2 size={40} color="white" />}
+                  {isMuted ? <VolumeX size={40} fill="white" className="text-white" /> : <Volume2 size={40} fill="white" className="text-white" />}
                 </div>
               </div>
             )}
@@ -180,14 +208,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   {followedUsers.has(video.user_id) ? 'Following' : 'Follow'}
                 </button>
               </div>
-              <p className="text-sm mb-4 line-clamp-2 pr-20 pointer-events-auto">{video.caption}</p>
-              <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md pointer-events-auto">
-                <Music2 size={14} className="animate-spin" style={{ animationDuration: '3s' }} />
+              <p className="text-sm mb-4 line-clamp-2 pr-20">{video.caption}</p>
+              <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md">
+                <Music2 size={14} className="animate-pulse" />
                 <span className="truncate">Original Audio - {video.user_name}</span>
               </div>
             </div>
 
-            <div className="absolute right-3 bottom-24 z-30" onClick={(e) => e.stopPropagation()}>
+            <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
               <VideoActions 
                 videoId={video.id} 
                 initialLikes={video.likes_count || 0} 
@@ -197,14 +225,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               />
             </div>
           </div>
-        )
+        );
       })}
-      <style>{`
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .animate-spin { animation: spin 3s linear infinite; }
-      `}</style>
+      <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
 }
