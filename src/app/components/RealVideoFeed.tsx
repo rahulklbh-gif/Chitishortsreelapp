@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2, Music2, Play as PlayIcon, Pause } from 'lucide-react'; // Pause icon bhi add kiya clean look ke liye
+import { Loader2, Music2, Play as PlayIcon, Pause } from 'lucide-react'; 
 import { toast } from 'sonner'; 
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
@@ -10,14 +10,22 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-
-  // --- WAPIS PLAY/PAUSE LOGIC ---
+  
+  // --- PLAY/PAUSE STATE ---
   const [isPlaying, setIsPlaying] = useState(true); 
   const [showPlayIcon, setShowPlayIcon] = useState(false); 
   
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewedVideos = useRef<Set<string>>(new Set());
+
+  // --- FAST LOADING: DNS Pre-fetch ---
+  useEffect(() => {
+    const link = document.createElement('link');
+    link.rel = 'preconnect';
+    link.href = 'https://www.youtube.com';
+    document.head.appendChild(link);
+  }, []);
 
   // Videos load karna
   useEffect(() => {
@@ -29,7 +37,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- VIEW COUNT LOGIC (SAME) ---
+  // --- VIEW COUNT LOGIC ---
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
@@ -44,10 +52,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           post_id: currentVideoId, 
           viewer_id: currentUserId 
         });
-
-        if (!error) {
-          viewedVideos.current.add(currentVideoId);
-        }
+        if (!error) viewedVideos.current.add(currentVideoId);
       } catch (err) {
         console.error("View error:", err);
       }
@@ -91,15 +96,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
-      setIsPlaying(true); // Scroll karte hi naya video auto-play hoga
+      setIsPlaying(true); 
     }
   };
 
-  // --- PLAY/PAUSE FUNCTION ---
   const togglePlayPause = () => {
     setIsPlaying(!isPlaying);
     setShowPlayIcon(true);
-    setTimeout(() => setShowPlayIcon(false), 500); // 0.5 sec mein icon gayab
+    setTimeout(() => setShowPlayIcon(false), 500); 
   };
 
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
@@ -145,40 +149,39 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
+        // Agla video ready rakhne ke liye logic
+        const isNear = index >= activeIndex - 1 && index <= activeIndex + 1;
+
         return (
           <div 
             key={video.id} 
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
-             {/* --- FAST LOADING: Thumbnail Layer --- */}
+             {/* --- THUMBNAIL LAYER (Instant visual) --- */}
              <img 
               src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
-              className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-700 ${isActive ? 'opacity-0 delay-1000' : 'opacity-100'}`}
+              className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-700 ${isActive ? 'opacity-0 delay-[1200ms]' : 'opacity-100'}`}
               style={{ filter: 'blur(2px) brightness(0.7)' }}
               alt="loading buffer"
             />
 
             <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-transparent z-10">
-              <iframe
-                className={`w-full h-full pointer-events-none transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'}`}
-                style={{ 
-                  aspectRatio: '9/16',
-                  height: '100vh',
-                  width: 'auto',
-                  minWidth: '100%' 
-                }}
-                // Logic change: Mute=0 (Always sound), Autoplay depends on isPlaying state
-                src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}&widget_referrer=${window.location.origin}`}
-                title="Chiti Short"
-                allow="autoplay; encrypted-media"
-              ></iframe>
+              {isNear && (
+                <iframe
+                  className={`w-full h-full pointer-events-none transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                  style={{ aspectRatio: '9/16', height: '100vh', width: 'auto', minWidth: '100%' }}
+                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}&widget_referrer=${window.location.origin}`}
+                  title="Chiti Short"
+                  loading={isActive ? "eager" : "lazy"}
+                  allow="autoplay; encrypted-media"
+                ></iframe>
+              )}
             </div>
 
             {/* --- SMALL PLAY/PAUSE ICON --- */}
             {showPlayIcon && (
               <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
-                {/* Size chhota kiya: p-3 (padding kam) aur Icon size 30 */}
                 <div className="bg-black/40 p-3 rounded-full animate-ping backdrop-blur-sm">
                   {isPlaying ? (
                     <PlayIcon size={30} fill="white" className="text-white ml-1" />
@@ -189,6 +192,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
+            {/* UI Overlay (Labels, Buttons etc) */}
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/80 to-transparent text-white z-20 pointer-events-none">
               <div className="flex items-center gap-3 mb-3 pointer-events-auto">
                 <img 
