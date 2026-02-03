@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2, Music2, Volume2, VolumeX } from 'lucide-react'; // Mute icons add kiye
+import { Loader2, Music2, Volume2, VolumeX } from 'lucide-react'; 
 import { toast } from 'sonner'; 
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
@@ -10,11 +10,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isMuted, setIsMuted] = useState(false); // Play/Pause ki jagah Mute state
+  
+  // Mute aur Icon ke liye states
+  const [isMuted, setIsMuted] = useState(false); 
   const [showMuteIcon, setShowMuteIcon] = useState(false); 
+  
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
-  
   const viewedVideos = useRef<Set<string>>(new Set());
 
   useEffect(() => {
@@ -25,26 +27,24 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
+  // View count logic (Same as before)
   useEffect(() => {
     const recordView = async () => {
-      if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) {
-        return;
-      }
+      if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
+      
       const currentVideoId = videos[activeIndex].id;
       const currentUserId = currentUser.id;
-      if (viewedVideos.current.has(currentVideoId)) {
-        return;
-      }
+      
+      if (viewedVideos.current.has(currentVideoId)) return;
+      
       try {
         const { error } = await supabase.rpc('increment_views', { 
           post_id: currentVideoId, 
           viewer_id: currentUserId 
         });
-        if (!error) {
-          viewedVideos.current.add(currentVideoId);
-        }
+        if (!error) viewedVideos.current.add(currentVideoId);
       } catch (err) {
-        console.error("Unexpected error:", err);
+        console.error("View error:", err);
       }
     };
     const timer = setTimeout(recordView, 2000);
@@ -60,11 +60,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
        .order('created_at', { ascending: false });
       if (error) throw error;
       if (data) setVideos(data);
-    } catch (error) { 
-      console.error('Error fetching videos:', error); 
-    } finally { 
-      setLoading(false); 
-    }
+    } catch (error) { console.error('Error fetching videos:', error); }
+    finally { setLoading(false); }
   };
 
   const fetchFollows = async () => {
@@ -87,11 +84,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     }
   };
 
-  // Click karne par Mute/Unmute toggle hoga
+  // 🔥 Mute Toggle Function
   const toggleMute = () => {
     setIsMuted(!isMuted);
     setShowMuteIcon(true);
-    setTimeout(() => setShowMuteIcon(false), 500); 
+    setTimeout(() => setShowMuteIcon(false), 500); // 0.5 second baad icon gayab
   };
 
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
@@ -109,7 +106,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         setFollowedUsers(prev => new Set(prev).add(targetUserId));
         toast.success("Following!");
       }
-    } catch (err) { toast.error("Koshish nakam rahi"); }
+    } catch (err) { toast.error("Error updating follow"); }
   };
 
   const handleVideoShare = async (video: any) => {
@@ -143,6 +140,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={toggleMute} 
           >
+            {/* Background Thumbnail */}
             <img 
               src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
               className="absolute inset-0 w-full h-full object-cover z-0 opacity-50 blur-[2px]"
@@ -152,18 +150,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-transparent z-10">
               <iframe
                 className={`w-full h-full pointer-events-none transition-opacity duration-700 ${isActive ? 'opacity-100' : 'opacity-0'}`}
-                style={{ 
-                  aspectRatio: '9/16',
-                  height: '100vh',
-                  width: 'auto',
-                  minWidth: '100%' 
-                }}
+                style={{ aspectRatio: '9/16', height: '100vh', width: 'auto', minWidth: '100%' }}
                 src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isMuted ? 1 : 0}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}`}
                 title="Chiti Short"
                 allow="autoplay; encrypted-media"
               ></iframe>
             </div>
 
+            {/* Mute/Unmute Icon Overlay */}
             {showMuteIcon && (
               <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
                 <div className="bg-black/40 p-5 rounded-full animate-ping">
