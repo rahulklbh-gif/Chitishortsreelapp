@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2, Music2, Volume2, VolumeX } from 'lucide-react'; // Mute icons add kiye
+import { Loader2, Music2, Play as PlayIcon, Pause } from 'lucide-react'; // Pause icon bhi add kiya clean look ke liye
 import { toast } from 'sonner'; 
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
@@ -10,15 +10,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-  
-  // --- CHANGE 1: Play/Pause ki jagah Mute State ---
-  const [isMuted, setIsMuted] = useState(false); // Default: Aawaz chalu rahegi
-  const [showMuteIcon, setShowMuteIcon] = useState(false); 
+
+  // --- WAPIS PLAY/PAUSE LOGIC ---
+  const [isPlaying, setIsPlaying] = useState(true); 
+  const [showPlayIcon, setShowPlayIcon] = useState(false); 
   
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
-  
-  // Ek session mein baar-baar view na badhe uske liye
   const viewedVideos = useRef<Set<string>>(new Set());
 
   // Videos load karna
@@ -31,19 +29,15 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- 🔥 VIEW COUNT LOGIC (SAME AS BEFORE) ---
+  // --- VIEW COUNT LOGIC (SAME) ---
   useEffect(() => {
     const recordView = async () => {
-      if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) {
-        return;
-      }
+      if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
 
       const currentVideoId = videos[activeIndex].id;
       const currentUserId = currentUser.id;
 
-      if (viewedVideos.current.has(currentVideoId)) {
-        return;
-      }
+      if (viewedVideos.current.has(currentVideoId)) return;
 
       try {
         const { error } = await supabase.rpc('increment_views', { 
@@ -51,19 +45,16 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           viewer_id: currentUserId 
         });
 
-        if (error) {
-          console.error("View Error:", error.message);
-        } else {
+        if (!error) {
           viewedVideos.current.add(currentVideoId);
         }
       } catch (err) {
-        console.error("Unexpected error:", err);
+        console.error("View error:", err);
       }
     };
 
     const timer = setTimeout(recordView, 2000);
     return () => clearTimeout(timer);
-
   }, [activeIndex, videos, currentUser?.id]); 
 
   const fetchVideos = async () => {
@@ -100,15 +91,15 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
-      // Scroll karne par naye video ke liye mute state reset nahi kar rahe, taaki user ki preference bani rahe
+      setIsPlaying(true); // Scroll karte hi naya video auto-play hoga
     }
   };
 
-  // --- CHANGE 2: Toggle Mute Function ---
-  const toggleMute = () => {
-    setIsMuted(!isMuted);
-    setShowMuteIcon(true);
-    setTimeout(() => setShowMuteIcon(false), 500); 
+  // --- PLAY/PAUSE FUNCTION ---
+  const togglePlayPause = () => {
+    setIsPlaying(!isPlaying);
+    setShowPlayIcon(true);
+    setTimeout(() => setShowPlayIcon(false), 500); // 0.5 sec mein icon gayab
   };
 
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
@@ -158,14 +149,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           <div 
             key={video.id} 
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
-            onClick={toggleMute} // Click karne par ab Mute/Unmute hoga
+            onClick={togglePlayPause} 
           >
-             {/* --- FAST LOADING JUGAAD: Thumbnail Layer --- */}
-             {/* Ye image tab tak dikhegi jab tak video load ho raha hai, isse speed tez lagti hai */}
+             {/* --- FAST LOADING: Thumbnail Layer --- */}
              <img 
               src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
               className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-700 ${isActive ? 'opacity-0 delay-1000' : 'opacity-100'}`}
-              style={{ filter: 'blur(2px) brightness(0.7)' }} // Thoda blur taaki text saaf dikhe
+              style={{ filter: 'blur(2px) brightness(0.7)' }}
               alt="loading buffer"
             />
 
@@ -178,18 +168,23 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   width: 'auto',
                   minWidth: '100%' 
                 }}
-                // Added: origin & widget_referrer for speed, mute controlled by state
-                src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isMuted ? 1 : 0}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}&widget_referrer=${window.location.origin}`}
+                // Logic change: Mute=0 (Always sound), Autoplay depends on isPlaying state
+                src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=0&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}&widget_referrer=${window.location.origin}`}
                 title="Chiti Short"
                 allow="autoplay; encrypted-media"
               ></iframe>
             </div>
 
-            {/* --- MUTE ICON OVERLAY --- */}
-            {showMuteIcon && (
+            {/* --- SMALL PLAY/PAUSE ICON --- */}
+            {showPlayIcon && (
               <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
-                <div className="bg-black/40 p-5 rounded-full animate-ping">
-                  {isMuted ? <VolumeX size={40} fill="white" className="text-white" /> : <Volume2 size={40} fill="white" className="text-white" />}
+                {/* Size chhota kiya: p-3 (padding kam) aur Icon size 30 */}
+                <div className="bg-black/40 p-3 rounded-full animate-ping backdrop-blur-sm">
+                  {isPlaying ? (
+                    <PlayIcon size={30} fill="white" className="text-white ml-1" />
+                  ) : (
+                    <Pause size={30} fill="white" className="text-white" />
+                  )}
                 </div>
               </div>
             )}
