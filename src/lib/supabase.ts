@@ -58,4 +58,4 @@ export const videoCacheManager = {
   clear: () => {
     localStorage.removeItem(VIDEO_CACHE_KEY);
   }
-};
+}; 
