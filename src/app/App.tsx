@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { Toaster } from 'sonner';
@@ -23,6 +23,17 @@ function AppContent() {
   
   const navigate = useNavigate();
   const location = useLocation();
+
+  // --- PWA INSTALLATION SUPPORT (NO CODE CHANGES TO LOGIC) ---
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e: any) => {
+      // Prevent the mini-infobar from appearing on mobile
+      // e.preventDefault(); 
+      console.log('Chiti Shorts is ready to be installed');
+    };
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
 
   const activeTab = location.pathname === '/' ? 'home' : 
                     location.pathname.startsWith('/discover') ? 'discover' :
