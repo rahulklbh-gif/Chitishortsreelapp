@@ -4,31 +4,42 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     
-    <!-- PWA Meta Tags -->
     <meta name="theme-color" content="#000000" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Chiti Shorts" />
     <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="application-name" content="Chiti Shorts" />
     
-    <!-- SEO Meta Tags -->
     <meta name="description" content="Chiti Shorts Reel - Create, share, and discover amazing short videos" />
     <meta name="keywords" content="short videos, video sharing, social media, reels, tiktok alternative" />
     
-    <!-- Open Graph -->
     <meta property="og:title" content="Chiti Shorts Reel" />
     <meta property="og:description" content="Create, share, and discover amazing short videos" />
     <meta property="og:type" content="website" />
+    <meta property="og:image" content="/icon-512.png" />
     
     <title>Chiti Shorts Reel</title>
     
-    <!-- Manifest -->
     <link rel="manifest" href="/manifest.json" />
     
-    <!-- Apple Touch Icons -->
     <link rel="apple-touch-icon" href="/icon-192.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png" />
+
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((registration) => {
+              console.log('Chiti Shorts PWA Registered successfully:', registration.scope);
+            })
+            .catch((error) => {
+              console.log('Chiti Shorts PWA Registration failed:', error);
+            });
+        });
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
