@@ -1,39 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Vercel Environment Variables se connect kar rahe hain
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+// Humne yahan direct details daal di hain taaki error khatam ho jaye
+const supabaseUrl = 'https://fuhbqtatyixpqrsyuozu.supabase.co';
+const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ1aGJxdGF0eWl4cHFyc3l1b3p1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjkxNjAzMTUsImV4cCI6MjA4NDczNjMxNX0.ds8Ap039dQm2LYUv0-79_1AtddeZ3-AO6czG6OuoTVM';
 
-// Supabase Client Initialization
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-/**
- * AUTH FUNCTIONS: Dono Google aur Email login support karne ke liye
- */
-export const authActions = {
-  // 1. Google Login (Aapka pehle se set hai)
-  signInWithGoogle: async () => {
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin,
-        scopes: 'openid email profile https://www.googleapis.com/auth/youtube.upload'
-      }
-    });
-    return { error };
-  },
-
-  // 2. Email Login (Naya function jo aapko chahiye tha)
-  signInWithEmail: async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    return { data, error };
-  }
-};
-
-// --- AAPKA PURANA VIDEO CACHING CODE (BILKUL SAFE HAI) ---
+// Video cache for local storage
 const VIDEO_CACHE_KEY = 'chiti_video_cache';
 const MAX_CACHE_SIZE = 50; 
 
@@ -48,28 +21,41 @@ export const videoCacheManager = {
     try {
       const cache = localStorage.getItem(VIDEO_CACHE_KEY);
       if (!cache) return null;
+      
       const videos: CachedVideo[] = JSON.parse(cache);
       const video = videos.find(v => v.id === videoId);
+      
       if (video) {
         video.timestamp = Date.now();
         localStorage.setItem(VIDEO_CACHE_KEY, JSON.stringify(videos));
         return video.url;
       }
       return null;
-    } catch { return null; }
+    } catch {
+      return null;
+    }
   },
+
   set: (videoId: string, url: string) => {
     try {
       const cache = localStorage.getItem(VIDEO_CACHE_KEY);
       let videos: CachedVideo[] = cache ? JSON.parse(cache) : [];
+      
       videos = videos.filter(v => v.id !== videoId);
       videos.push({ id: videoId, url, timestamp: Date.now() });
+      
       if (videos.length > MAX_CACHE_SIZE) {
         videos.sort((a, b) => b.timestamp - a.timestamp);
         videos = videos.slice(0, MAX_CACHE_SIZE);
       }
+      
       localStorage.setItem(VIDEO_CACHE_KEY, JSON.stringify(videos));
-    } catch (error) { console.error('Error caching video:', error); }
+    } catch (error) {
+      console.error('Error caching video:', error);
+    }
   },
-  clear: () => { localStorage.removeItem(VIDEO_CACHE_KEY); }
-};
+
+  clear: () => {
+    localStorage.removeItem(VIDEO_CACHE_KEY);
+  }
+}; 
