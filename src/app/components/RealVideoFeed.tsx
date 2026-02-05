@@ -25,6 +25,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     link.rel = 'preconnect';
     link.href = 'https://www.youtube.com';
     document.head.appendChild(link);
+    
+    // Google Ads aur extra scripts ko block karne ke liye (Speed ke liye)
+    const dnsPrefetch = document.createElement('link');
+    dnsPrefetch.rel = 'dns-prefetch';
+    dnsPrefetch.href = 'https://googleads.g.doubleclick.net';
+    document.head.appendChild(dnsPrefetch);
   }, []);
 
   // Videos load karna
@@ -153,6 +159,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
+        // Hum "isNear" ko active rakhenge taaki swipe karte hi video ready mile
         const isNear = index >= activeIndex - 1 && index <= activeIndex + 1;
 
         return (
@@ -161,17 +168,17 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
-             {/* --- BACKGROUND BLUR LAYER: Looks like Instagram --- */}
+             {/* --- BACKGROUND BLUR LAYER --- */}
              <div 
               className="absolute inset-0 bg-cover bg-center blur-3xl opacity-40 scale-110"
               style={{ backgroundImage: `url(https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg)` }}
             />
 
-             {/* --- FAST LOADING: Thumbnail Layer --- */}
+             {/* --- THUMBNAIL LAYER: Faster than iframe --- */}
              <img 
               src={`https://i.ytimg.com/vi/${video.youtube_video_id}/maxresdefault.jpg`}
-              className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-700 ${isActive ? 'opacity-0 delay-[2000ms]' : 'opacity-100'}`}
-              alt="loading buffer"
+              className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-700 ${isActive ? 'opacity-0 delay-[1500ms]' : 'opacity-100'}`}
+              alt="buffer"
             />
 
             <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-transparent z-10">
@@ -184,7 +191,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                     width: 'auto',
                     minWidth: '100%' 
                   }}
-                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isActive ? 0 : 1}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}`}
+                  // Autoplay aur Mute ka balance taaki user interaction rule na toote
+                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isActive ? 0 : 1}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&widget_referrer=${window.location.origin}&origin=${window.location.origin}`}
                   title="Chiti Short"
                   loading={isActive ? "eager" : "lazy"}
                   allow="autoplay; encrypted-media"
@@ -192,7 +200,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               )}
             </div>
 
-            {/* --- SMALL PLAY/PAUSE ICON --- */}
+            {/* --- PLAY/PAUSE ICON --- */}
             {showPlayIcon && (
               <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
                 <div className="bg-black/40 p-4 rounded-full animate-ping backdrop-blur-sm">
@@ -209,7 +217,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               <div className="flex items-center gap-3 mb-3 pointer-events-auto">
                 <img 
                   src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
-                  className="w-11 h-11 rounded-full border-2 border-white shadow-lg" 
+                  className="w-11 h-11 rounded-full border-2 border-white shadow-lg object-cover" 
+                  alt="avatar"
                 />
                 <span className="font-black text-lg shadow-black drop-shadow-lg">@{video.user_name}</span>
                 <button 
