@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom'; // Navigation ke liye
+import { useNavigate } from 'react-router-dom';
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,12 +8,11 @@ import { toast } from 'sonner';
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
   const { user: currentUser } = useAuth();
-  const navigate = useNavigate(); // navigate function initialize kiya
+  const navigate = useNavigate();
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  // --- PLAY/PAUSE LOGIC ---
   const [isPlaying, setIsPlaying] = useState(true); 
   const [showPlayIcon, setShowPlayIcon] = useState(false); 
   
@@ -21,7 +20,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const containerRef = useRef<HTMLDivElement>(null);
   const viewedVideos = useRef<Set<string>>(new Set());
 
-  // --- PERFORMANCE: Pre-connect to YouTube & Google CDN ---
   useEffect(() => {
     const domains = [
       'https://www.youtube.com',
@@ -38,17 +36,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     });
   }, []);
 
-  // Videos load karna
   useEffect(() => {
     fetchVideos();
   }, []);
 
-  // Follow data load karna
   useEffect(() => {
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- VIEW COUNT LOGIC ---
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
@@ -80,9 +75,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const fetchVideos = async () => {
     try {
       setLoading(true);
+      // BADLAV: Profiles table ko join kiya taaki 'username' aur 'avatar_url' mil sake
       const { data, error } = await supabase
        .from('posts')
-       .select('*')
+       .select('*, profiles(username, avatar_url, full_name)')
        .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -165,6 +161,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
         const isNear = index >= activeIndex - 1 && index <= activeIndex + 2;
+        // Profiles data extract karna
+        const profile = video.profiles;
 
         return (
           <div 
@@ -215,26 +213,21 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-black/50 to-transparent text-white z-20 pointer-events-none">
               
-              {/* --- INSTAGRAM STYLE PROFILE CLICK LOGIC --- */}
               <div 
                 className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer active:opacity-70 transition-opacity"
                 onClick={(e) => {
-                  e.stopPropagation(); // Video pause na ho
-                  // Sweta ki profile kholne ke liye username bhej rahe hain
-                  if (video.user_name) {
-                    navigate(`/profile/${video.user_name}`);
-                  } else {
-                    // Backup: Agar username na mile toh ID se bhej do
-                    navigate(`/profile/${video.user_id}`);
-                  }
+                  e.stopPropagation();
+                  // BADLAV: Profile data se username ya id le rahe hain
+                  const target = profile?.username || video.user_id;
+                  if (target) navigate(`/profile/${target}`);
                 }}
               >
                 <img 
-                  src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
+                  src={profile?.avatar_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
                   className="w-11 h-11 rounded-full border-2 border-white shadow-lg object-cover" 
                   alt="avatar"
                 />
-                <span className="font-black text-lg shadow-black drop-shadow-lg hover:underline">@{video.user_name}</span>
+                <span className="font-black text-lg shadow-black drop-shadow-lg hover:underline">@{profile?.username || 'user'}</span>
                 
                 <button 
                   onClick={(e) => handleFollowToggle(e, video.user_id)} 
@@ -247,7 +240,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               <p className="text-sm mb-4 line-clamp-2 pr-20 drop-shadow-md pointer-events-auto">{video.caption}</p>
               <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
                 <Music2 size={14} className="animate-pulse" />
-                <span className="truncate">Original Audio - {video.user_name}</span>
+                <span className="truncate">Original Audio - {profile?.username || 'user'}</span>
               </div>
             </div>
 
@@ -266,4 +259,4 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
-}
+} 
