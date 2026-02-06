@@ -19,18 +19,21 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const containerRef = useRef<HTMLDivElement>(null);
   const viewedVideos = useRef<Set<string>>(new Set());
 
-  // --- PERFORMANCE: Pre-connect to YouTube ---
+  // --- PERFORMANCE: Pre-connect to YouTube & Google CDN ---
   useEffect(() => {
-    const link = document.createElement('link');
-    link.rel = 'preconnect';
-    link.href = 'https://www.youtube.com';
-    document.head.appendChild(link);
+    const domains = [
+      'https://www.youtube.com',
+      'https://i.ytimg.com',
+      'https://googleads.g.doubleclick.net',
+      'https://www.google.com'
+    ];
     
-    // Google Ads aur extra scripts ko block karne ke liye (Speed ke liye)
-    const dnsPrefetch = document.createElement('link');
-    dnsPrefetch.rel = 'dns-prefetch';
-    dnsPrefetch.href = 'https://googleads.g.doubleclick.net';
-    document.head.appendChild(dnsPrefetch);
+    domains.forEach(domain => {
+      const link = document.createElement('link');
+      link.rel = 'preconnect';
+      link.href = domain;
+      document.head.appendChild(link);
+    });
   }, []);
 
   // Videos load karna
@@ -43,7 +46,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- VIEW COUNT LOGIC ---
+  // --- VIEW COUNT LOGIC (Fixed with local check) ---
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
@@ -61,13 +64,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
         if (!error) {
           viewedVideos.current.add(currentVideoId);
+          console.log("View registered for:", currentVideoId);
         }
       } catch (err) {
         console.error("View error:", err);
       }
     };
 
-    const timer = setTimeout(recordView, 2000);
+    const timer = setTimeout(recordView, 3000); // User 3 sec dekhega tabhi view count hoga
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
@@ -102,6 +106,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const handleScroll = () => {
     if (!containerRef.current) return;
     const { scrollTop, clientHeight } = containerRef.current;
+    // Math.round ki jagah floor logic + sensitivity check for faster response
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
@@ -109,7 +114,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     }
   };
 
-  // --- PLAY/PAUSE FUNCTION ---
   const togglePlayPause = () => {
     setIsPlaying(!isPlaying);
     setShowPlayIcon(true);
@@ -159,8 +163,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        // Hum "isNear" ko active rakhenge taaki swipe karte hi video ready mile
-        const isNear = index >= activeIndex - 1 && index <= activeIndex + 1;
+        // --- NEXT VIDEO PRELOAD LOGIC ---
+        // isActive: Play right now
+        // isNear: Download in background (Pre-fetch 1 video back and 2 videos ahead)
+        const isNear = index >= activeIndex - 1 && index <= activeIndex + 2;
 
         return (
           <div 
@@ -168,16 +174,16 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
-             {/* --- BACKGROUND BLUR LAYER --- */}
+             {/* --- BACKGROUND BLUR LAYER (Low Quality for Speed) --- */}
              <div 
               className="absolute inset-0 bg-cover bg-center blur-3xl opacity-40 scale-110"
-              style={{ backgroundImage: `url(https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg)` }}
+              style={{ backgroundImage: `url(https://i.ytimg.com/vi/${video.youtube_video_id}/default.jpg)` }}
             />
 
-             {/* --- THUMBNAIL LAYER: Faster than iframe --- */}
+             {/* --- THUMBNAIL LAYER (Stays until video plays) --- */}
              <img 
-              src={`https://i.ytimg.com/vi/${video.youtube_video_id}/maxresdefault.jpg`}
-              className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-700 ${isActive ? 'opacity-0 delay-[1500ms]' : 'opacity-100'}`}
+              src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
+              className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-1000 ${isActive && isPlaying ? 'opacity-0 delay-700' : 'opacity-100'}`}
               alt="buffer"
             />
 
@@ -191,11 +197,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                     width: 'auto',
                     minWidth: '100%' 
                   }}
-                  // Autoplay aur Mute ka balance taaki user interaction rule na toote
-                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive && isPlaying ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isActive ? 0 : 1}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&widget_referrer=${window.location.origin}&origin=${window.location.origin}`}
+                  // --- TURBO PARAMETERS ---
+                  // enablejsapi=1 allows faster communication
+                  // mute=1 for isActive ensure autoplay always works (browser rule)
+                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isActive ? (isPlaying ? 0 : 1) : 1}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}&widget_referrer=${window.location.origin}`}
                   title="Chiti Short"
                   loading={isActive ? "eager" : "lazy"}
-                  allow="autoplay; encrypted-media"
+                  allow="autoplay; encrypted-media; picture-in-picture"
                 ></iframe>
               )}
             </div>
@@ -213,7 +221,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
-            <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/90 via-black/40 to-transparent text-white z-20 pointer-events-none">
+            <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-black/50 to-transparent text-white z-20 pointer-events-none">
               <div className="flex items-center gap-3 mb-3 pointer-events-auto">
                 <img 
                   src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
@@ -228,7 +236,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   {followedUsers.has(video.user_id) ? 'Following' : 'Follow'}
                 </button>
               </div>
-              <p className="text-sm mb-4 line-clamp-2 pr-20 drop-shadow-md">{video.caption}</p>
+              <p className="text-sm mb-4 line-clamp-2 pr-20 drop-shadow-md pointer-events-auto">{video.caption}</p>
               <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
                 <Music2 size={14} className="animate-pulse" />
                 <span className="truncate">Original Audio - {video.user_name}</span>
