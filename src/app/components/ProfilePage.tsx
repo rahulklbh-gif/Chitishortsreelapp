@@ -35,20 +35,30 @@ export function ProfilePage() {
     try {
       let targetProfile = null;
       
-      // 1. Sabse pehle username ke basis par profile uthate hain (Sweta ke liye)
+      // 1. Sabse pehle username ke basis par profile uthate hain
       if (username) {
-        const { data, error } = await supabase
+        // Pehle check karo username se (Exact Match)
+        const { data: byUsername } = await supabase
           .from('profiles')
           .select('*, total_likes, followers_count')
           .eq('username', username)
           .maybeSingle();
         
-        if (data) {
-          targetProfile = data;
+        if (byUsername) {
+          targetProfile = byUsername;
+        } else {
+          // AGAR USERNAME SE NAHI MILA, TOH HO SAKTA HAI UUID (ID) PASS HUI HO
+          // Ye tab hota hai jab feed se user_id bheji jati hai
+          const { data: byId } = await supabase
+            .from('profiles')
+            .select('*, total_likes, followers_count')
+            .eq('id', username) 
+            .maybeSingle();
+          targetProfile = byId;
         }
       } 
       
-      // 2. Agar username nahi hai ya galat hai, tabhi current user ki profile dikhao
+      // 2. Agar koi param nahi hai, tabhi current user ki profile dikhao
       if (!targetProfile && currentUser && !username) {
         const { data } = await supabase
           .from('profiles')
@@ -62,7 +72,7 @@ export function ProfilePage() {
         setProfile(targetProfile);
         setNewName(targetProfile.full_name || '');
         
-        // Follow status check (Kya main Sweta ko follow karta hoon?)
+        // Follow status check
         if (currentUser && currentUser.id !== targetProfile.id) {
           const { data: followData } = await supabase
             .from('follows')
@@ -73,7 +83,7 @@ export function ProfilePage() {
           setIsFollowing(!!followData);
         }
 
-        // Target profile ke saare posts load karna (Likes aur Views ke saath)
+        // Posts load karna
         const { data: posts } = await supabase
           .from('posts')
           .select('*, views_count, likes_count')
@@ -82,7 +92,7 @@ export function ProfilePage() {
         
         setUserPosts(posts || []);
 
-        // Real-time Likes aur Followers update logic (Extra Safety)
+        // Likes Update Logic
         if (targetProfile.id) {
            const { data: likesData } = await supabase
             .from('posts')
@@ -111,7 +121,6 @@ export function ProfilePage() {
 
     try {
       if (isFollowing) {
-        // Unfollow logic
         await supabase.from('follows').delete()
           .eq('follower_id', currentUser.id)
           .eq('following_id', profile.id);
@@ -119,16 +128,12 @@ export function ProfilePage() {
         setIsFollowing(false);
         setProfile((prev: any) => ({ ...prev, followers_count: Math.max(0, (prev.followers_count || 0) - 1) }));
       } else {
-        // Follow logic
         await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: profile.id }]);
-        
-        // Database RPC call to increment followers
         await supabase.rpc('increment_followers', { user_id: profile.id });
         
         setIsFollowing(true);
         setProfile((prev: any) => ({ ...prev, followers_count: (prev.followers_count || 0) + 1 }));
         
-        // Notification
         await supabase.from('notifications').insert([{
           type: 'follow',
           sender_id: currentUser.id,
@@ -223,7 +228,6 @@ export function ProfilePage() {
         )}
       </div>
 
-      {/* Profile Info & Stats */}
       <div className="p-6 flex items-center gap-6">
         <div className="relative shrink-0">
           <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-blue-600 bg-gray-900">
@@ -253,7 +257,6 @@ export function ProfilePage() {
         </div>
       </div>
 
-      {/* Follow/Edit Button */}
       <div className="px-6 mb-4">
         {profile?.id !== currentUser?.id ? (
           <button 
@@ -272,7 +275,6 @@ export function ProfilePage() {
         )}
       </div>
 
-      {/* Name Section */}
       <div className="px-6 mb-6">
         {isEditing ? (
           <div className="flex gap-2 bg-gray-900 p-1 rounded-lg border border-white/10">
@@ -287,10 +289,8 @@ export function ProfilePage() {
         )}
       </div>
 
-      {/* Grid Header */}
       <div className="flex justify-center border-t border-white/10 py-3"><Grid size={20} className="text-gray-500" /></div>
       
-      {/* Videos Display */}
       {userPosts.length > 0 ? (
         <div className="grid grid-cols-3 gap-0.5 px-0.5">
           {userPosts.map(post => (
