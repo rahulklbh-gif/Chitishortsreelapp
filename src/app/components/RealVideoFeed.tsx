@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom'; // Navigation ke liye
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -7,6 +8,7 @@ import { toast } from 'sonner';
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
   const { user: currentUser } = useAuth();
+  const navigate = useNavigate(); // navigate function initialize kiya
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -46,7 +48,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- VIEW COUNT LOGIC (Fixed with local check) ---
+  // --- VIEW COUNT LOGIC ---
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
@@ -213,12 +215,18 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-black/50 to-transparent text-white z-20 pointer-events-none">
               
-              {/* --- FIX: ADDED CLICKABLE PROFILE SECTION --- */}
+              {/* --- INSTAGRAM STYLE PROFILE CLICK LOGIC --- */}
               <div 
-                className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer active:scale-95 transition-transform"
+                className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer active:opacity-70 transition-opacity"
                 onClick={(e) => {
-                  e.stopPropagation(); 
-                  window.location.href = `/profile/${video.user_id}`;
+                  e.stopPropagation(); // Video pause na ho
+                  // Sweta ki profile kholne ke liye username bhej rahe hain
+                  if (video.user_name) {
+                    navigate(`/profile/${video.user_name}`);
+                  } else {
+                    // Backup: Agar username na mile toh ID se bhej do
+                    navigate(`/profile/${video.user_id}`);
+                  }
                 }}
               >
                 <img 
@@ -226,9 +234,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   className="w-11 h-11 rounded-full border-2 border-white shadow-lg object-cover" 
                   alt="avatar"
                 />
-                <span className="font-black text-lg shadow-black drop-shadow-lg">@{video.user_name}</span>
+                <span className="font-black text-lg shadow-black drop-shadow-lg hover:underline">@{video.user_name}</span>
                 
-                {/* Follow button logic remains isolated */}
                 <button 
                   onClick={(e) => handleFollowToggle(e, video.user_id)} 
                   className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black transition-all shadow-md ${followedUsers.has(video.user_id) ? 'bg-gray-700/80' : 'bg-blue-600'}`}
