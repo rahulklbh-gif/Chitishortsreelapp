@@ -47,38 +47,30 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
-
       const currentVideoId = videos[activeIndex].id;
       const currentUserId = currentUser.id;
-
       if (viewedVideos.current.has(currentVideoId)) return;
-
       try {
-        const { error } = await supabase.rpc('increment_views', { 
+        await supabase.rpc('increment_views', { 
           post_id: currentVideoId, 
           viewer_id: currentUserId 
         });
-
-        if (!error) {
-          viewedVideos.current.add(currentVideoId);
-          console.log("View registered for:", currentVideoId);
-        }
+        viewedVideos.current.add(currentVideoId);
       } catch (err) {
         console.error("View error:", err);
       }
     };
-
     const timer = setTimeout(recordView, 3000); 
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
+  // WAPAS WAHI PURANA FETCH: Kyunki profiles join fail ho raha tha
   const fetchVideos = async () => {
     try {
       setLoading(true);
-      // BADLAV: Profiles table ko join kiya taaki 'username' aur 'avatar_url' mil sake
       const { data, error } = await supabase
        .from('posts')
-       .select('*, profiles(username, avatar_url, full_name)')
+       .select('*')
        .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -161,8 +153,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
         const isNear = index >= activeIndex - 1 && index <= activeIndex + 2;
-        // Profiles data extract karna
-        const profile = video.profiles;
 
         return (
           <div 
@@ -217,17 +207,17 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer active:opacity-70 transition-opacity"
                 onClick={(e) => {
                   e.stopPropagation();
-                  // BADLAV: Profile data se username ya id le rahe hain
-                  const target = profile?.username || video.user_id;
-                  if (target) navigate(`/profile/${target}`);
+                  // SMART FIX: Agar user_name nahi hai, toh user_id hi bhej do, Profile page usey sambhaal lega
+                  const identifier = video.user_name || video.user_id;
+                  if (identifier) navigate(`/profile/${identifier}`);
                 }}
               >
                 <img 
-                  src={profile?.avatar_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
+                  src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
                   className="w-11 h-11 rounded-full border-2 border-white shadow-lg object-cover" 
                   alt="avatar"
                 />
-                <span className="font-black text-lg shadow-black drop-shadow-lg hover:underline">@{profile?.username || 'user'}</span>
+                <span className="font-black text-lg shadow-black drop-shadow-lg hover:underline">@{video.user_name || 'user'}</span>
                 
                 <button 
                   onClick={(e) => handleFollowToggle(e, video.user_id)} 
@@ -240,7 +230,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               <p className="text-sm mb-4 line-clamp-2 pr-20 drop-shadow-md pointer-events-auto">{video.caption}</p>
               <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
                 <Music2 size={14} className="animate-pulse" />
-                <span className="truncate">Original Audio - {profile?.username || 'user'}</span>
+                <span className="truncate">Original Audio - {video.user_name || 'user'}</span>
               </div>
             </div>
 
@@ -259,4 +249,4 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
-} 
+}
