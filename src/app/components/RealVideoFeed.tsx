@@ -71,7 +71,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       }
     };
 
-    const timer = setTimeout(recordView, 3000); // User 3 sec dekhega tabhi view count hoga
+    const timer = setTimeout(recordView, 3000); 
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
@@ -106,7 +106,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const handleScroll = () => {
     if (!containerRef.current) return;
     const { scrollTop, clientHeight } = containerRef.current;
-    // Math.round ki jagah floor logic + sensitivity check for faster response
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
@@ -163,9 +162,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        // --- NEXT VIDEO PRELOAD LOGIC ---
-        // isActive: Play right now
-        // isNear: Download in background (Pre-fetch 1 video back and 2 videos ahead)
         const isNear = index >= activeIndex - 1 && index <= activeIndex + 2;
 
         return (
@@ -174,13 +170,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
-             {/* --- BACKGROUND BLUR LAYER (Low Quality for Speed) --- */}
              <div 
               className="absolute inset-0 bg-cover bg-center blur-3xl opacity-40 scale-110"
               style={{ backgroundImage: `url(https://i.ytimg.com/vi/${video.youtube_video_id}/default.jpg)` }}
             />
 
-             {/* --- THUMBNAIL LAYER (Stays until video plays) --- */}
              <img 
               src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
               className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-1000 ${isActive && isPlaying ? 'opacity-0 delay-700' : 'opacity-100'}`}
@@ -197,9 +191,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                     width: 'auto',
                     minWidth: '100%' 
                   }}
-                  // --- TURBO PARAMETERS ---
-                  // enablejsapi=1 allows faster communication
-                  // mute=1 for isActive ensure autoplay always works (browser rule)
                   src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isActive ? (isPlaying ? 0 : 1) : 1}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}&widget_referrer=${window.location.origin}`}
                   title="Chiti Short"
                   loading={isActive ? "eager" : "lazy"}
@@ -208,7 +199,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               )}
             </div>
 
-            {/* --- PLAY/PAUSE ICON --- */}
             {showPlayIcon && (
               <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
                 <div className="bg-black/40 p-4 rounded-full animate-ping backdrop-blur-sm">
@@ -222,20 +212,31 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             )}
 
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-black/50 to-transparent text-white z-20 pointer-events-none">
-              <div className="flex items-center gap-3 mb-3 pointer-events-auto">
+              
+              {/* --- FIX: ADDED CLICKABLE PROFILE SECTION --- */}
+              <div 
+                className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer active:scale-95 transition-transform"
+                onClick={(e) => {
+                  e.stopPropagation(); 
+                  window.location.href = `/profile/${video.user_id}`;
+                }}
+              >
                 <img 
                   src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
                   className="w-11 h-11 rounded-full border-2 border-white shadow-lg object-cover" 
                   alt="avatar"
                 />
                 <span className="font-black text-lg shadow-black drop-shadow-lg">@{video.user_name}</span>
+                
+                {/* Follow button logic remains isolated */}
                 <button 
                   onClick={(e) => handleFollowToggle(e, video.user_id)} 
-                  className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black transition-all pointer-events-auto shadow-md ${followedUsers.has(video.user_id) ? 'bg-gray-700/80' : 'bg-blue-600'}`}
+                  className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black transition-all shadow-md ${followedUsers.has(video.user_id) ? 'bg-gray-700/80' : 'bg-blue-600'}`}
                 >
                   {followedUsers.has(video.user_id) ? 'Following' : 'Follow'}
                 </button>
               </div>
+
               <p className="text-sm mb-4 line-clamp-2 pr-20 drop-shadow-md pointer-events-auto">{video.caption}</p>
               <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
                 <Music2 size={14} className="animate-pulse" />
