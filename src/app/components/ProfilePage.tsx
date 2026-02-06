@@ -35,18 +35,21 @@ export function ProfilePage() {
     try {
       let targetProfile = null;
       
-      // Username ke basis par profile uthana
+      // 1. Sabse pehle username ke basis par profile uthate hain (Sweta ke liye)
       if (username) {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from('profiles')
           .select('*, total_likes, followers_count')
           .eq('username', username)
           .maybeSingle();
-        targetProfile = data;
+        
+        if (data) {
+          targetProfile = data;
+        }
       } 
       
-      // Agar username nahi hai to current user ki profile
-      if (!targetProfile && currentUser) {
+      // 2. Agar username nahi hai ya galat hai, tabhi current user ki profile dikhao
+      if (!targetProfile && currentUser && !username) {
         const { data } = await supabase
           .from('profiles')
           .select('*, total_likes, followers_count')
@@ -59,7 +62,7 @@ export function ProfilePage() {
         setProfile(targetProfile);
         setNewName(targetProfile.full_name || '');
         
-        // Follow status check
+        // Follow status check (Kya main Sweta ko follow karta hoon?)
         if (currentUser && currentUser.id !== targetProfile.id) {
           const { data: followData } = await supabase
             .from('follows')
@@ -70,7 +73,7 @@ export function ProfilePage() {
           setIsFollowing(!!followData);
         }
 
-        // Posts load karna views aur likes ke saath
+        // Target profile ke saare posts load karna (Likes aur Views ke saath)
         const { data: posts } = await supabase
           .from('posts')
           .select('*, views_count, likes_count')
@@ -78,6 +81,18 @@ export function ProfilePage() {
           .order('created_at', { ascending: false });
         
         setUserPosts(posts || []);
+
+        // Real-time Likes aur Followers update logic (Extra Safety)
+        if (targetProfile.id) {
+           const { data: likesData } = await supabase
+            .from('posts')
+            .select('likes_count')
+            .eq('user_id', targetProfile.id);
+           
+           const totalLikes = likesData?.reduce((acc, curr) => acc + (curr.likes_count || 0), 0) || 0;
+           setProfile((prev: any) => ({ ...prev, total_likes: totalLikes }));
+        }
+
       } else {
         setProfile(null);
       }
@@ -102,20 +117,18 @@ export function ProfilePage() {
           .eq('following_id', profile.id);
         
         setIsFollowing(false);
-        // UI par turant count kam karna
         setProfile((prev: any) => ({ ...prev, followers_count: Math.max(0, (prev.followers_count || 0) - 1) }));
       } else {
         // Follow logic
         await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: profile.id }]);
         
-        // Database RPC call for +1 (Jo humne SQL mein banaya hai)
+        // Database RPC call to increment followers
         await supabase.rpc('increment_followers', { user_id: profile.id });
         
         setIsFollowing(true);
-        // UI par turant count badhana
         setProfile((prev: any) => ({ ...prev, followers_count: (prev.followers_count || 0) + 1 }));
         
-        // Notification bhejnas
+        // Notification
         await supabase.from('notifications').insert([{
           type: 'follow',
           sender_id: currentUser.id,
@@ -132,7 +145,6 @@ export function ProfilePage() {
     }
   };
 
-  // ... (handleDeletePost, handleUpdateProfile, handlePhotoUpload - Sab same hai)
   const handleDeletePost = async (e: React.MouseEvent, postId: string) => {
     e.stopPropagation(); 
     const confirmDelete = window.confirm("Bhai, kya aap sach mein ye video delete karna chahte hain?");
@@ -218,7 +230,9 @@ export function ProfilePage() {
             {profile?.avatar_url ? <img src={profile.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><User size={30} className="text-gray-700" /></div>}
           </div>
           {profile?.id === currentUser?.id && (
-            <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-1 -right-1 bg-blue-600 p-1.5 rounded-full border-2 border-black"><Camera size={12} /></button>
+            <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-1 -right-1 bg-blue-600 p-1.5 rounded-full border-2 border-black">
+              {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
+            </button>
           )}
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handlePhotoUpload} />
         </div>
@@ -251,7 +265,11 @@ export function ProfilePage() {
           >
             {isFollowLoading ? 'Wait...' : isFollowing ? 'Unfollow' : 'Follow'}
           </button>
-        ) : null}
+        ) : (
+          <button onClick={() => setIsEditing(!isEditing)} className="w-full py-2 bg-white/5 border border-white/10 rounded-lg font-black uppercase tracking-widest text-xs">
+            Edit Profile
+          </button>
+        )}
       </div>
 
       {/* Name Section */}
@@ -277,11 +295,11 @@ export function ProfilePage() {
         <div className="grid grid-cols-3 gap-0.5 px-0.5">
           {userPosts.map(post => (
             <div key={post.id} className="relative aspect-[9/16] bg-gray-900 overflow-hidden group">
-              <img onClick={() => navigate(`/?video=${post.id}`)} src={post.thumbnail_url || `https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} className="w-full h-full object-cover cursor-pointer" />
+              <img onClick={() => navigate(`/?video=${post.id}`)} src={post.thumbnail_url || `https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-500" />
               {profile?.id === currentUser?.id && (
-                <button onClick={(e) => handleDeletePost(e, post.id)} className="absolute top-1 right-1 p-1.5 bg-red-600 rounded-full z-10"><Trash2 size={12} className="text-white" /></button>
+                <button onClick={(e) => handleDeletePost(e, post.id)} className="absolute top-1 right-1 p-1.5 bg-red-600 rounded-full z-10 active:scale-90"><Trash2 size={12} className="text-white" /></button>
               )}
-              <div className="absolute bottom-0 left-0 right-0 p-1.5 flex justify-between items-center bg-gradient-to-t from-black/80 to-transparent">
+              <div className="absolute bottom-0 left-0 right-0 p-1.5 flex justify-between items-center bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
                 <div className="flex items-center gap-1"><Play size={8} fill="white" className="text-white" /><span className="text-[9px] font-bold text-white">{post.views_count || 0}</span></div>
                 <div className="flex items-center gap-1"><Heart size={8} fill="white" className="text-white" /><span className="text-[9px] font-bold text-white">{post.likes_count || 0}</span></div>
               </div>
@@ -293,4 +311,4 @@ export function ProfilePage() {
       )}
     </div>
   );
-}
+} 
