@@ -15,7 +15,7 @@ export function DiscoverPage() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // Trending & Mock Data (Bilkul wahi jo aapka tha)
+  // Trending & Mock Data (Aapka original data)
   const trendingHashtags: TrendingItem[] = [
     { hashtag: 'dance', views: '12.5M', thumbnail: 'https://images.unsplash.com/photo-1504609773096-104ff2c73ba4?w=400' },
     { hashtag: 'comedy', views: '8.2M', thumbnail: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=400' },
@@ -32,7 +32,7 @@ export function DiscoverPage() {
     { username: 'fitness_coach', followers: '650K', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=100' },
   ];
 
-  // --- SEARCH LOGIC (Updated to support R2/Video URL) ---
+  // --- SEARCH LOGIC (Pure R2/Database focus) ---
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       if (searchQuery) {
@@ -46,12 +46,11 @@ export function DiscoverPage() {
   const performSearch = async () => {
     setLoading(true);
     try {
-      // Humne caption aur username dono mein search maara hai
       const { data, error } = await supabase
         .from('posts')
         .select('*')
         .or(`caption.ilike.%${searchQuery}%,user_name.ilike.%${searchQuery}%`)
-        .order('created_at', { ascending: false }) // Latest videos upar
+        .order('created_at', { ascending: false })
         .limit(21);
 
       if (error) throw error;
@@ -96,14 +95,8 @@ export function DiscoverPage() {
                     onClick={() => navigate(`/?video=${video.id}`)}
                     className="relative aspect-[9/16] bg-gray-900 rounded-lg overflow-hidden active:scale-95 transition-transform cursor-pointer border border-white/5"
                   >
-                    {/* UPDATED: Thumbnail logic. Agar youtube ID hai toh wo dikhao, varna naya thumbnail, varna placeholder */}
-                    {video.youtube_video_id ? (
-                      <img 
-                        src={`https://img.youtube.com/vi/${video.youtube_video_id}/mqdefault.jpg`}
-                        className="w-full h-full object-cover"
-                        alt="thumbnail"
-                      />
-                    ) : video.thumbnail_url ? (
+                    {/* FIXED: Ab koi YouTube link nahi hai, sirf hamara R2 thumbnail chalega */}
+                    {video.thumbnail_url ? (
                       <img 
                         src={video.thumbnail_url}
                         className="w-full h-full object-cover"
@@ -112,7 +105,7 @@ export function DiscoverPage() {
                     ) : (
                       <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900">
                         <Film className="text-gray-700 mb-1" size={24} />
-                        <span className="text-[8px] text-gray-500 uppercase tracking-tighter">No Preview</span>
+                        <span className="text-[8px] text-gray-500 uppercase tracking-tighter text-center px-1">No Thumbnail</span>
                       </div>
                     )}
 
@@ -125,8 +118,8 @@ export function DiscoverPage() {
               </div>
             ) : (
               <div className="text-center py-20 text-gray-500">
-                <p className="text-lg">No videos found for "{searchQuery}"</p>
-                <p className="text-sm">Try searching for #dance or #comedy</p>
+                <p className="text-lg font-medium text-gray-400">No results found</p>
+                <p className="text-sm">Try searching for something else</p>
               </div>
             )}
           </section>
@@ -177,7 +170,7 @@ export function DiscoverPage() {
                       <h3 className="font-semibold text-gray-100">@{creator.username}</h3>
                       <p className="text-sm text-gray-400">{creator.followers} followers</p>
                     </div>
-                    <button className="px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full font-semibold text-sm active:scale-95 transition-transform shadow-lg shadow-purple-600/20">
+                    <button className="px-6 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full font-semibold text-sm active:scale-95 transition-transform">
                       Follow
                     </button>
                   </div>
