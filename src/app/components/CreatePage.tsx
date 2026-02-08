@@ -1,8 +1,21 @@
+"use client";
 import { Upload, Video, Sparkles, Loader2, Send, X, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+// Naya Import: S3 Client for Cloudflare R2
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+
+// 1. R2 Client Setup (Ise component ke bahar rakho)
+const r2Client = new S3Client({
+  region: "auto",
+  endpoint: `https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: import.meta.env.VITE_R2_ACCESS_KEY_ID,
+    secretAccessKey: import.meta.env.VITE_R2_SECRET_ACCESS_KEY,
+  },
+});
 
 export function CreatePage() {
   const { user } = useAuth();
@@ -42,48 +55,41 @@ export function CreatePage() {
 
     setIsUploading(true);
     setProgress(10);
-    const toastId = toast.loading('Preparing secure upload...');
+    const toastId = toast.loading('Connecting to Cloudflare R2...');
 
     try {
-      // 1. File Name and Path
+      // 1. File Name and Path Generation
       const fileExt = selectedFile.name.split('.').pop();
       const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
-      const filePath = `${fileName}`;
 
       setProgress(30);
-      toast.loading('Uploading to Cloudflare R2...', { id: toastId });
+      toast.loading('Streaming video to R2 Bucket...', { id: toastId });
 
-      // 2. Upload to Supabase Storage (Connected to R2)
-      // FIX: Changed 'chiti_videos' to 'chiti-videos' to match your R2 Bucket Name
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('chiti-videos') 
-        .upload(filePath, selectedFile, {
-          cacheControl: '3600',
-          upsert: false
-        });
+      // 2. Direct Upload to Cloudflare R2 using AWS SDK
+      const uploadCommand = new PutObjectCommand({
+        Bucket: "chiti-videos",
+        Key: fileName,
+        Body: selectedFile,
+        ContentType: selectedFile.type,
+      });
 
-      if (uploadError) {
-        console.error("Storage Error Detail:", uploadError);
-        throw new Error(uploadError.message || "Failed to upload to R2 bucket");
-      }
+      // Uploading Process
+      await r2Client.send(uploadCommand);
 
       setProgress(70);
       toast.loading('Generating Public Link...', { id: toastId });
 
-      // 3. Get the Public URL
-      // FIX: Changed 'chiti_videos' to 'chiti-videos'
-      const { data: { publicUrl } } = supabase.storage
-        .from('chiti-videos')
-        .getPublicUrl(filePath);
+      // 3. Generate the Public URL (Using your R2 Public Domain)
+      const publicUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${fileName}`;
 
       if (!publicUrl) throw new Error("Could not generate public URL");
 
       setProgress(90);
-      toast.loading('Publishing to Feed...', { id: toastId });
+      toast.loading('Publishing to Chiti Feed...', { id: toastId });
 
       // 4. Save Record to Supabase 'posts' Table
       const { error: dbError } = await supabase.from('posts').insert([{
-        video_url: publicUrl,
+        video_url: publicUrl, // Link from R2
         caption: caption,
         user_id: user?.id,
         user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Chiti User',
@@ -97,15 +103,14 @@ export function CreatePage() {
       setProgress(100);
       toast.success('Short Published Successfully! 🚀', { id: toastId });
 
-      // Reset form
+      // Reset form on success
       setSelectedFile(null);
       setPreviewUrl('');
       setCaption('');
 
     } catch (error: any) {
-      console.error("Upload Error:", error);
-      // Detailed error message help identify if it's still a CORS/Bucket issue
-      toast.error(error.message || "Something went wrong during upload", { id: toastId });
+      console.error("Critical Upload Error:", error);
+      toast.error(error.message || "Cloudflare R2 Connection Failed", { id: toastId });
     } finally {
       setIsUploading(false);
       setProgress(0);
