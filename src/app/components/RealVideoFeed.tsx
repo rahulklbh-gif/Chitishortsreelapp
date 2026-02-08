@@ -19,13 +19,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewedVideos = useRef<Set<string>>(new Set());
+  
+  // R2 Video elements ko control karne ke liye ref array
+  const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
 
+  // YouTube domains hatakar ab R2 domains ko preconnect kar sakte hain (Optional)
   useEffect(() => {
     const domains = [
-      'https://www.youtube.com',
-      'https://i.ytimg.com',
-      'https://googleads.g.doubleclick.net',
-      'https://www.google.com'
+      'https://cdnjs.cloudflare.com', // Example agar Cloudflare CDN use ho raha ho
     ];
     
     domains.forEach(domain => {
@@ -64,7 +65,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
-  // WAPAS WAHI PURANA FETCH: Kyunki profiles join fail ho raha tha
   const fetchVideos = async () => {
     try {
       setLoading(true);
@@ -93,6 +93,22 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { console.error(err); }
   };
 
+  // Video Play/Pause Management on Scroll
+  useEffect(() => {
+    // Purane videos ko pause karna aur naye ko play karna
+    Object.values(videoRefs.current).forEach((videoEl, idx) => {
+      if (videoEl) {
+        if (videos[activeIndex]?.id === Object.keys(videoRefs.current)[idx]) {
+          if (isPlaying) videoEl.play().catch(() => {});
+          else videoEl.pause();
+        } else {
+          videoEl.pause();
+          videoEl.currentTime = 0; // Reset video position
+        }
+      }
+    });
+  }, [activeIndex, isPlaying, videos]);
+
   const handleScroll = () => {
     if (!containerRef.current) return;
     const { scrollTop, clientHeight } = containerRef.current;
@@ -104,6 +120,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   };
 
   const togglePlayPause = () => {
+    const currentVideo = videoRefs.current[videos[activeIndex]?.id];
+    if (currentVideo) {
+      if (isPlaying) {
+        currentVideo.pause();
+      } else {
+        currentVideo.play().catch(() => {});
+      }
+    }
     setIsPlaying(!isPlaying);
     setShowPlayIcon(true);
     setTimeout(() => setShowPlayIcon(false), 500); 
@@ -160,32 +184,37 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
+             {/* Background Blur: Agar video.thumbnail_url hai toh wo, warna default blur */}
              <div 
               className="absolute inset-0 bg-cover bg-center blur-3xl opacity-40 scale-110"
-              style={{ backgroundImage: `url(https://i.ytimg.com/vi/${video.youtube_video_id}/default.jpg)` }}
-            />
-
-             <img 
-              src={`https://i.ytimg.com/vi/${video.youtube_video_id}/hqdefault.jpg`}
-              className={`absolute inset-0 w-full h-full object-cover z-0 transition-opacity duration-1000 ${isActive && isPlaying ? 'opacity-0 delay-700' : 'opacity-100'}`}
-              alt="buffer"
+              style={{ backgroundImage: `url(${video.thumbnail_url || video.user_avatar})` }}
             />
 
             <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-transparent z-10">
               {isNear && (
-                <iframe
-                  className={`w-full h-full pointer-events-none transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                <video
+                  ref={(el) => (videoRefs.current[video.id] = el)}
+                  src={video.video_url} // R2 ka direct mp4/webm link
+                  className={`w-full h-full object-cover transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'}`}
                   style={{ 
-                    aspectRatio: '9/16',
                     height: '100vh',
-                    width: 'auto',
-                    minWidth: '100%' 
+                    width: '100%',
+                    objectFit: 'cover'
                   }}
-                  src={`https://www.youtube.com/embed/${video.youtube_video_id}?autoplay=${isActive ? 1 : 0}&controls=0&rel=0&modestbranding=1&loop=1&playlist=${video.youtube_video_id}&mute=${isActive ? (isPlaying ? 0 : 1) : 1}&showinfo=0&iv_load_policy=3&disablekb=1&enablejsapi=1&origin=${window.location.origin}&widget_referrer=${window.location.origin}`}
-                  title="Chiti Short"
-                  loading={isActive ? "eager" : "lazy"}
-                  allow="autoplay; encrypted-media; picture-in-picture"
-                ></iframe>
+                  loop
+                  playsInline
+                  muted={!isActive} // Browser policy: automatically sound sirf tab aayega jab user interact kare ya initial muted ho
+                  preload="auto"
+                />
+              )}
+              
+              {/* Thumbnail overlay jab tak video load nahi hota */}
+              {!isActive && (
+                 <img 
+                 src={video.thumbnail_url || video.user_avatar}
+                 className="absolute inset-0 w-full h-full object-cover z-0"
+                 alt="buffer"
+               />
               )}
             </div>
 
@@ -207,7 +236,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer active:opacity-70 transition-opacity"
                 onClick={(e) => {
                   e.stopPropagation();
-                  // SMART FIX: Agar user_name nahi hai, toh user_id hi bhej do, Profile page usey sambhaal lega
                   const identifier = video.user_name || video.user_id;
                   if (identifier) navigate(`/profile/${identifier}`);
                 }}
