@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 
 export interface Video {
   id: string;
-  url: string;
+  url: string; // Ab isme Cloudflare R2 ka link (https://pub-xxx.r2.dev/video.mp4) aayega
   thumbnail: string;
   username: string;
   avatar: string;
@@ -31,17 +31,6 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
   const { user: currentUser } = useAuth(); 
   const [isMuted, setIsMuted] = useState(true);
 
-  // --- NEW: YouTube ID Extractor ---
-  const getYouTubeID = (url: string) => {
-    if (!url) return null;
-    const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
-  };
-
-  const youtubeId = getYouTubeID(video.url);
-  // ----------------------------------
-
   // 1. Views Badhane ka logic (Bilkul Safe)
   useEffect(() => {
     if (isActive && video.id) {
@@ -49,19 +38,25 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
     }
   }, [isActive, video.id]);
 
+  // 2. Play/Pause Control logic (R2 optimized)
   useEffect(() => {
-    // Agar normal video hai (Not YouTube), tabhi ref use karenge
-    if (videoRef.current && !youtubeId) {
+    if (videoRef.current) {
       if (isActive) {
-        videoRef.current.play().catch(() => {});
+        // Play() return a promise, handle it to avoid console errors
+        const playPromise = videoRef.current.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(() => {
+            console.log("Auto-play was prevented. Waiting for user interaction.");
+          });
+        }
       } else {
         videoRef.current.pause();
-        videoRef.current.currentTime = 0;
+        videoRef.current.currentTime = 0; // Video ko start se reset karein jab swipe ho jaye
       }
     }
-  }, [isActive, youtubeId]);
+  }, [isActive]);
 
-  // 2. Follow Handle karne ka asli logic (Database Connection)
+  // 3. Follow Handle karne ka asli logic (Database Connection)
   const handleFollow = async () => {
     if (!currentUser) {
       toast.error("Pehle login karein!");
@@ -75,16 +70,14 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
       ]);
 
       if (error) {
-        if (error.code === '23505') { // Pehle se follow hai
+        if (error.code === '23505') { 
           toast.info("Aap pehle hi follow kar rahe hain");
         } else {
           throw error;
         }
       } else {
-        // Database mein count +1 karo
         await supabase.rpc('increment_followers', { user_id: video.user_id });
         
-        // Notification bhejo
         await supabase.from('notifications').insert([{
           type: 'follow',
           sender_id: currentUser.id,
@@ -119,70 +112,60 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
   };
 
   return (
-    <div className="relative w-full h-full bg-black">
+    <div className="relative w-full h-full bg-black flex items-center justify-center">
       
       {/* --- FAST LOADING HACK: Background Thumbnail --- */}
-      {/* Ye video ke piche rahega, taaki black screen kabhi na dikhe */}
+      {/* Jab tak video load ho raha ho, blur thumbnail dikhao */}
       <img 
         src={video.thumbnail} 
-        alt="background" 
-        className="absolute inset-0 w-full h-full object-cover opacity-60"
+        alt="background blur" 
+        className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-40 scale-110"
         style={{ zIndex: 0 }} 
       />
 
-      {youtubeId ? (
-        // --- YOUTUBE FAST PLAYER (Iframe) ---
-        <div className="absolute inset-0 z-0 pointer-events-none">
-          <iframe
-            className="w-full h-full object-cover"
-            src={`https://www.youtube.com/embed/${youtubeId}?autoplay=${isActive ? 1 : 0}&mute=${isMuted ? 1 : 0}&controls=0&modestbranding=1&rel=0&iv_load_policy=3&loop=1&playlist=${youtubeId}&playsinline=1&disablekb=1&fs=0`}
-            title={video.caption}
-            frameBorder="0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-          />
-          {/* Transparent overlay to capture clicks for Mute if needed, 
-              filhal actions buttons handle karenge */}
-        </div>
-      ) : (
-        // --- NORMAL VIDEO PLAYER (Fallback) ---
-        <video
-          ref={videoRef}
-          src={video.url}
-          poster={video.thumbnail}
-          loop
-          muted={isMuted}
-          playsInline
-          className="relative z-0 w-full h-full object-cover"
-          onClick={toggleMute}
-        />
-      )}
+      {/* --- CLOUDFLARE R2 VIDEO PLAYER --- */}
+      {/* Humne YouTube iframe ko poori tarah hata diya hai fast loading ke liye */}
+      <video
+        ref={videoRef}
+        src={video.url} // Aapka R2 link yahan aayega
+        poster={video.thumbnail}
+        loop
+        muted={isMuted}
+        playsInline
+        preload="auto" // Isse browser video ko background mein load kar lega
+        className="relative z-10 w-full h-full object-contain md:object-cover"
+        onClick={toggleMute}
+      />
 
-      {/* --- Mute Button (Works for both) --- */}
+      {/* --- Mute Button --- */}
       <button
         onClick={toggleMute}
-        className="absolute top-20 right-3 w-10 h-10 bg-black/50 rounded-full flex items-center justify-center z-20 pointer-events-auto"
+        className="absolute top-20 right-3 w-10 h-10 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center z-30 pointer-events-auto border border-white/10"
       >
         {isMuted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
       </button>
 
       {/* --- Video Info Overlay --- */}
-      <div className="absolute bottom-20 left-3 right-20 z-20 pointer-events-none">
-        <div className="space-y-2 pointer-events-auto">
-          <h3 className="text-white font-semibold text-lg drop-shadow-md">@{video.username}</h3>
+      <div className="absolute bottom-24 left-3 right-20 z-20 pointer-events-none">
+        <div className="space-y-3 pointer-events-auto">
+          <div className="flex items-center gap-2">
+            <img src={video.avatar} className="w-10 h-10 rounded-full border border-white" alt="avatar" />
+            <h3 className="text-white font-bold text-lg drop-shadow-md">@{video.username}</h3>
+          </div>
           <p className="text-white text-sm line-clamp-2 drop-shadow-md">{video.caption}</p>
           <div className="flex flex-wrap gap-2">
-            {video.hashtags.map((tag) => (
-              <span key={tag} className="text-white text-sm font-semibold drop-shadow-md">#{tag}</span>
+            {video.hashtags && video.hashtags.map((tag) => (
+              <span key={tag} className="text-white text-sm font-semibold drop-shadow-md opacity-90">#{tag}</span>
             ))}
           </div>
-          <div className="flex items-center gap-2 text-white text-sm drop-shadow-md">
-            <span className="truncate">🎵 {video.musicTitle}</span>
+          <div className="flex items-center gap-2 text-white/90 text-xs bg-black/20 w-fit px-3 py-1 rounded-full backdrop-blur-sm">
+            <span className="truncate">🎵 {video.musicTitle || 'Original Audio'}</span>
           </div>
         </div>
       </div>
 
-      <div className="relative z-20">
+      {/* --- Sidebar Actions --- */}
+      <div className="relative z-30">
         <VideoActions
           videoId={video.id}
           initialLikes={video.likes}
