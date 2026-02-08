@@ -2,10 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 // ERROR FIX: Humne ab OptimizedVideoPlayer import kiya hai
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
 
-// Video interface define kar rahe hain taaki TypeScript roye nahi
+// Video interface define kar rahe hain - Cloudflare R2 ke hisaab se
 export interface Video {
   id: string;
-  video_url: string;
+  video_url: string; // Cloudflare R2 .mp4 link
+  thumbnail_url?: string;
   caption: string;
   user?: {
     username: string;
@@ -27,33 +28,20 @@ export function VideoFeed({ videos, onComment }: VideoFeedProps) {
   const startY = useRef(0);
   const isDragging = useRef(false);
 
-  // --- FAST LOADING HACK: Pre-fetching Next Video ---
-  // Ye function agle 2 videos ko background mein ready rakhega
+  // --- NEW CLOUDFLARE R2 PRE-FETCH LOGIC ---
+  // R2 videos (MP4) ke liye browser ka native preload kaafi fast hota hai
   useEffect(() => {
-    const preloadVideos = () => {
+    const preloadNextVideos = () => {
       const nextIndex = currentIndex + 1;
-      const secondNextIndex = currentIndex + 2;
-      
-      [nextIndex, secondNextIndex].forEach(index => {
-        if (index < videos.length) {
-          const link = document.createElement('link');
-          link.rel = 'preload';
-          link.as = 'document'; // YouTube iframe ke liye document preload best hota hai
-          link.href = `https://www.youtube.com/embed/${getYouTubeID(videos[index].video_url)}`;
-          document.head.appendChild(link);
-        }
-      });
+      if (nextIndex < videos.length) {
+        const videoElement = document.createElement('video');
+        videoElement.src = videos[nextIndex].video_url;
+        videoElement.preload = 'auto'; // Background mein agla video load karna shuru karega
+      }
     };
-    preloadVideos();
+    preloadNextVideos();
   }, [currentIndex, videos]);
-
-  // Helper to get ID for preloading
-  function getYouTubeID(url: string) {
-    const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : '';
-  }
-  // --------------------------------------------------
+  // ------------------------------------------
 
   const handleTouchStart = (e: React.TouchEvent) => {
     startY.current = e.touches[0].clientY;
@@ -66,11 +54,12 @@ export function VideoFeed({ videos, onComment }: VideoFeedProps) {
     const currentY = e.touches[0].clientY;
     const diff = startY.current - currentY;
 
+    // Sensitivity check: 50px se zyada swipe par video change hoga
     if (Math.abs(diff) > 50) {
       if (diff > 0 && currentIndex < videos.length - 1) {
         setCurrentIndex(currentIndex + 1);
         isDragging.current = false;
-      } else if (diff < -0 && currentIndex > 0) { // Fixed small typo in your original logic
+      } else if (diff < 0 && currentIndex > 0) { 
         setCurrentIndex(currentIndex - 1);
         isDragging.current = false;
       }
@@ -82,7 +71,7 @@ export function VideoFeed({ videos, onComment }: VideoFeedProps) {
   };
 
   const handleWheel = (e: React.WheelEvent) => {
-    // Delta check ko thoda optimize kiya taaki scrolling smooth ho
+    // Scroll speed limiters
     if (Math.abs(e.deltaY) < 10) return; 
 
     if (e.deltaY > 30 && currentIndex < videos.length - 1) {
@@ -108,33 +97,36 @@ export function VideoFeed({ videos, onComment }: VideoFeedProps) {
     >
       <div
         ref={containerRef}
-        className="transition-transform duration-500 ease-[cubic-bezier(0.15,0,0.15,1)] h-full"
+        className="transition-transform duration-500 ease-[cubic-bezier(0.25,1,0.5,1)] h-full"
         style={{ willChange: 'transform' }}
       >
         {videos.map((video, index) => (
-          <div key={video.id} className="h-screen w-screen relative">
-            {/* YAHAN BADLAV KIYA HAI: isActive ke saath Pre-rendering logic */}
+          <div key={video.id} className="h-screen w-screen relative overflow-hidden">
+            {/* R2 Optimized Video Player */}
             <OptimizedVideoPlayer
               videoId={video.id}
               videoUrl={video.video_url}
-              // Agar ye current video hai YA agla video hai, toh isse active rakho (Pre-load)
+              thumbnailUrl={video.thumbnail_url}
+              // isActive sirf current video ko true dega taaki playback handle ho
               isActive={index === currentIndex}
               caption={video.caption}
               username={video.user?.username || 'User'}
               music={video.music}
               onVideoClick={() => {}} 
+              // Comments pass karne ke liye logic
+              onComment={() => onComment(video.id)}
             />
           </div>
         ))}
       </div>
 
-      {/* Scroll Indicator */}
+      {/* Scroll Indicator UI */}
       <div className="fixed right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-50 pointer-events-none">
         {videos.map((_, index) => (
           <div
             key={index}
-            className={`w-1 h-8 rounded-full transition-all duration-300 ${
-              index === currentIndex ? 'bg-white h-12' : 'bg-white/20'
+            className={`w-1 rounded-full transition-all duration-500 ${
+              index === currentIndex ? 'bg-blue-500 h-12 shadow-[0_0_10px_#3b82f6]' : 'bg-white/20 h-6'
             }`}
           />
         ))}
