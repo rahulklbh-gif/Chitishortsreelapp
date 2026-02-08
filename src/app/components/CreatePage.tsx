@@ -2,10 +2,10 @@ import { Upload, Video, Sparkles, Loader2, Send, X, CheckCircle2, AlertCircle } 
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase'; // Ye line dhyan se check kar lena
+import { supabase } from '@/lib/supabase';
 
 export function CreatePage() {
-  const { user, session } = useAuth();
+  const { user } = useAuth();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const [caption, setCaption] = useState('');
@@ -35,88 +35,71 @@ export function CreatePage() {
   };
 
   const handleUpload = async () => {
-    const token = (session as any)?.provider_token;
-    
-    if (!token) {
-      toast.error('Session Expired! Please Logout & Login again with Google.', {
-        duration: 5000,
-        icon: <AlertCircle className="text-red-500" />
-      });
+    if (!selectedFile || !user) {
+      toast.error("Please select a video and ensure you are logged in.");
       return;
     }
 
     setIsUploading(true);
     setProgress(10);
-    const toastId = toast.loading('Connecting to YouTube...');
+    const toastId = toast.loading('Preparing secure upload...');
 
     try {
-      const metadata = {
-        snippet: {
-          title: caption.substring(0, 70) || "My Awesome Short",
-          description: `${caption}\n\n#shorts #chiti #viral`,
-          categoryId: "22"
-        },
-        status: { privacyStatus: "public" }
-      };
+      // 1. File Name and Path
+      const fileExt = selectedFile.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`;
 
-      // 1. YouTube Upload initialization
-      const initRes = await fetch('https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(metadata)
-      });
+      setProgress(30);
+      toast.loading('Uploading to Cloudflare R2...', { id: toastId });
 
-      if (!initRes.ok) throw new Error("YouTube token not valid. Please Re-login.");
-      
-      const uploadUrl = initRes.headers.get('Location');
-      if (!uploadUrl) throw new Error("Failed to get YouTube upload URL");
+      // 2. Upload to Supabase Storage (Connected to R2)
+      // Bucket name: chiti_videos
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('chiti_videos')
+        .upload(filePath, selectedFile, {
+          cacheControl: '3600',
+          upsert: false
+        });
 
-      setProgress(40);
-      toast.loading('Uploading video bytes...', { id: toastId });
+      if (uploadError) throw uploadError;
 
-      // 2. Final Video data transmission
-      const finalRes = await fetch(uploadUrl, {
-        method: 'PUT',
-        body: selectedFile
-      });
+      setProgress(70);
+      toast.loading('Generating Public Link...', { id: toastId });
 
-      const responseData = await finalRes.json();
+      // 3. Get the Public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('chiti_videos')
+        .getPublicUrl(filePath);
 
-      if (finalRes.ok) {
-        setProgress(80);
-        toast.loading('Saving to App Feed...', { id: toastId });
+      setProgress(90);
+      toast.loading('Publishing to Feed...', { id: toastId });
 
-        // 3. NEW: Save to Supabase 'posts' table
-        const videoId = responseData.id;
-        
-        const { error: dbError } = await supabase.from('posts').insert([{
-          youtube_video_id: videoId,
-          caption: caption,
-          user_id: user?.id,
-          user_name: user?.user_metadata?.full_name || 'Chiti User',
-          user_avatar: user?.user_metadata?.avatar_url
-        }]);
+      // 4. Save Record to Supabase 'posts' Table
+      // Note: We are using 'video_url' column we created via SQL
+      const { error: dbError } = await supabase.from('posts').insert([{
+        video_url: publicUrl,
+        caption: caption,
+        user_id: user?.id,
+        user_name: user?.user_metadata?.full_name || 'Chiti User',
+        user_avatar: user?.user_metadata?.avatar_url,
+        likes_count: 0,
+        views_count: 0
+      }]);
 
-        if (dbError) {
-          console.error("Supabase Error:", dbError);
-          toast.warning('Posted to YouTube, but Feed update failed.', { id: toastId });
-        } else {
-          setProgress(100);
-          toast.success('Short Published to YouTube & App Feed! 🚀', { id: toastId });
-        }
+      if (dbError) throw dbError;
 
-        // Reset form
-        setSelectedFile(null);
-        setPreviewUrl('');
-        setCaption('');
-      } else {
-        throw new Error("Final transmission failed.");
-      }
+      setProgress(100);
+      toast.success('Short Published Successfully! 🚀', { id: toastId });
+
+      // Reset form
+      setSelectedFile(null);
+      setPreviewUrl('');
+      setCaption('');
+
     } catch (error: any) {
-      toast.error(error.message, { id: toastId });
+      console.error("Upload Error:", error);
+      toast.error(error.message || "Something went wrong during upload", { id: toastId });
     } finally {
       setIsUploading(false);
       setProgress(0);
@@ -129,7 +112,7 @@ export function CreatePage() {
         <Video size={48} className="text-blue-500" />
       </div>
       <h2 className="text-2xl font-bold mb-2">Please Login First</h2>
-      <p className="text-gray-500">You need to sign in with Google to create shorts.</p>
+      <p className="text-gray-500">You need to sign in to create shorts.</p>
     </div>
   );
 
@@ -183,10 +166,10 @@ export function CreatePage() {
           <button 
             onClick={handleUpload}
             disabled={isUploading}
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 py-5 rounded-[24px] font-black text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 py-5 rounded-[24px] font-black text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 shadow-xl shadow-blue-600/20"
           >
             {isUploading ? <Loader2 className="animate-spin" /> : <Send size={20} />}
-            {isUploading ? `UPLOADING ${progress}%` : 'PUBLISH TO YOUTUBE'}
+            {isUploading ? `UPLOADING ${progress}%` : 'PUBLISH VIDEO'}
           </button>
         </div>
       )}
