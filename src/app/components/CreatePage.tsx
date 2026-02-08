@@ -54,34 +54,39 @@ export function CreatePage() {
       toast.loading('Uploading to Cloudflare R2...', { id: toastId });
 
       // 2. Upload to Supabase Storage (Connected to R2)
-      // Bucket name: chiti_videos
+      // FIX: Changed 'chiti_videos' to 'chiti-videos' to match your R2 Bucket Name
       const { data: uploadData, error: uploadError } = await supabase.storage
-        .from('chiti_videos')
+        .from('chiti-videos') 
         .upload(filePath, selectedFile, {
           cacheControl: '3600',
           upsert: false
         });
 
-      if (uploadError) throw uploadError;
+      if (uploadError) {
+        console.error("Storage Error Detail:", uploadError);
+        throw new Error(uploadError.message || "Failed to upload to R2 bucket");
+      }
 
       setProgress(70);
       toast.loading('Generating Public Link...', { id: toastId });
 
       // 3. Get the Public URL
+      // FIX: Changed 'chiti_videos' to 'chiti-videos'
       const { data: { publicUrl } } = supabase.storage
-        .from('chiti_videos')
+        .from('chiti-videos')
         .getPublicUrl(filePath);
+
+      if (!publicUrl) throw new Error("Could not generate public URL");
 
       setProgress(90);
       toast.loading('Publishing to Feed...', { id: toastId });
 
       // 4. Save Record to Supabase 'posts' Table
-      // Note: We are using 'video_url' column we created via SQL
       const { error: dbError } = await supabase.from('posts').insert([{
         video_url: publicUrl,
         caption: caption,
         user_id: user?.id,
-        user_name: user?.user_metadata?.full_name || 'Chiti User',
+        user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Chiti User',
         user_avatar: user?.user_metadata?.avatar_url,
         likes_count: 0,
         views_count: 0
@@ -99,6 +104,7 @@ export function CreatePage() {
 
     } catch (error: any) {
       console.error("Upload Error:", error);
+      // Detailed error message help identify if it's still a CORS/Bucket issue
       toast.error(error.message || "Something went wrong during upload", { id: toastId });
     } finally {
       setIsUploading(false);
