@@ -35,26 +35,50 @@ export function ProfilePage() {
     try {
       let targetProfile = null;
       
-      // 1. Sabse pehle username ke basis par profile uthate hain
+      // 1. Sabse pehle handle karte hain agar username/ID URL mein hai
       if (username) {
-        // Pehle check karo username se (Exact Match)
-        const { data: byUsername } = await supabase
-          .from('profiles')
-          .select('*, total_likes, followers_count')
-          .eq('username', username)
-          .maybeSingle();
-        
-        if (byUsername) {
-          targetProfile = byUsername;
-        } else {
-          // AGAR USERNAME SE NAHI MILA, TOH HO SAKTA HAI UUID (ID) PASS HUI HO
-          // Ye tab hota hai jab feed se user_id bheji jati hai
+        // Step A: Check karo kya ye UUID hai? (Feed se aayi hui User ID)
+        const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(username);
+
+        if (isUUID) {
           const { data: byId } = await supabase
             .from('profiles')
             .select('*, total_likes, followers_count')
             .eq('id', username) 
             .maybeSingle();
           targetProfile = byId;
+        }
+
+        // Step B: Agar UUID se nahi mila, toh Username se check karo
+        if (!targetProfile) {
+          const { data: byUsername } = await supabase
+            .from('profiles')
+            .select('*, total_likes, followers_count')
+            .eq('username', username)
+            .maybeSingle();
+          targetProfile = byUsername;
+        }
+
+        // Step C: AGAR AB BHI NAHI MILA (R2 posts se metadata uthao)
+        // Ye tab kaam aayega jab profile table mein entry miss ho gayi ho
+        if (!targetProfile) {
+          const { data: fallbackData } = await supabase
+            .from('posts')
+            .select('user_id, user_name, user_avatar')
+            .or(`user_id.eq.${username},user_name.eq.${username}`)
+            .limit(1)
+            .maybeSingle();
+
+          if (fallbackData) {
+            targetProfile = {
+              id: fallbackData.user_id,
+              username: fallbackData.user_name || 'user',
+              full_name: fallbackData.user_name || 'Naya User',
+              avatar_url: fallbackData.user_avatar,
+              followers_count: 0,
+              total_likes: 0
+            };
+          }
         }
       } 
       
@@ -83,7 +107,7 @@ export function ProfilePage() {
           setIsFollowing(!!followData);
         }
 
-        // Posts load karna
+        // Posts load karna (Saara data fetch kar rahe hain)
         const { data: posts } = await supabase
           .from('posts')
           .select('*, views_count, likes_count')
@@ -92,14 +116,9 @@ export function ProfilePage() {
         
         setUserPosts(posts || []);
 
-        // Likes Update Logic
+        // Likes Update Logic (Aapka original loop/reduce logic)
         if (targetProfile.id) {
-           const { data: likesData } = await supabase
-            .from('posts')
-            .select('likes_count')
-            .eq('user_id', targetProfile.id);
-           
-           const totalLikes = likesData?.reduce((acc, curr) => acc + (curr.likes_count || 0), 0) || 0;
+           const totalLikes = posts?.reduce((acc, curr) => acc + (curr.likes_count || 0), 0) || 0;
            setProfile((prev: any) => ({ ...prev, total_likes: totalLikes }));
         }
 
@@ -114,26 +133,25 @@ export function ProfilePage() {
     }
   };
 
+  // --- Baaki functions (handleFollow, handleDeletePost, etc.) wahi hain ---
+  // [Yahan se niche ka code wahi hai jo aapne bheja tha]
+  
   const handleFollow = async () => {
     if (!currentUser || !profile) return toast.error("Login zaroori hai");
     if (isFollowLoading) return;
     setIsFollowLoading(true);
-
     try {
       if (isFollowing) {
         await supabase.from('follows').delete()
           .eq('follower_id', currentUser.id)
           .eq('following_id', profile.id);
-        
         setIsFollowing(false);
         setProfile((prev: any) => ({ ...prev, followers_count: Math.max(0, (prev.followers_count || 0) - 1) }));
       } else {
         await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: profile.id }]);
         await supabase.rpc('increment_followers', { user_id: profile.id });
-        
         setIsFollowing(true);
         setProfile((prev: any) => ({ ...prev, followers_count: (prev.followers_count || 0) + 1 }));
-        
         await supabase.from('notifications').insert([{
           type: 'follow',
           sender_id: currentUser.id,
@@ -215,7 +233,7 @@ export function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-black text-white pb-24">
-      {/* Header */}
+      {/* UI Code same as yours */}
       <div className="p-4 pt-8 flex items-center justify-between border-b border-white/10 sticky top-0 bg-black z-20">
         <div className="flex items-center gap-4">
           <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer" />
@@ -311,4 +329,4 @@ export function ProfilePage() {
       )}
     </div>
   );
-} 
+}
