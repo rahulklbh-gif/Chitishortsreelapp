@@ -64,12 +64,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
-  // --- 🚀 YAHAN HAI MAIN FIX (FETCH VIDEOS) ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
-      
-      // Select query mein 'full_name' add kiya gaya hai
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -85,9 +82,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       if (error) throw error;
       
       if (data) {
-        // Mapping logic ko vistar se update kiya hai
         const updatedVideos = data.map((video: any) => {
-          // Priority Order: 1. full_name, 2. username, 3. posts table ka user_name
           const freshName = video.profiles?.full_name || video.profiles?.username || video.user_name || 'user';
           const freshAvatar = video.profiles?.avatar_url || video.user_avatar;
 
@@ -120,7 +115,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   useEffect(() => {
     Object.values(videoRefs.current).forEach((videoEl, idx) => {
       if (videoEl) {
-        if (videos[activeIndex]?.id === Object.keys(videoRefs.current)[idx]) {
+        const videoId = Object.keys(videoRefs.current)[idx];
+        if (videos[activeIndex]?.id === videoId) {
           if (isPlaying) videoEl.play().catch(() => {});
           else videoEl.pause();
         } else {
@@ -206,17 +202,20 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
+             {/* Background Blur */}
              <div 
               className="absolute inset-0 bg-cover bg-center blur-3xl opacity-40 scale-110"
               style={{ backgroundImage: `url(${video.thumbnail_url || video.user_avatar})` }}
             />
 
-            <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-transparent z-10">
+            <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-black z-10">
               {isNear && (
                 <video
                   ref={(el) => (videoRefs.current[video.id] = el)}
                   src={video.video_url} 
-                  className={`w-full h-full object-cover transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                  // FIX: Smooth transition with poster
+                  poster={video.thumbnail_url || video.user_avatar}
+                  className={`w-full h-full object-cover transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-0'}`}
                   style={{ 
                     height: '100vh',
                     width: '100%',
@@ -229,7 +228,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 />
               )}
               
-              {!isActive && (
+              {/* FIX: Image ko sirf tab dikhayenge jab video render na ho rahi ho (not near) */}
+              {!isNear && (
                  <img 
                  src={video.thumbnail_url || video.user_avatar}
                  className="absolute inset-0 w-full h-full object-cover z-0"
@@ -264,9 +264,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   className="w-11 h-11 rounded-full border-2 border-white shadow-lg object-cover" 
                   alt="avatar"
                 />
-                <span className="font-black text-lg shadow-black drop-shadow-lg hover:underline">
-                  @{video.user_name}
-                </span>
+                <span className="font-black text-lg shadow-black drop-shadow-lg hover:underline">@{video.user_name}</span>
                 
                 <button 
                   onClick={(e) => handleFollowToggle(e, video.user_id)} 
@@ -298,4 +296,4 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
-} 
+}
