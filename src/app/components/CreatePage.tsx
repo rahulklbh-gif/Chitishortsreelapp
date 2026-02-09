@@ -4,10 +4,10 @@ import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
-// Naya Import: S3 Client for Cloudflare R2
+// Import S3 Client for Cloudflare R2
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-// 1. R2 Client Setup (Ise component ke bahar rakho)
+// R2 Configuration: Ise component ke bahar rakhte hain taaki baar-baar recreate na ho
 const r2Client = new S3Client({
   region: "auto",
   endpoint: `https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com`,
@@ -15,6 +15,7 @@ const r2Client = new S3Client({
     accessKeyId: import.meta.env.VITE_R2_ACCESS_KEY_ID,
     secretAccessKey: import.meta.env.VITE_R2_SECRET_ACCESS_KEY,
   },
+  forcePathStyle: true,
 });
 
 export function CreatePage() {
@@ -55,41 +56,41 @@ export function CreatePage() {
 
     setIsUploading(true);
     setProgress(10);
-    const toastId = toast.loading('Connecting to Cloudflare R2...');
+    const toastId = toast.loading('Preparing secure R2 upload...');
 
     try {
-      // 1. File Name and Path Generation
+      // 1. File Name and Path
       const fileExt = selectedFile.name.split('.').pop();
       const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
 
       setProgress(30);
-      toast.loading('Streaming video to R2 Bucket...', { id: toastId });
+      toast.loading('Uploading direct to Cloudflare...', { id: toastId });
 
-      // 2. Direct Upload to Cloudflare R2 using AWS SDK
+      // 2. Upload to Cloudflare R2 using S3 Client
+      // Ise hum direct bhej rahe hain, Supabase Storage ko bypass karke
       const uploadCommand = new PutObjectCommand({
-        Bucket: "chiti-videos",
+        Bucket: 'chiti-videos',
         Key: fileName,
         Body: selectedFile,
         ContentType: selectedFile.type,
       });
 
-      // Uploading Process
       await r2Client.send(uploadCommand);
 
       setProgress(70);
       toast.loading('Generating Public Link...', { id: toastId });
 
-      // 3. Generate the Public URL (Using your R2 Public Domain)
+      // 3. Construct the Public URL (Using your R2 Public Domain)
       const publicUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${fileName}`;
 
       if (!publicUrl) throw new Error("Could not generate public URL");
 
       setProgress(90);
-      toast.loading('Publishing to Chiti Feed...', { id: toastId });
+      toast.loading('Publishing to Feed...', { id: toastId });
 
       // 4. Save Record to Supabase 'posts' Table
       const { error: dbError } = await supabase.from('posts').insert([{
-        video_url: publicUrl, // Link from R2
+        video_url: publicUrl,
         caption: caption,
         user_id: user?.id,
         user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Chiti User',
@@ -103,14 +104,14 @@ export function CreatePage() {
       setProgress(100);
       toast.success('Short Published Successfully! 🚀', { id: toastId });
 
-      // Reset form on success
+      // Reset form
       setSelectedFile(null);
       setPreviewUrl('');
       setCaption('');
 
     } catch (error: any) {
-      console.error("Critical Upload Error:", error);
-      toast.error(error.message || "Cloudflare R2 Connection Failed", { id: toastId });
+      console.error("Upload Error:", error);
+      toast.error(error.message || "Something went wrong during R2 upload", { id: toastId });
     } finally {
       setIsUploading(false);
       setProgress(0);
