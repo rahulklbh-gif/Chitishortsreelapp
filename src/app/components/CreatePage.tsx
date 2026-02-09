@@ -64,14 +64,18 @@ export function CreatePage() {
       const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
 
       setProgress(30);
-      toast.loading('Uploading direct to Cloudflare...', { id: toastId });
+      toast.loading('Converting and Uploading to Cloudflare...', { id: toastId });
+
+      // --- FIX START: Convert File to Uint8Array to avoid "getReader" error ---
+      const fileBuffer = await selectedFile.arrayBuffer();
+      const finalBody = new Uint8Array(fileBuffer);
+      // --- FIX END ---
 
       // 2. Upload to Cloudflare R2 using S3 Client
-      // Ise hum direct bhej rahe hain, Supabase Storage ko bypass karke
       const uploadCommand = new PutObjectCommand({
         Bucket: 'chiti-videos',
         Key: fileName,
-        Body: selectedFile,
+        Body: finalBody, // Seedha file ki jagah Uint8Array bhej rahe hain
         ContentType: selectedFile.type,
       });
 
