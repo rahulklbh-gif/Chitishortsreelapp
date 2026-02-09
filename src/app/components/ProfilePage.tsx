@@ -35,9 +35,9 @@ export function ProfilePage() {
     try {
       let targetProfile = null;
       
-      // 1. Sabse pehle handle karte hain agar username/ID URL mein hai
+      // 1. Agar URL mein username ya ID hai
       if (username) {
-        // Step A: Check karo kya ye UUID hai? (Feed se aayi hui User ID)
+        // Step A: Check agar ye UUID (User ID) hai
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(username);
 
         if (isUUID) {
@@ -49,7 +49,7 @@ export function ProfilePage() {
           targetProfile = byId;
         }
 
-        // Step B: Agar UUID se nahi mila, toh Username se check karo
+        // Step B: Agar ID se nahi mila ya UUID nahi hai, toh Username se dhoondo
         if (!targetProfile) {
           const { data: byUsername } = await supabase
             .from('profiles')
@@ -59,8 +59,8 @@ export function ProfilePage() {
           targetProfile = byUsername;
         }
 
-        // Step C: AGAR AB BHI NAHI MILA (R2 posts se metadata uthao)
-        // Ye tab kaam aayega jab profile table mein entry miss ho gayi ho
+        // Step C: FALLBACK - Agar profile table mein entry hi nahi hai (R2 setup issue)
+        // Toh Posts table se user ka naam aur avatar utha lo taaki page khul jaye
         if (!targetProfile) {
           const { data: fallbackData } = await supabase
             .from('posts')
@@ -82,7 +82,7 @@ export function ProfilePage() {
         }
       } 
       
-      // 2. Agar koi param nahi hai, tabhi current user ki profile dikhao
+      // 2. Agar koi username nahi hai, toh current user ki profile dikhao
       if (!targetProfile && currentUser && !username) {
         const { data } = await supabase
           .from('profiles')
@@ -107,7 +107,7 @@ export function ProfilePage() {
           setIsFollowing(!!followData);
         }
 
-        // Posts load karna (Saara data fetch kar rahe hain)
+        // Posts load karna
         const { data: posts } = await supabase
           .from('posts')
           .select('*, views_count, likes_count')
@@ -116,10 +116,10 @@ export function ProfilePage() {
         
         setUserPosts(posts || []);
 
-        // Likes Update Logic (Aapka original loop/reduce logic)
-        if (targetProfile.id) {
-           const totalLikes = posts?.reduce((acc, curr) => acc + (curr.likes_count || 0), 0) || 0;
-           setProfile((prev: any) => ({ ...prev, total_likes: totalLikes }));
+        // Total Likes calculate karna fetched posts se (Aapka logic)
+        if (posts) {
+          const totalLikes = posts.reduce((acc, curr) => acc + (curr.likes_count || 0), 0);
+          setProfile((prev: any) => ({ ...prev, total_likes: totalLikes }));
         }
 
       } else {
@@ -133,9 +133,6 @@ export function ProfilePage() {
     }
   };
 
-  // --- Baaki functions (handleFollow, handleDeletePost, etc.) wahi hain ---
-  // [Yahan se niche ka code wahi hai jo aapne bheja tha]
-  
   const handleFollow = async () => {
     if (!currentUser || !profile) return toast.error("Login zaroori hai");
     if (isFollowLoading) return;
@@ -149,9 +146,11 @@ export function ProfilePage() {
         setProfile((prev: any) => ({ ...prev, followers_count: Math.max(0, (prev.followers_count || 0) - 1) }));
       } else {
         await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: profile.id }]);
+        // Supabase function to increment followers
         await supabase.rpc('increment_followers', { user_id: profile.id });
         setIsFollowing(true);
         setProfile((prev: any) => ({ ...prev, followers_count: (prev.followers_count || 0) + 1 }));
+        
         await supabase.from('notifications').insert([{
           type: 'follow',
           sender_id: currentUser.id,
@@ -227,13 +226,13 @@ export function ProfilePage() {
     <div className="h-screen bg-black text-white flex flex-col items-center justify-center p-6 text-center">
       <div className="w-20 h-20 bg-gray-900 rounded-full flex items-center justify-center mb-4"><User size={40} className="text-gray-600" /></div>
       <h1 className="text-2xl font-black mb-2 uppercase">Profile Nahi Mili</h1>
+      <p className="text-gray-500 mb-6 text-sm">Ye user abhi tak register nahi hua hai ya system mein entry nahi hai.</p>
       <button onClick={() => navigate('/')} className="bg-blue-600 w-full max-w-xs py-3 rounded-xl font-black uppercase tracking-wider">Wapas Home Jayein</button>
     </div>
   );
 
   return (
     <div className="min-h-screen bg-black text-white pb-24">
-      {/* UI Code same as yours */}
       <div className="p-4 pt-8 flex items-center justify-between border-b border-white/10 sticky top-0 bg-black z-20">
         <div className="flex items-center gap-4">
           <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer" />
@@ -329,4 +328,4 @@ export function ProfilePage() {
       )}
     </div>
   );
-}
+} 
