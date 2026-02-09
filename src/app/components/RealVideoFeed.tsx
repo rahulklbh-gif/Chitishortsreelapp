@@ -202,20 +202,29 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
-             {/* Background Blur */}
+             {/* BACKGROUND BLUR LAYER */}
              <div 
               className="absolute inset-0 bg-cover bg-center blur-3xl opacity-40 scale-110"
               style={{ backgroundImage: `url(${video.thumbnail_url || video.user_avatar})` }}
             />
 
-            <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-black z-10">
+            <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-transparent z-10">
+              
+              {/* FIXED THUMBNAIL IMAGE (Hamesha peeche rahegi taaki black screen na dikhe) */}
+              <img 
+                 src={video.thumbnail_url || video.user_avatar}
+                 className="absolute inset-0 w-full h-full object-cover z-0"
+                 alt="video placeholder"
+                 loading="eager"
+              />
+
               {isNear && (
                 <video
                   ref={(el) => (videoRefs.current[video.id] = el)}
                   src={video.video_url} 
-                  // FIX: Smooth transition with poster
                   poster={video.thumbnail_url || video.user_avatar}
-                  className={`w-full h-full object-cover transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                  // relative z-10 takki ye image ke upar dikhe
+                  className={`w-full h-full object-cover relative z-10 transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-0'}`}
                   style={{ 
                     height: '100vh',
                     width: '100%',
@@ -226,15 +235,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   muted={!isActive} 
                   preload="auto"
                 />
-              )}
-              
-              {/* FIX: Image ko sirf tab dikhayenge jab video render na ho rahi ho (not near) */}
-              {!isNear && (
-                 <img 
-                 src={video.thumbnail_url || video.user_avatar}
-                 className="absolute inset-0 w-full h-full object-cover z-0"
-                 alt="buffer"
-               />
               )}
             </div>
 
@@ -264,7 +264,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   className="w-11 h-11 rounded-full border-2 border-white shadow-lg object-cover" 
                   alt="avatar"
                 />
-                <span className="font-black text-lg shadow-black drop-shadow-lg hover:underline">@{video.user_name}</span>
+                <span className="font-black text-lg shadow-black drop-shadow-lg hover:underline">
+                  @{video.user_name}
+                </span>
                 
                 <button 
                   onClick={(e) => handleFollowToggle(e, video.user_id)} 
@@ -296,4 +298,4 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
-}
+} 
