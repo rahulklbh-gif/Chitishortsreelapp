@@ -68,13 +68,29 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const fetchVideos = async () => {
     try {
       setLoading(true);
+      // Logic Update: Ab hum 'profiles' table se latest info fetch kar rahe hain
       const { data, error } = await supabase
        .from('posts')
-       .select('*')
+       .select(`
+         *,
+         profiles:user_id (
+           username,
+           avatar_url
+         )
+       `)
        .order('created_at', { ascending: false });
 
       if (error) throw error;
-      if (data) setVideos(data);
+      
+      if (data) {
+        // Data format kar rahe hain taaki latest username/avatar use ho
+        const updatedVideos = data.map((video: any) => ({
+          ...video,
+          user_name: video.profiles?.username || video.user_name,
+          user_avatar: video.profiles?.avatar_url || video.user_avatar
+        }));
+        setVideos(updatedVideos);
+      }
     } catch (error) { 
       console.error('Error fetching videos:', error); 
     } finally { 
@@ -236,8 +252,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer active:opacity-70 transition-opacity"
                 onClick={(e) => {
                   e.stopPropagation();
-                  // CHANGE HERE: Ab hum naam ki jagah seedha User ID bhej rahe hain
-                  // Taaki Profile Page confuse na ho (Ravi Kumar vs ravibharti...)
                   if (video.user_id) navigate(`/profile/${video.user_id}`);
                 }}
               >
