@@ -20,14 +20,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const containerRef = useRef<HTMLDivElement>(null);
   const viewedVideos = useRef<Set<string>>(new Set());
   
-  // R2 Video elements ko control karne ke liye ref array
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
 
   useEffect(() => {
-    const domains = [
-      'https://cdnjs.cloudflare.com', 
-    ];
-    
+    const domains = ['https://cdnjs.cloudflare.com'];
     domains.forEach(domain => {
       const link = document.createElement('link');
       link.rel = 'preconnect';
@@ -194,7 +190,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        const isNear = index >= activeIndex - 1 && index <= activeIndex + 2;
+        // Optimization: Paas waali videos hi load karein
+        const isNear = index >= activeIndex - 1 && index <= activeIndex + 1;
 
         return (
           <div 
@@ -202,34 +199,33 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
-             {/* BACKGROUND BLUR LAYER */}
-             <div 
-              className="absolute inset-0 bg-cover bg-center blur-3xl opacity-40 scale-110"
-              style={{ backgroundImage: `url(${video.thumbnail_url || video.user_avatar})` }}
-            />
-
-            <div className="relative w-full h-full max-h-screen flex items-center justify-center overflow-hidden bg-transparent z-10">
-              
-              {/* FIXED THUMBNAIL IMAGE (Hamesha peeche rahegi taaki black screen na dikhe) */}
-              <img 
-                 src={video.thumbnail_url || video.user_avatar}
-                 className="absolute inset-0 w-full h-full object-cover z-0"
-                 alt="video placeholder"
-                 loading="eager"
+            {/* 1. BACKGROUND BLUR (Video ka apna thumbnail) */}
+            {video.thumbnail_url && (
+              <div 
+                className="absolute inset-0 bg-cover bg-center blur-3xl opacity-30 scale-110"
+                style={{ backgroundImage: `url(${video.thumbnail_url})` }}
               />
+            )}
+
+            <div className="relative w-full h-full flex items-center justify-center bg-black z-10">
+              
+              {/* 2. REAL VIDEO THUMBNAIL (As backup while loading) */}
+              {isActive && (
+                <img 
+                   src={video.thumbnail_url}
+                   className="absolute inset-0 w-full h-full object-cover z-0"
+                   alt="loading..."
+                />
+              )}
 
               {isNear && (
                 <video
                   ref={(el) => (videoRefs.current[video.id] = el)}
                   src={video.video_url} 
-                  poster={video.thumbnail_url || video.user_avatar}
-                  // relative z-10 takki ye image ke upar dikhe
-                  className={`w-full h-full object-cover relative z-10 transition-opacity duration-300 ${isActive ? 'opacity-100' : 'opacity-0'}`}
-                  style={{ 
-                    height: '100vh',
-                    width: '100%',
-                    objectFit: 'cover'
-                  }}
+                  // 3. Poster strictly using video's thumbnail
+                  poster={video.thumbnail_url}
+                  className={`w-full h-full object-cover relative z-10 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                  style={{ height: '100vh', width: '100%' }}
                   loop
                   playsInline
                   muted={!isActive} 
@@ -250,10 +246,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
-            <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-black/50 to-transparent text-white z-20 pointer-events-none">
-              
+            <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-transparent to-transparent text-white z-20 pointer-events-none">
               <div 
-                className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer active:opacity-70 transition-opacity"
+                className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer"
                 onClick={(e) => {
                   e.stopPropagation();
                   if (video.user_id) navigate(`/profile/${video.user_id}`);
@@ -261,24 +256,20 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               >
                 <img 
                   src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
-                  className="w-11 h-11 rounded-full border-2 border-white shadow-lg object-cover" 
+                  className="w-11 h-11 rounded-full border-2 border-white object-cover" 
                   alt="avatar"
                 />
-                <span className="font-black text-lg shadow-black drop-shadow-lg hover:underline">
-                  @{video.user_name}
-                </span>
-                
+                <span className="font-black text-lg shadow-black drop-shadow-lg">@{video.user_name}</span>
                 <button 
                   onClick={(e) => handleFollowToggle(e, video.user_id)} 
-                  className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black transition-all shadow-md ${followedUsers.has(video.user_id) ? 'bg-gray-700/80' : 'bg-blue-600'}`}
+                  className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black ${followedUsers.has(video.user_id) ? 'bg-gray-700/80' : 'bg-blue-600'}`}
                 >
                   {followedUsers.has(video.user_id) ? 'Following' : 'Follow'}
                 </button>
               </div>
-
               <p className="text-sm mb-4 line-clamp-2 pr-20 drop-shadow-md pointer-events-auto">{video.caption}</p>
-              <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md border border-white/10">
-                <Music2 size={14} className="animate-pulse" />
+              <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md">
+                <Music2 size={14} />
                 <span className="truncate">Original Audio - {video.user_name}</span>
               </div>
             </div>
@@ -295,7 +286,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           </div>
         );
       })}
-      <style>{`.no-scrollbar::-webkit-scrollbar { display: none; }`}</style>
     </div>
   );
 } 
