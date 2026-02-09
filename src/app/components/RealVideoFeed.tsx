@@ -65,16 +65,19 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
+  // --- UPDATED LOGIC START ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
-      // Logic Update: Ab hum 'profiles' table se latest info fetch kar rahe hain
+      // Yahan hum strictly profiles table se data join kar rahe hain
+      // profiles:user_id ka matlab hai 'posts' ki user_id se 'profiles' table ko match karo
       const { data, error } = await supabase
        .from('posts')
        .select(`
          *,
          profiles:user_id (
            username,
+           full_name,
            avatar_url
          )
        `)
@@ -83,12 +86,20 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       if (error) throw error;
       
       if (data) {
-        // Data format kar rahe hain taaki latest username/avatar use ho
-        const updatedVideos = data.map((video: any) => ({
-          ...video,
-          user_name: video.profiles?.username || video.user_name,
-          user_avatar: video.profiles?.avatar_url || video.user_avatar
-        }));
+        // Force Refresh Logic: 
+        // Hum posts table ke purane user_name/avatar ko ignore karke 
+        // profiles table ka taaza data prioritize kar rahe hain.
+        const updatedVideos = data.map((video: any) => {
+          // Priority 1: Profile ka Username, Priority 2: Full Name, Priority 3: Purana saved name
+          const latestName = video.profiles?.username || video.profiles?.full_name || video.user_name || 'user';
+          const latestAvatar = video.profiles?.avatar_url || video.user_avatar;
+
+          return {
+            ...video,
+            user_name: latestName,
+            user_avatar: latestAvatar
+          };
+        });
         setVideos(updatedVideos);
       }
     } catch (error) { 
@@ -97,6 +108,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       setLoading(false); 
     }
   };
+  // --- UPDATED LOGIC END ---
 
   const fetchFollows = async () => {
     if (!currentUser) return;
@@ -200,7 +212,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
-             {/* Background Blur: Agar video.thumbnail_url hai toh wo, warna default blur */}
+             {/* Background Blur */}
              <div 
               className="absolute inset-0 bg-cover bg-center blur-3xl opacity-40 scale-110"
               style={{ backgroundImage: `url(${video.thumbnail_url || video.user_avatar})` }}
@@ -210,7 +222,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               {isNear && (
                 <video
                   ref={(el) => (videoRefs.current[video.id] = el)}
-                  src={video.video_url} // R2 ka direct mp4/webm link
+                  src={video.video_url} 
                   className={`w-full h-full object-cover transition-opacity duration-500 ${isActive ? 'opacity-100' : 'opacity-0'}`}
                   style={{ 
                     height: '100vh',
@@ -219,12 +231,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   }}
                   loop
                   playsInline
-                  muted={!isActive} // Browser policy: automatically sound sirf tab aayega jab user interact kare ya initial muted ho
+                  muted={!isActive} 
                   preload="auto"
                 />
               )}
               
-              {/* Thumbnail overlay jab tak video load nahi hota */}
               {!isActive && (
                  <img 
                  src={video.thumbnail_url || video.user_avatar}
@@ -252,6 +263,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer active:opacity-70 transition-opacity"
                 onClick={(e) => {
                   e.stopPropagation();
+                  // UUID based navigation jo humne fix kiya tha
                   if (video.user_id) navigate(`/profile/${video.user_id}`);
                 }}
               >
@@ -260,6 +272,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   className="w-11 h-11 rounded-full border-2 border-white shadow-lg object-cover" 
                   alt="avatar"
                 />
+                {/* Yahan naya mapped user_name dikhega */}
                 <span className="font-black text-lg shadow-black drop-shadow-lg hover:underline">@{video.user_name || 'user'}</span>
                 
                 <button 
