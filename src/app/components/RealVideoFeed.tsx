@@ -236,8 +236,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer active:opacity-70 transition-opacity"
                 onClick={(e) => {
                   e.stopPropagation();
-                  const identifier = video.user_name || video.user_id;
-                  if (identifier) navigate(`/profile/${identifier}`);
+                  // CHANGE HERE: Ab hum naam ki jagah seedha User ID bhej rahe hain
+                  // Taaki Profile Page confuse na ho (Ravi Kumar vs ravibharti...)
+                  if (video.user_id) navigate(`/profile/${video.user_id}`);
                 }}
               >
                 <img 
