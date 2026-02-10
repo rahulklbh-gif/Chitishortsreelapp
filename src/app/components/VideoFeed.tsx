@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 // OptimizedVideoPlayer import kiya gaya hai jo video rendering handle karta hai
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
+import { supabase } from '@/lib/supabase'; // Real-time sync ke liye zaroori hai
 
 /**
  * VIDEO INTERFACE: 
@@ -32,11 +33,52 @@ interface VideoFeedProps {
   onComment: (videoId: string) => void;
 }
 
-export function VideoFeed({ videos, onComment }: VideoFeedProps) {
+export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) {
+  // Humne videos ko state mein rakha hai taaki real-time updates dikh saken
+  const [videos, setVideos] = useState<Video[]>(initialVideos);
   const [currentIndex, setCurrentIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const isDragging = useRef(false);
+
+  // Jab initialVideos (props) change hon, state ko sync karein
+  useEffect(() => {
+    setVideos(initialVideos);
+  }, [initialVideos]);
+
+  /**
+   * REAL-TIME COUNT UPDATE LOGIC:
+   * Ye function Supabase se 'posts' table mein hone wale badlav ko turant sunta hai.
+   * Agar koi comment karta hai aur database mein count badhta hai, toh ye bina 
+   * page refresh kiye UI update kar dega.
+   */
+  useEffect(() => {
+    const channel = supabase
+      .channel('feed-realtime-updates')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'posts' },
+        (payload) => {
+          setVideos((currentVideos) =>
+            currentVideos.map((v) =>
+              v.id === payload.new.id
+                ? { 
+                    ...v, 
+                    comments_count: payload.new.comments_count, 
+                    likes_count: payload.new.likes_count,
+                    shares_count: payload.new.shares_count 
+                  }
+                : v
+            )
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   /**
    * 1. CLOUDFLARE R2 PRE-FETCH LOGIC:
@@ -128,10 +170,7 @@ export function VideoFeed({ videos, onComment }: VideoFeedProps) {
         {videos.map((video, index) => {
           /**
            * NAM AUR PHOTO UPDATE LOGIC:
-           * Ye sabse important hissa hai. Hum priority check kar rahe hain:
-           * 1. Profiles table ka 'full_name' (Agar set hai)
-           * 2. Profiles table ka 'username'
-           * 3. Posts table ka purana 'user_name' (Fallback)
+           * Profiles table se data nikaalna
            */
           const finalUsername = video.profiles?.full_name || video.profiles?.username || video.user_name || 'User';
           const finalAvatar = video.profiles?.avatar_url || video.user_avatar;
@@ -149,6 +188,9 @@ export function VideoFeed({ videos, onComment }: VideoFeedProps) {
                 username={finalUsername}
                 avatarUrl={finalAvatar} 
                 music={video.music}
+                // Naya: Counts ko player mein pass karna
+                likesCount={video.likes_count || 0}
+                commentsCount={video.comments_count || 0}
                 onVideoClick={() => {}} 
                 onComment={() => onComment(video.id)}
               />
