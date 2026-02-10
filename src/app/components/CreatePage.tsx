@@ -1,13 +1,11 @@
 "use client";
 import { Upload, Video, Sparkles, Loader2, Send, X, CheckCircle2, AlertCircle } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef } from 'react'; // useRef add kiya
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
-// Import S3 Client for Cloudflare R2
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-// R2 Configuration: Ise component ke bahar rakhte hain taaki baar-baar recreate na ho
 const r2Client = new S3Client({
   region: "auto",
   endpoint: `https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com`,
@@ -26,6 +24,10 @@ export function CreatePage() {
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('none');
   const [progress, setProgress] = useState(0);
+  
+  // Naya state thumbnail ke liye
+  const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const filters = [
     { name: 'Normal', value: 'none', class: '' },
@@ -33,6 +35,29 @@ export function CreatePage() {
     { name: 'Grayscale', value: 'gray', class: 'grayscale' },
     { name: 'Cinematic', value: 'cine', class: 'saturate-150 contrast-125 brightness-90' },
   ];
+
+  // THUMBNAIL GENERATOR FUNCTION
+  const generateThumbnail = (file: File) => {
+    const video = document.createElement('video');
+    video.src = URL.createObjectURL(file);
+    video.currentTime = 1; // 1 second par snapshot lega
+    video.muted = true;
+    video.playsInline = true;
+
+    video.onloadeddata = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
+      canvas.toBlob((blob) => {
+        if (blob) setThumbnailBlob(blob);
+      }, 'image/jpeg', 0.8);
+      
+      URL.revokeObjectURL(video.src);
+    };
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -45,7 +70,8 @@ export function CreatePage() {
 
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
-    toast.success("Video added! Ready to post.");
+    generateThumbnail(file); // Thumbnail generate karo
+    toast.success("Video added! Thumbnail generated.");
   };
 
   const handleUpload = async () => {
@@ -59,42 +85,45 @@ export function CreatePage() {
     const toastId = toast.loading('Preparing secure R2 upload...');
 
     try {
-      // 1. File Name and Path
       const fileExt = selectedFile.name.split('.').pop();
-      const fileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.${fileExt}`;
+      const baseName = `${Math.random().toString(36).substring(2)}-${Date.now()}`;
+      const videoFileName = `${baseName}.${fileExt}`;
+      const thumbFileName = `${baseName}.jpg`;
 
-      setProgress(30);
-      toast.loading('Converting and Uploading to Cloudflare...', { id: toastId });
+      setProgress(20);
+      toast.loading('Uploading Video & Thumbnail...', { id: toastId });
 
-      // --- FIX START: Convert File to Uint8Array to avoid "getReader" error ---
-      const fileBuffer = await selectedFile.arrayBuffer();
-      const finalBody = new Uint8Array(fileBuffer);
-      // --- FIX END ---
-
-      // 2. Upload to Cloudflare R2 using S3 Client
-      const uploadCommand = new PutObjectCommand({
+      // 1. Upload Video
+      const videoBuffer = await selectedFile.arrayBuffer();
+      const videoCommand = new PutObjectCommand({
         Bucket: 'chiti-videos',
-        Key: fileName,
-        Body: finalBody, // Seedha file ki jagah Uint8Array bhej rahe hain
+        Key: videoFileName,
+        Body: new Uint8Array(videoBuffer),
         ContentType: selectedFile.type,
       });
+      await r2Client.send(videoCommand);
 
-      await r2Client.send(uploadCommand);
+      // 2. Upload Thumbnail (Agar generate hua hai toh)
+      let finalThumbnailUrl = '';
+      if (thumbnailBlob) {
+        const thumbBuffer = await thumbnailBlob.arrayBuffer();
+        const thumbCommand = new PutObjectCommand({
+          Bucket: 'chiti-videos',
+          Key: thumbFileName,
+          Body: new Uint8Array(thumbBuffer),
+          ContentType: 'image/jpeg',
+        });
+        await r2Client.send(thumbCommand);
+        finalThumbnailUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${thumbFileName}`;
+      }
 
       setProgress(70);
-      toast.loading('Generating Public Link...', { id: toastId });
+      const publicVideoUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${videoFileName}`;
 
-      // 3. Construct the Public URL (Using your R2 Public Domain)
-      const publicUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${fileName}`;
-
-      if (!publicUrl) throw new Error("Could not generate public URL");
-
-      setProgress(90);
-      toast.loading('Publishing to Feed...', { id: toastId });
-
-      // 4. Save Record to Supabase 'posts' Table
+      // 3. Save Record to Supabase
       const { error: dbError } = await supabase.from('posts').insert([{
-        video_url: publicUrl,
+        video_url: publicVideoUrl,
+        thumbnail_url: finalThumbnailUrl || publicVideoUrl + "#t=0.1", // Fallback agar blob fail ho
         caption: caption,
         user_id: user?.id,
         user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Chiti User',
@@ -108,20 +137,21 @@ export function CreatePage() {
       setProgress(100);
       toast.success('Short Published Successfully! 🚀', { id: toastId });
 
-      // Reset form
       setSelectedFile(null);
       setPreviewUrl('');
       setCaption('');
+      setThumbnailBlob(null);
 
     } catch (error: any) {
       console.error("Upload Error:", error);
-      toast.error(error.message || "Something went wrong during R2 upload", { id: toastId });
+      toast.error(error.message || "Something went wrong", { id: toastId });
     } finally {
       setIsUploading(false);
       setProgress(0);
     }
   };
 
+  // ... (Baaki UI code bilkul same rahega jaisa aapne diya tha) ...
   if (!user) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black p-10 text-center">
       <div className="p-6 bg-gray-900 rounded-full mb-4">
@@ -151,6 +181,7 @@ export function CreatePage() {
         <div className="space-y-6">
           <div className="relative aspect-[9/16] rounded-[32px] overflow-hidden bg-gray-900 ring-1 ring-white/10 mx-auto max-h-[450px]">
             <video 
+              ref={videoRef}
               src={previewUrl} 
               className={`w-full h-full object-cover ${filters.find(f => f.value === selectedFilter)?.class}`} 
               controls 
