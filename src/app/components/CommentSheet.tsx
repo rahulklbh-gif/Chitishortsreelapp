@@ -1,5 +1,5 @@
 import { X, Send, Loader2, Trash2 } from 'lucide-react'; 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react'; // useCallback add kiya
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -11,13 +11,9 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    if (isOpen && videoId) {
-      fetchComments();
-    }
-  }, [isOpen, videoId]);
-
-  const fetchComments = async () => {
+  // Fetch function ko useCallback mein dala taaki hum ise kahin bhi use kar sakein
+  const fetchComments = useCallback(async () => {
+    if (!videoId) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -34,7 +30,14 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [videoId]);
+
+  // Jab sheet khule toh fresh data aaye
+  useEffect(() => {
+    if (isOpen) {
+      fetchComments();
+    }
+  }, [isOpen, fetchComments]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,22 +60,19 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
 
       if (commentError) throw commentError;
 
-      // Count badhane ke liye
       await supabase.rpc('increment_comments', { post_id: videoId });
 
       if (videoOwnerId && user.id !== videoOwnerId) {
-        await supabase.from('notifications').insert([
-          {
+        await supabase.from('notifications').insert([{
             type: 'comment',
             sender_id: user.id,
             receiver_id: videoOwnerId,
             post_id: videoId,
             content: newComment 
-          }
-        ]);
+        }]);
       }
 
-      setComments([commentRes, ...comments]);
+      setComments(prev => [commentRes, ...prev]);
       setNewComment('');
       toast.success('Comment added!');
     } catch (error: any) {
@@ -82,9 +82,18 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
     }
   };
 
+  /**
+   * UPDATED DELETE LOGIC:
+   * Ismein hum delete ke baad 'setComments' ko filter kar rahe hain 
+   * taaki UI turant update ho, aur handle karte waqt ensures database sync.
+   */
   const handleDelete = async (commentId: string) => {
-    const confirmDelete = window.confirm("Delete this comment?");
+    const confirmDelete = window.confirm("Delete this comment permanently?");
     if (!confirmDelete) return;
+
+    // Turant UI se hatao (Optimistic UI update)
+    const previousComments = [...comments];
+    setComments(comments.filter(c => c.id !== commentId));
 
     try {
       const { error } = await supabase
@@ -93,14 +102,21 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
         .eq('id', commentId)
         .eq('user_id', user?.id);
 
-      if (error) throw error;
+      if (error) {
+        // Agar error aaye toh wapas purane comments le aao
+        setComments(previousComments);
+        throw error;
+      }
 
-      // Count kam karne ke liye
+      // Count kam karo
       await supabase.rpc('decrement_comments', { post_id: videoId });
-
-      setComments(comments.filter(c => c.id !== commentId));
       toast.success('Comment deleted');
+      
+      // Safety ke liye ek baar background mein fetch bhi kar lo
+      fetchComments(); 
+
     } catch (error) {
+      console.error('Delete error:', error);
       toast.error('Failed to delete');
     }
   };
@@ -120,7 +136,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-5">
-          {loading ? (
+          {loading && comments.length === 0 ? (
             <div className="flex justify-center py-10"><Loader2 className="w-6 h-6 text-blue-500 animate-spin" /></div>
           ) : comments.length === 0 ? (
             <p className="text-center text-gray-500 py-10">No comments yet.</p>
@@ -134,17 +150,15 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-sm text-gray-200">@{c.username}</span>
-                      <span className="text-[10px] text-gray-500">Today</span>
                     </div>
                     <p className="text-sm text-gray-400 mt-0.5">{c.text}</p>
                   </div>
                 </div>
 
-                {/* DELETE BUTTON: Maine opacity-0 group-hover... wali class hata di hai taaki mobile par hamesha dikhe */}
                 {user?.id === c.user_id && (
                   <button 
                     onClick={() => handleDelete(c.id)}
-                    className="p-3 text-gray-500 hover:text-red-500 transition-colors"
+                    className="p-3 text-red-500/70 hover:text-red-500 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
