@@ -155,23 +155,42 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     try {
       if (isCurrentlyFollowing) {
         await supabase.from('follows').delete().eq('follower_id', currentUser.id).eq('following_id', targetUserId);
+        // Following count logic
+        await supabase.rpc('decrement_followers', { user_id: targetUserId });
+        await supabase.rpc('decrement_following', { user_id: currentUser.id });
         setFollowedUsers(prev => { const next = new Set(prev); next.delete(targetUserId); return next; });
       } else {
         await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: targetUserId }]);
+        // Following count logic
         await supabase.rpc('increment_followers', { user_id: targetUserId });
+        await supabase.rpc('increment_following', { user_id: currentUser.id });
         setFollowedUsers(prev => new Set(prev).add(targetUserId));
         toast.success("Following!");
       }
     } catch (err) { toast.error("Koshish nakam rahi"); }
   };
 
+  // --- LOGIC UPDATED: Share Count increments on database ---
   const handleVideoShare = async (video: any) => {
-    const shareUrl = `${window.location.origin}/video/${video.id}`;
-    if (navigator.share) {
-      try { await navigator.share({ title: 'Chiti Shorts', url: shareUrl }); } catch (err) {}
-    } else {
-      await navigator.clipboard.writeText(shareUrl);
-      toast.success("Link copy ho gaya!");
+    const shareUrl = `${window.location.origin}/?video=${video.id}`;
+    
+    try {
+      // Database mein share count badhana
+      await supabase.rpc('increment_shares', { post_id: video.id });
+      
+      // UI update (Optional: agar aap real-time update dikhana chahte hain feed pe)
+      setVideos(prev => prev.map(v => 
+        v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
+      ));
+
+      if (navigator.share) {
+        await navigator.share({ title: 'Chiti Shorts', url: shareUrl });
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        toast.success("Link copy ho gaya!");
+      }
+    } catch (err) {
+      console.error("Share error:", err);
     }
   };
 
@@ -190,7 +209,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        // Optimization: Paas waali videos hi load karein
         const isNear = index >= activeIndex - 1 && index <= activeIndex + 1;
 
         return (
@@ -199,7 +217,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
             onClick={togglePlayPause} 
           >
-            {/* 1. BACKGROUND BLUR (Video ka apna thumbnail) */}
             {video.thumbnail_url && (
               <div 
                 className="absolute inset-0 bg-cover bg-center blur-3xl opacity-30 scale-110"
@@ -208,8 +225,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             )}
 
             <div className="relative w-full h-full flex items-center justify-center bg-black z-10">
-              
-              {/* 2. REAL VIDEO THUMBNAIL (As backup while loading) */}
               {isActive && (
                 <img 
                    src={video.thumbnail_url}
@@ -222,7 +237,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 <video
                   ref={(el) => (videoRefs.current[video.id] = el)}
                   src={video.video_url} 
-                  // 3. Poster strictly using video's thumbnail
                   poster={video.thumbnail_url}
                   className={`w-full h-full object-cover relative z-10 ${isActive ? 'opacity-100' : 'opacity-0'}`}
                   style={{ height: '100vh', width: '100%' }}
@@ -275,9 +289,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             </div>
 
             <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
+              {/* COUNT LOGIC: VideoActions ko ye counts pass kar diye hain */}
               <VideoActions 
                 videoId={video.id} 
-                initialLikes={video.likes_count || 0} 
+                initialLikes={video.likes_count || 0}
+                initialComments={video.comments_count || 0}
+                initialShares={video.shares_count || 0}
                 videoOwnerId={video.user_id} 
                 onComment={() => onComment(video.id, video.user_id)} 
                 onShare={() => handleVideoShare(video)} 
