@@ -40,6 +40,30 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
+  // --- REAL-TIME COMMENT COUNT UPDATE ---
+  // Ye listener check karega ki agar 'comments' table mein naya row aata hai, 
+  // toh feed mein us video ka count turant badh jaye.
+  useEffect(() => {
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'comments' },
+        (payload) => {
+          setVideos(prev => prev.map(v => 
+            v.id === payload.new.post_id 
+              ? { ...v, comments_count: (v.comments_count || 0) + 1 } 
+              : v
+          ));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
@@ -66,13 +90,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       const { data, error } = await supabase
        .from('posts')
        .select(`
-         *,
-         profiles:user_id (
-           username,
-           full_name,
-           avatar_url
-         )
-       `)
+          *,
+          profiles:user_id (
+            username,
+            full_name,
+            avatar_url
+          )
+        `)
        .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -155,13 +179,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     try {
       if (isCurrentlyFollowing) {
         await supabase.from('follows').delete().eq('follower_id', currentUser.id).eq('following_id', targetUserId);
-        // Following count logic
         await supabase.rpc('decrement_followers', { user_id: targetUserId });
         await supabase.rpc('decrement_following', { user_id: currentUser.id });
         setFollowedUsers(prev => { const next = new Set(prev); next.delete(targetUserId); return next; });
       } else {
         await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: targetUserId }]);
-        // Following count logic
         await supabase.rpc('increment_followers', { user_id: targetUserId });
         await supabase.rpc('increment_following', { user_id: currentUser.id });
         setFollowedUsers(prev => new Set(prev).add(targetUserId));
@@ -170,19 +192,19 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { toast.error("Koshish nakam rahi"); }
   };
 
-  // --- LOGIC UPDATED: Share Count increments on database ---
+  // --- IMPROVED SHARE LOGIC ---
   const handleVideoShare = async (video: any) => {
     const shareUrl = `${window.location.origin}/?video=${video.id}`;
     
     try {
-      // Database mein share count badhana
-      await supabase.rpc('increment_shares', { post_id: video.id });
-      
-      // UI update (Optional: agar aap real-time update dikhana chahte hain feed pe)
+      // 1. UI update turant (Optimistic)
       setVideos(prev => prev.map(v => 
         v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
       ));
 
+      // 2. Database mein share count badhana (RPC)
+      await supabase.rpc('increment_shares', { post_id: video.id });
+      
       if (navigator.share) {
         await navigator.share({ title: 'Chiti Shorts', url: shareUrl });
       } else {
@@ -191,6 +213,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       }
     } catch (err) {
       console.error("Share error:", err);
+      // Fail hone par UI wapas purana kar do
+      setVideos(prev => prev.map(v => 
+        v.id === video.id ? { ...v, shares_count: Math.max(0, (v.shares_count || 0) - 1) } : v
+      ));
     }
   };
 
@@ -289,7 +315,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             </div>
 
             <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
-              {/* COUNT LOGIC: VideoActions ko ye counts pass kar diye hain */}
               <VideoActions 
                 videoId={video.id} 
                 initialLikes={video.likes_count || 0}
