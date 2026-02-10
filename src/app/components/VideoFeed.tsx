@@ -1,33 +1,25 @@
 import { useState, useRef, useEffect } from 'react';
-// OptimizedVideoPlayer import kiya gaya hai jo video rendering handle karta hai
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
-import { supabase } from '@/lib/supabase'; // Real-time sync ke liye zaroori hai
-import { useSearchParams } from 'react-router-dom'; // URL se ID padhne ke liye add kiya
+import { supabase } from '@/lib/supabase'; 
+import { useSearchParams } from 'react-router-dom';
 
-/**
- * VIDEO INTERFACE: 
- * Humne interface ko vistar se define kiya hai taaki Supabase se aane wale 
- * 'profiles' join data ko ye sahi se read kar sake.
- */
 export interface Video {
   id: string;
-  video_url: string; // Cloudflare R2 direct link
+  video_url: string;
   thumbnail_url?: string;
   caption: string;
-  user_id: string;   // Navigation aur profile link ke liye
-  // Database Join se aane wala naya data
+  user_id: string;
   profiles?: {
     username: string;
     full_name?: string;
     avatar_url?: string;
   };
-  // Purana data (Fallback ke liye)
   user_name?: string;
   user_avatar?: string;
   music?: string;
   likes_count?: number;
   comments_count?: number;
-  shares_count?: number; // Shares count bhi interface mein add kiya
+  shares_count?: number;
 }
 
 interface VideoFeedProps {
@@ -36,47 +28,78 @@ interface VideoFeedProps {
 }
 
 export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) {
-  // URL params hook taaki hum link se aayi hui ID padh sakein
   const [searchParams] = useSearchParams();
-  
-  // Humne videos ko state mein rakha hai taaki real-time updates dikh saken
   const [videos, setVideos] = useState<Video[]>(initialVideos);
   const [currentIndex, setCurrentIndex] = useState(0);
+  
+  // Ref to track if we have already handled the URL redirect
+  const hasHandledDeepLink = useRef(false);
   
   const containerRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const isDragging = useRef(false);
 
-  // Jab initialVideos (props) change hon, state ko sync karein
+  // Sync props with state ONLY if not deep linking
   useEffect(() => {
-    setVideos(initialVideos);
-  }, [initialVideos]);
-
-  /**
-   * [NEW ADDITION] URL VIDEO SELECTION LOGIC:
-   * Agar URL mein '?video=XYZ' hai, toh hum list mein us video ko dhund kar
-   * seedha uspar jump (setCurrentIndex) kar denge.
-   */
-  useEffect(() => {
-    const videoIdFromUrl = searchParams.get('video');
-    
-    if (videoIdFromUrl && videos.length > 0) {
-      // List mein us video ka index dhundo
-      const targetIndex = videos.findIndex((v) => v.id === videoIdFromUrl);
-      
-      // Agar video mil jaye, toh wahan scroll karo
-      if (targetIndex !== -1) {
-        setCurrentIndex(targetIndex);
-      }
+    if (!searchParams.get('video')) {
+        setVideos(initialVideos);
+    } else if (initialVideos.length > 0 && !hasHandledDeepLink.current) {
+        // Agar initialVideos load ho gaye hain, toh check karo ki unme wo video hai ya nahi
+        checkAndSetupVideo();
     }
-  }, [searchParams, videos]); // Jab params ya video list load ho tab chalega
+  }, [initialVideos, searchParams]);
 
   /**
-   * REAL-TIME COUNT UPDATE LOGIC:
-   * Ye function Supabase se 'posts' table mein hone wale badlav ko turant sunta hai.
-   * Agar koi comment karta hai aur database mein count badhta hai, toh ye bina 
-   * page refresh kiye UI update kar dega.
+   * --- MAIN FIX: URL VIDEO HANDLER ---
+   * Ye function check karega ki URL wala video list mein hai ya nahi.
+   * Agar nahi hai, to use fetch karke Top par layega.
    */
+  const checkAndSetupVideo = async () => {
+    const videoIdFromUrl = searchParams.get('video');
+    if (!videoIdFromUrl || hasHandledDeepLink.current) return;
+
+    // 1. Check karo ki kya video already list mein hai?
+    const existingIndex = videos.findIndex((v) => v.id === videoIdFromUrl);
+    
+    if (existingIndex !== -1) {
+        // Agar mil gaya, to wahan jump karo
+        setCurrentIndex(existingIndex);
+        hasHandledDeepLink.current = true;
+    } else {
+        // 2. Agar list mein nahi mila (search result purana ho sakta hai), to use FETCH karo
+        try {
+            const { data: singleVideo, error } = await supabase
+                .from('posts')
+                .select(`
+                  *,
+                  profiles:user_id (
+                    username,
+                    full_name,
+                    avatar_url
+                  )
+                `)
+                .eq('id', videoIdFromUrl)
+                .single();
+
+            if (singleVideo && !error) {
+                // Naye video ko sabse upar (Index 0) par add karo
+                setVideos((prev) => [singleVideo, ...prev]);
+                setCurrentIndex(0); // Pehla video play karo
+                hasHandledDeepLink.current = true;
+            }
+        } catch (err) {
+            console.error("Error fetching deep linked video:", err);
+        }
+    }
+  };
+
+  // Jab component mount ho, tab bhi check karo
+  useEffect(() => {
+    checkAndSetupVideo();
+  }, [searchParams]);
+
+  
+  // --- REALTIME UPDATES ---
   useEffect(() => {
     const channel = supabase
       .channel('feed-realtime-updates')
@@ -105,27 +128,20 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
     };
   }, []);
 
-  /**
-   * 1. CLOUDFLARE R2 PRE-FETCH LOGIC:
-   * Is logic ko humne vistar se rakha hai taaki jab user ek video dekh raha ho,
-   * toh agla video background mein load (preload) hona shuru ho jaye.
-   */
+  // --- PRELOAD LOGIC ---
   useEffect(() => {
     const preloadNextVideos = () => {
       const nextIndex = currentIndex + 1;
       if (nextIndex < videos.length) {
         const videoElement = document.createElement('video');
         videoElement.src = videos[nextIndex].video_url;
-        videoElement.preload = 'auto'; // Browser isey background mein load karega
+        videoElement.preload = 'auto';
       }
     };
     preloadNextVideos();
   }, [currentIndex, videos]);
 
-  /**
-   * 2. TOUCH NAVIGATION (Mobile Swipe):
-   * Swipe sensitivity ko 50px par set kiya hai taaki user experience smooth rahe.
-   */
+  // --- TOUCH HANDLERS ---
   const handleTouchStart = (e: React.TouchEvent) => {
     startY.current = e.touches[0].clientY;
     isDragging.current = true;
@@ -133,17 +149,14 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
 
   const handleTouchMove = (e: React.TouchEvent) => {
     if (!isDragging.current) return;
-
     const currentY = e.touches[0].clientY;
     const diff = startY.current - currentY;
 
     if (Math.abs(diff) > 50) {
       if (diff > 0 && currentIndex < videos.length - 1) {
-        // Upar swipe (Next Video)
         setCurrentIndex(currentIndex + 1);
         isDragging.current = false;
       } else if (diff < 0 && currentIndex > 0) { 
-        // Niche swipe (Previous Video)
         setCurrentIndex(currentIndex - 1);
         isDragging.current = false;
       }
@@ -154,14 +167,9 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
     isDragging.current = false;
   };
 
-  /**
-   * 3. WHEEL NAVIGATION (Desktop Scroll):
-   * Mouse wheel ya touchpad se video change karne ka logic.
-   */
+  // --- WHEEL HANDLER ---
   const handleWheel = (e: React.WheelEvent) => {
-    // Chhoti-moti scrolling ko ignore karne ke liye limit
     if (Math.abs(e.deltaY) < 10) return; 
-
     if (e.deltaY > 30 && currentIndex < videos.length - 1) {
       setCurrentIndex(currentIndex + 1);
     } else if (e.deltaY < -30 && currentIndex > 0) {
@@ -169,10 +177,7 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
     }
   };
 
-  /**
-   * 4. SMOOTH SCROLL ANIMATION:
-   * CSS Transform ka use karke videos ko smooth slide karwane ke liye.
-   */
+  // --- SCROLL ANIMATION ---
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.style.transform = `translateY(-${currentIndex * 100}vh)`;
@@ -193,30 +198,23 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
         style={{ willChange: 'transform' }}
       >
         {videos.map((video, index) => {
-          /**
-           * NAM AUR PHOTO UPDATE LOGIC:
-           * Profiles table se data nikaalna
-           */
           const finalUsername = video.profiles?.username || video.user_name || 'User';
           const finalAvatar = video.profiles?.avatar_url || video.user_avatar;
 
           return (
             <div key={video.id} className="h-screen w-screen relative overflow-hidden">
-              {/* R2 Optimized Video Player ko saara updated data pass kar rahe hain */}
               <OptimizedVideoPlayer
                 videoId={video.id}
                 videoUrl={video.video_url}
                 thumbnailUrl={video.thumbnail_url}
                 isActive={index === currentIndex}
                 caption={video.caption}
-                // Updated Name aur Avatar yahan pass ho raha hai
                 username={finalUsername}
                 avatarUrl={finalAvatar} 
                 music={video.music}
-                // Naya: Counts ko player mein pass karna
                 likesCount={video.likes_count || 0}
                 commentsCount={video.comments_count || 0}
-                sharesCount={video.shares_count || 0} // Shares count pass kiya
+                sharesCount={video.shares_count || 0}
                 onVideoClick={() => {}} 
                 onComment={() => onComment(video.id)}
               />
@@ -225,7 +223,6 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
         })}
       </div>
 
-      {/* Side mein dikhne wala Scroll Indicator (Dots) */}
       <div className="fixed right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-50 pointer-events-none">
         {videos.map((_, index) => (
           <div
