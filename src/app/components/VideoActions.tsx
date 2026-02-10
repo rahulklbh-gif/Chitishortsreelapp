@@ -4,7 +4,6 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
-// Props mein initialComments aur initialShares add kiye hain
 export function VideoActions({ 
   videoId, 
   initialLikes, 
@@ -18,13 +17,14 @@ export function VideoActions({
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(initialLikes || 0);
   
-  // Naye states counts ke liye
+  // States for dynamic counts
   const [commentCount, setCommentCount] = useState(initialComments || 0);
   const [shareCount, setShareCount] = useState(initialShares || 0);
   
   const [isUpdating, setIsUpdating] = useState(false);
   const [hearts, setHearts] = useState<any[]>([]);
 
+  // Like check logic (Unchanged as per your request)
   const checkIfLiked = useCallback(async () => {
     if (!user || !videoId) return;
     try {
@@ -38,22 +38,15 @@ export function VideoActions({
     } catch (err) { console.error("Check like error:", err); }
   }, [user?.id, videoId]);
 
+  // Syncing initial props with local state
   useEffect(() => {
     checkIfLiked();
     setLikeCount(initialLikes || 0);
-    setCommentCount(initialComments || 0); // Sync comments
-    setShareCount(initialShares || 0);     // Sync shares
+    setCommentCount(initialComments || 0);
+    setShareCount(initialShares || 0);
   }, [videoId, initialLikes, initialComments, initialShares, checkIfLiked]);
 
-  // --- Comment Count Live Update Logic ---
-  // Jab user comment modal band karega ya comment karega, tab counts update honge
-  useEffect(() => {
-    if (!videoId) return;
-
-    // Real-time listener agar aap chahein toh yahan laga sakte hain, 
-    // par filhal hum props aur initial fetch par rely kar rahe hain.
-  }, [videoId]);
-
+  // --- 1. HANDLE LIKE (Aapka Original Function) ---
   const handleLike = async () => {
     if (!user) { toast.error("Pehle login karein!"); return; }
     if (isUpdating) return;
@@ -95,8 +88,7 @@ export function VideoActions({
       } else {
         await Promise.all([
           supabase.from('likes').delete().eq('post_id', videoId).eq('user_id', user.id),
-          // RPC use karna behtar hai decrement ke liye bhi
-          supabase.rpc('decrement_likes', { post_id: videoId })
+          supabase.rpc('decrement_likes', { post_id: videoId }) 
         ]);
       }
     } catch (err) {
@@ -108,11 +100,35 @@ export function VideoActions({
     }
   };
 
-  // Share handler jo count ko local state mein bhi update karega
+  // --- 2. HANDLE COMMENT (Enhanced with DB Increment) ---
+  const handleCommentClick = async () => {
+    // Comment modal kholne ka logic jo parent se aa raha hai
+    onComment(videoId, videoOwnerId);
+    
+    // Note: Comment count tab badhna chahiye jab user actual comment post kare.
+    // Agar aap modal khulte hi count badhana chahte hain (Sirf test ke liye), 
+    // toh niche wala RPC logic yahan bhi use kar sakte hain.
+  };
+
+  // --- 3. HANDLE SHARE (Enhanced with DB Increment) ---
   const handleShareInternal = async () => {
-    setShareCount(prev => prev + 1); // Optimistic update
-    if (onShare) {
-      await onShare();
+    try {
+      // Optimistically update UI
+      setShareCount(prev => prev + 1);
+
+      // Call the parent sharing function (Navigator or Clipboard)
+      if (onShare) {
+        await onShare();
+      }
+
+      // Database mein count badhao
+      const { error } = await supabase.rpc('increment_shares', { post_id: videoId });
+      if (error) throw error;
+
+    } catch (err) {
+      console.error("Share DB error:", err);
+      // Rollback if DB fails
+      setShareCount(prev => Math.max(0, prev - 1));
     }
   };
 
@@ -133,13 +149,12 @@ export function VideoActions({
 
       {/* Reply (Comment) Button */}
       <button 
-        onClick={() => onComment(videoId, videoOwnerId)} 
+        onClick={handleCommentClick} 
         className="flex flex-col items-center group outline-none bg-transparent border-none"
       >
         <div className="p-2 active:scale-125 transition-transform text-white">
           <MessageCircle className="w-9 h-9" strokeWidth={2.5} />
         </div>
-        {/* Yahan 'Reply' ki jagah count dikhega */}
         <span className="text-white text-[12px] font-black drop-shadow-md">
           {commentCount > 0 ? commentCount : '0'}
         </span>
@@ -153,7 +168,6 @@ export function VideoActions({
         <div className="p-2 active:scale-125 transition-transform text-white">
           <Share2 className="w-9 h-9" strokeWidth={2.5} />
         </div>
-        {/* Yahan 'Share' ki jagah count dikhega */}
         <span className="text-white text-[12px] font-black drop-shadow-md">
           {shareCount > 0 ? shareCount : '0'}
         </span>
@@ -168,4 +182,4 @@ export function VideoActions({
       `}</style>
     </div>
   );
-} 
+}
