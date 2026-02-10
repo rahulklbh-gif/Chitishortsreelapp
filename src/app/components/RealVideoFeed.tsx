@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom'; // useSearchParams add kiya
 import { VideoActions } from './VideoActions';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,6 +9,7 @@ import { toast } from 'sonner';
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
   const { user: currentUser } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams(); // URL query params pakadne ke liye
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -32,6 +33,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     });
   }, []);
 
+  // Is useEffect ko update kiya gaya hai takki fetch ke baad scroll ho sake
   useEffect(() => {
     fetchVideos();
   }, []);
@@ -41,8 +43,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   }, [currentUser]);
 
   // --- REAL-TIME COMMENT COUNT UPDATE ---
-  // Ye listener check karega ki agar 'comments' table mein naya row aata hai, 
-  // toh feed mein us video ka count turant badh jaye.
   useEffect(() => {
     const channel = supabase
       .channel('schema-db-changes')
@@ -84,9 +84,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
+  // --- MODIFIED FETCH VIDEOS TO HANDLE SEARCH ID ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
+      const videoIdFromUrl = searchParams.get('video'); // Check if link has ?video=ID
+
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -102,7 +105,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       if (error) throw error;
       
       if (data) {
-        const updatedVideos = data.map((video: any) => {
+        let updatedVideos = data.map((video: any) => {
           const freshName = video.profiles?.full_name || video.profiles?.username || video.user_name || 'user';
           const freshAvatar = video.profiles?.avatar_url || video.user_avatar;
 
@@ -112,6 +115,16 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             user_avatar: freshAvatar
           };
         });
+
+        // AGAR URL ME VIDEO ID HAI: Toh us video ko dhund kar array ke start mein le aao
+        if (videoIdFromUrl) {
+          const targetIndex = updatedVideos.findIndex(v => v.id === videoIdFromUrl);
+          if (targetIndex !== -1) {
+            const targetVideo = updatedVideos.splice(targetIndex, 1)[0];
+            updatedVideos = [targetVideo, ...updatedVideos];
+          }
+        }
+
         setVideos(updatedVideos);
       }
     } catch (error) { 
@@ -192,17 +205,15 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { toast.error("Koshish nakam rahi"); }
   };
 
-  // --- IMPROVED SHARE LOGIC ---
   const handleVideoShare = async (video: any) => {
+    // Ye line ensure karti hai ki share link ?video=id wala format use kare
     const shareUrl = `${window.location.origin}/?video=${video.id}`;
     
     try {
-      // 1. UI update turant (Optimistic)
       setVideos(prev => prev.map(v => 
         v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
       ));
 
-      // 2. Database mein share count badhana (RPC)
       await supabase.rpc('increment_shares', { post_id: video.id });
       
       if (navigator.share) {
@@ -213,7 +224,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       }
     } catch (err) {
       console.error("Share error:", err);
-      // Fail hone par UI wapas purana kar do
       setVideos(prev => prev.map(v => 
         v.id === video.id ? { ...v, shares_count: Math.max(0, (v.shares_count || 0) - 1) } : v
       ));
@@ -251,7 +261,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             )}
 
             <div className="relative w-full h-full flex items-center justify-center bg-black z-10">
-              {isActive && (
+              {isActive && !videoRefs.current[video.id] && (
                 <img 
                    src={video.thumbnail_url}
                    className="absolute inset-0 w-full h-full object-cover z-0"
