@@ -59,8 +59,20 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
 
       if (commentError) throw commentError;
 
-      // 2. NOTIFICATION LOGIC (Naya Kaam)
-      // Agar video owner khud comment kar raha hai toh notification nahi bhejenge
+      /**
+       * 2. ASLI FIX: COMMENT COUNT BADHANA
+       * Hum database ko command de rahe hain ki is video ka 'comments_count' +1 kar do.
+       */
+      const { error: rpcError } = await supabase.rpc('increment_comments', { 
+        post_id: videoId 
+      });
+
+      if (rpcError) {
+        console.error('Count update failed:', rpcError);
+        // Agar RPC fail ho toh tension nahi, humein bas error log karni hai
+      }
+
+      // 3. NOTIFICATION LOGIC
       if (videoOwnerId && user.id !== videoOwnerId) {
         await supabase.from('notifications').insert([
           {
@@ -68,7 +80,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
             sender_id: user.id,
             receiver_id: videoOwnerId,
             post_id: videoId,
-            content: newComment // Inbox mein comment text dikhane ke liye
+            content: newComment 
           }
         ]);
       }
@@ -93,6 +105,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
         
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-white/5">
+          {/* Yahan hum local state se count dikha rahe hain */}
           <span className="font-bold text-white text-md">Comments ({comments.length})</span>
           <button onClick={onClose} className="p-1 bg-white/5 rounded-full">
             <X className="w-5 h-5 text-gray-400" />
@@ -109,7 +122,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
             comments.map((c) => (
               <div key={c.id} className="flex gap-3 animate-in fade-in duration-300">
                 <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
-                  {c.username[0].toUpperCase()}
+                  {c.username ? c.username[0].toUpperCase() : 'U'}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -146,4 +159,4 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
       </div>
     </>
   );
-}
+} 
