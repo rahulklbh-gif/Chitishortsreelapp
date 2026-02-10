@@ -70,20 +70,54 @@ export function ProfilePage() {
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
+  // --- LOGIC ADDED HERE: Following & Followers Count Sync ---
   const handleFollow = async () => {
     if (!currentUser || !profile || isFollowLoading) return;
     setIsFollowLoading(true);
     try {
       if (isFollowing) {
-        await supabase.from('follows').delete().eq('follower_id', currentUser.id).eq('following_id', profile.id);
-        setIsFollowing(false);
-        setProfile((p: any) => ({ ...p, followers_count: Math.max(0, p.followers_count - 1) }));
+        // Unfollow Logic
+        const { error } = await supabase.from('follows')
+          .delete()
+          .eq('follower_id', currentUser.id)
+          .eq('following_id', profile.id);
+
+        if (!error) {
+          // SQL functions call to decrement both counts
+          await supabase.rpc('decrement_followers', { user_id: profile.id });
+          await supabase.rpc('decrement_following', { user_id: currentUser.id });
+          
+          setIsFollowing(false);
+          setProfile((p: any) => ({ 
+            ...p, 
+            followers_count: Math.max(0, (p.followers_count || 0) - 1),
+            following_count: Math.max(0, (p.following_count || 0)) // Hum target user ke profile pe hain
+          }));
+          toast.success("Unfollowed");
+        }
       } else {
-        await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: profile.id }]);
-        await supabase.rpc('increment_followers', { user_id: profile.id });
-        setIsFollowing(true);
-        setProfile((p: any) => ({ ...p, followers_count: (p.followers_count || 0) + 1 }));
+        // Follow Logic
+        const { error } = await supabase.from('follows').insert([
+          { follower_id: currentUser.id, following_id: profile.id }
+        ]);
+
+        if (!error) {
+          // SQL functions call to increment both counts
+          await supabase.rpc('increment_followers', { user_id: profile.id });
+          await supabase.rpc('increment_following', { user_id: currentUser.id });
+          
+          setIsFollowing(true);
+          setProfile((p: any) => ({ 
+            ...p, 
+            followers_count: (p.followers_count || 0) + 1,
+            following_count: (p.following_count || 0)
+          }));
+          toast.success("Following");
+        }
       }
+    } catch (err) {
+      console.error("Follow error:", err);
+      toast.error("Process failed");
     } finally { setIsFollowLoading(false); }
   };
 
@@ -181,11 +215,10 @@ export function ProfilePage() {
 
       <div className="flex justify-center border-t border-white/10 py-3"><Grid size={20} className="text-gray-500" /></div>
       
-      {/* Video Grid with Fixed Thumbnails & Like Icon */}
+      {/* Video Grid */}
       <div className="grid grid-cols-3 gap-0.5 px-0.5">
         {userPosts.map(post => (
           <div key={post.id} className="relative aspect-[9/16] bg-gray-900 overflow-hidden group">
-            {/* Thumbnail Logic for R2 */}
             <video 
               onClick={() => navigate(`/?video=${post.id}`)}
               src={`${post.video_url}#t=0.5`} 
@@ -197,20 +230,17 @@ export function ProfilePage() {
               onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0.5; }}
             />
             
-            {/* Delete Button */}
             {profile?.id === currentUser?.id && (
               <button onClick={(e) => handleDeletePost(e, post.id)} className="absolute top-1 right-1 p-1.5 bg-red-600/80 rounded-full z-10">
                 <Trash2 size={12} />
               </button>
             )}
             
-            {/* Stats Overlay (Views and Likes) */}
             <div className="absolute bottom-0 left-0 right-0 p-1.5 flex justify-between items-center bg-gradient-to-t from-black/80 to-transparent pointer-events-none">
               <div className="flex items-center gap-1">
                 <Play size={8} fill="white" className="text-white" />
                 <span className="text-[10px] font-bold text-white">{post.views_count || 0}</span>
               </div>
-              {/* Wapas laya gaya Like Icon */}
               <div className="flex items-center gap-1">
                 <Heart size={8} fill="#ec4899" className="text-pink-500" />
                 <span className="text-[10px] font-bold text-white">{post.likes_count || 0}</span>
