@@ -16,7 +16,6 @@ import { useAuth } from '@/contexts/AuthContext';
 function AppContent() {
   const [commentSheetOpen, setCommentSheetOpen] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<string>('');
-  // --- YE STATE ADD KI HAI ---
   const [videoOwnerId, setVideoOwnerId] = useState<string>(''); 
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const { user, signOut } = useAuth();
@@ -24,11 +23,8 @@ function AppContent() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // --- PWA INSTALLATION SUPPORT (NO CODE CHANGES TO LOGIC) ---
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: any) => {
-      // Prevent the mini-infobar from appearing on mobile
-      // e.preventDefault(); 
       console.log('Chiti Shorts is ready to be installed');
     };
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -41,10 +37,9 @@ function AppContent() {
                     location.pathname.startsWith('/inbox') ? 'inbox' :
                     location.pathname.startsWith('/profile') ? 'profile' : 'home';
 
-  // --- FUNCTION KO UPDATE KIYA HAI ---
   const handleComment = (videoId: string, ownerId: string) => {
     setSelectedVideoId(videoId);
-    setVideoOwnerId(ownerId); // Owner ID yahan save hogi
+    setVideoOwnerId(ownerId);
     setCommentSheetOpen(true);
   };
 
@@ -83,8 +78,14 @@ function AppContent() {
 
       <main className={location.pathname === '/' ? '' : 'pt-0'}>
         <Routes>
-          {/* handleComment ab do values bhejega */}
-          <Route path="/" element={<RealVideoFeed onComment={handleComment} />} />
+          {/* FIX: Yahan 'key={location.key}' add kiya hai. 
+            Isse jab aap Discover se click karke aaoge, URL change hoga 
+            aur Feed component dobara fresh load hoga search ID ke saath.
+          */}
+          <Route 
+            path="/" 
+            element={<RealVideoFeed key={location.key} onComment={handleComment} />} 
+          />
           <Route path="/discover" element={<DiscoverPage />} />
           <Route path="/create" element={<CreatePage />} />
           <Route path="/inbox" element={<InboxPage />} />
@@ -95,7 +96,6 @@ function AppContent() {
 
       <BottomNavigation activeTab={activeTab} onTabChange={handleTabChange} />
 
-      {/* --- COMMENT SHEET ME videoOwnerId PASS KIYA HAI --- */}
       <CommentSheet
         videoId={selectedVideoId}
         videoOwnerId={videoOwnerId}
