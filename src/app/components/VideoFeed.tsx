@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 // OptimizedVideoPlayer import kiya gaya hai jo video rendering handle karta hai
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
 import { supabase } from '@/lib/supabase'; // Real-time sync ke liye zaroori hai
+import { useSearchParams } from 'react-router-dom'; // URL se ID padhne ke liye add kiya
 
 /**
  * VIDEO INTERFACE: 
@@ -26,6 +27,7 @@ export interface Video {
   music?: string;
   likes_count?: number;
   comments_count?: number;
+  shares_count?: number; // Shares count bhi interface mein add kiya
 }
 
 interface VideoFeedProps {
@@ -34,9 +36,13 @@ interface VideoFeedProps {
 }
 
 export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) {
+  // URL params hook taaki hum link se aayi hui ID padh sakein
+  const [searchParams] = useSearchParams();
+  
   // Humne videos ko state mein rakha hai taaki real-time updates dikh saken
   const [videos, setVideos] = useState<Video[]>(initialVideos);
   const [currentIndex, setCurrentIndex] = useState(0);
+  
   const containerRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const isDragging = useRef(false);
@@ -45,6 +51,25 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
   useEffect(() => {
     setVideos(initialVideos);
   }, [initialVideos]);
+
+  /**
+   * [NEW ADDITION] URL VIDEO SELECTION LOGIC:
+   * Agar URL mein '?video=XYZ' hai, toh hum list mein us video ko dhund kar
+   * seedha uspar jump (setCurrentIndex) kar denge.
+   */
+  useEffect(() => {
+    const videoIdFromUrl = searchParams.get('video');
+    
+    if (videoIdFromUrl && videos.length > 0) {
+      // List mein us video ka index dhundo
+      const targetIndex = videos.findIndex((v) => v.id === videoIdFromUrl);
+      
+      // Agar video mil jaye, toh wahan scroll karo
+      if (targetIndex !== -1) {
+        setCurrentIndex(targetIndex);
+      }
+    }
+  }, [searchParams, videos]); // Jab params ya video list load ho tab chalega
 
   /**
    * REAL-TIME COUNT UPDATE LOGIC:
@@ -172,7 +197,7 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
            * NAM AUR PHOTO UPDATE LOGIC:
            * Profiles table se data nikaalna
            */
-          const finalUsername = video.profiles?.full_name || video.profiles?.username || video.user_name || 'User';
+          const finalUsername = video.profiles?.username || video.user_name || 'User';
           const finalAvatar = video.profiles?.avatar_url || video.user_avatar;
 
           return (
@@ -191,6 +216,7 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
                 // Naya: Counts ko player mein pass karna
                 likesCount={video.likes_count || 0}
                 commentsCount={video.comments_count || 0}
+                sharesCount={video.shares_count || 0} // Shares count pass kiya
                 onVideoClick={() => {}} 
                 onComment={() => onComment(video.id)}
               />
