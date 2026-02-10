@@ -18,6 +18,8 @@ export function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [newName, setNewName] = useState('');
+  // Username edit ke liye naya state
+  const [newUsername, setNewUsername] = useState(''); 
   const [isUploading, setIsUploading] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
@@ -35,32 +37,28 @@ export function ProfilePage() {
     try {
       let targetProfile = null;
       
-      // 1. Agar URL mein username ya ID hai
       if (username) {
-        // Step A: Check agar ye UUID (User ID) hai
         const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(username);
 
         if (isUUID) {
+          // Following_count ko bhi select kiya gaya hai
           const { data: byId } = await supabase
             .from('profiles')
-            .select('*, total_likes, followers_count')
+            .select('*, total_likes, followers_count, following_count') 
             .eq('id', username) 
             .maybeSingle();
           targetProfile = byId;
         }
 
-        // Step B: Agar ID se nahi mila ya UUID nahi hai, toh Username se dhoondo
         if (!targetProfile) {
           const { data: byUsername } = await supabase
             .from('profiles')
-            .select('*, total_likes, followers_count')
+            .select('*, total_likes, followers_count, following_count')
             .eq('username', username)
             .maybeSingle();
           targetProfile = byUsername;
         }
 
-        // Step C: FALLBACK - Agar profile table mein entry hi nahi hai (R2 setup issue)
-        // Toh Posts table se user ka naam aur avatar utha lo taaki page khul jaye
         if (!targetProfile) {
           const { data: fallbackData } = await supabase
             .from('posts')
@@ -76,17 +74,17 @@ export function ProfilePage() {
               full_name: fallbackData.user_name || 'Naya User',
               avatar_url: fallbackData.user_avatar,
               followers_count: 0,
+              following_count: 0,
               total_likes: 0
             };
           }
         }
       } 
       
-      // 2. Agar koi username nahi hai, toh current user ki profile dikhao
       if (!targetProfile && currentUser && !username) {
         const { data } = await supabase
           .from('profiles')
-          .select('*, total_likes, followers_count')
+          .select('*, total_likes, followers_count, following_count')
           .eq('id', currentUser.id)
           .maybeSingle();
         targetProfile = data;
@@ -95,8 +93,8 @@ export function ProfilePage() {
       if (targetProfile) {
         setProfile(targetProfile);
         setNewName(targetProfile.full_name || '');
+        setNewUsername(targetProfile.username || ''); // Username state update
         
-        // Follow status check
         if (currentUser && currentUser.id !== targetProfile.id) {
           const { data: followData } = await supabase
             .from('follows')
@@ -107,7 +105,6 @@ export function ProfilePage() {
           setIsFollowing(!!followData);
         }
 
-        // Posts load karna
         const { data: posts } = await supabase
           .from('posts')
           .select('*, views_count, likes_count')
@@ -116,7 +113,6 @@ export function ProfilePage() {
         
         setUserPosts(posts || []);
 
-        // Total Likes calculate karna fetched posts se (Aapka logic)
         if (posts) {
           const totalLikes = posts.reduce((acc, curr) => acc + (curr.likes_count || 0), 0);
           setProfile((prev: any) => ({ ...prev, total_likes: totalLikes }));
@@ -146,7 +142,6 @@ export function ProfilePage() {
         setProfile((prev: any) => ({ ...prev, followers_count: Math.max(0, (prev.followers_count || 0) - 1) }));
       } else {
         await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: profile.id }]);
-        // Supabase function to increment followers
         await supabase.rpc('increment_followers', { user_id: profile.id });
         setIsFollowing(true);
         setProfile((prev: any) => ({ ...prev, followers_count: (prev.followers_count || 0) + 1 }));
@@ -184,13 +179,30 @@ export function ProfilePage() {
   const handleUpdateProfile = async () => {
     if (!currentUser || !profile) return;
     try {
-      const { error } = await supabase.from('profiles').update({ full_name: newName }).eq('id', currentUser.id);
-      if (error) throw error;
-      setProfile((prev: any) => ({ ...prev, full_name: newName }));
+      // Username aur Name dono update honge
+      const { error } = await supabase
+        .from('profiles')
+        .update({ 
+          full_name: newName,
+          username: newUsername.toLowerCase().trim().replace(/\s+/g, '_') 
+        })
+        .eq('id', currentUser.id);
+
+      if (error) {
+        if (error.code === '23505') throw new Error("Ye username pehle se kisi ne le rakha hai!");
+        throw error;
+      }
+
+      setProfile((prev: any) => ({ ...prev, full_name: newName, username: newUsername }));
       setIsEditing(false);
-      toast.success("Naam save ho gaya!");
+      toast.success("Profile update ho gayi!");
+      
+      // Agar username badla hai toh URL update karne ke liye navigate karein
+      if (newUsername !== profile.username) {
+        navigate(`/profile/${newUsername}`);
+      }
     } catch (error: any) {
-      toast.error("Save nahi ho paya: " + error.message);
+      toast.error(error.message);
     }
   };
 
@@ -267,6 +279,11 @@ export function ProfilePage() {
             <p className="text-lg font-black">{profile?.followers_count || 0}</p>
             <p className="text-[9px] text-gray-500 font-bold uppercase">Followers</p>
           </div>
+          {/* Following Count Logic Added */}
+          <div className="flex flex-col items-center">
+            <p className="text-lg font-black">{profile?.following_count || 0}</p>
+            <p className="text-[9px] text-gray-500 font-bold uppercase">Following</p>
+          </div>
           <div className="flex flex-col items-center">
             <p className="text-lg font-black text-pink-500">{profile?.total_likes || 0}</p>
             <p className="text-[9px] text-gray-500 font-bold uppercase">Likes</p>
@@ -294,9 +311,23 @@ export function ProfilePage() {
 
       <div className="px-6 mb-6">
         {isEditing ? (
-          <div className="flex gap-2 bg-gray-900 p-1 rounded-lg border border-white/10">
-            <input value={newName} onChange={e => setNewName(e.target.value)} className="bg-transparent p-2 rounded flex-1 outline-none text-sm" placeholder="Apna naam likhein..." autoFocus />
-            <button onClick={handleUpdateProfile} className="bg-blue-600 px-4 rounded-md font-bold text-white"><Check size={18} /></button>
+          <div className="space-y-3">
+            {/* Username Edit Input */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-gray-500 ml-1">Username</label>
+              <div className="flex gap-2 bg-gray-900 p-1 rounded-lg border border-white/10">
+                <span className="p-2 text-gray-500 text-sm">@</span>
+                <input value={newUsername} onChange={e => setNewUsername(e.target.value)} className="bg-transparent py-2 rounded flex-1 outline-none text-sm" placeholder="username" />
+              </div>
+            </div>
+            {/* Name Edit Input */}
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] uppercase font-bold text-gray-500 ml-1">Full Name</label>
+              <div className="flex gap-2 bg-gray-900 p-1 rounded-lg border border-white/10">
+                <input value={newName} onChange={e => setNewName(e.target.value)} className="bg-transparent p-2 rounded flex-1 outline-none text-sm" placeholder="Apna naam likhein..." />
+                <button onClick={handleUpdateProfile} className="bg-blue-600 px-4 rounded-md font-bold text-white"><Check size={18} /></button>
+              </div>
+            </div>
           </div>
         ) : (
           <>
@@ -312,7 +343,15 @@ export function ProfilePage() {
         <div className="grid grid-cols-3 gap-0.5 px-0.5">
           {userPosts.map(post => (
             <div key={post.id} className="relative aspect-[9/16] bg-gray-900 overflow-hidden group">
-              <img onClick={() => navigate(`/?video=${post.id}`)} src={post.thumbnail_url || `https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-500" />
+              {/* Thumbnail Logic: Agar thumbnail_url nahi hai toh youtube_video_id use karega */}
+              <img 
+                onClick={() => navigate(`/?video=${post.id}`)} 
+                src={post.thumbnail_url || `https://img.youtube.com/vi/${post.youtube_video_id}/hqdefault.jpg`} 
+                className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-500" 
+                onError={(e: any) => {
+                  e.target.src = 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?w=500'; // Fallback if YouTube thumb fails
+                }}
+              />
               {profile?.id === currentUser?.id && (
                 <button onClick={(e) => handleDeletePost(e, post.id)} className="absolute top-1 right-1 p-1.5 bg-red-600 rounded-full z-10 active:scale-90"><Trash2 size={12} className="text-white" /></button>
               )}
@@ -328,4 +367,4 @@ export function ProfilePage() {
       )}
     </div>
   );
-} 
+}
