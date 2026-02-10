@@ -1,23 +1,36 @@
 import { Heart, MessageCircle, Share2 } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react'; // added useCallback
+import { useState, useEffect, useCallback } from 'react'; 
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
-export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, onShare }: any) {
+// Props mein initialComments aur initialShares add kiye hain
+export function VideoActions({ 
+  videoId, 
+  initialLikes, 
+  initialComments, 
+  initialShares, 
+  videoOwnerId, 
+  onComment, 
+  onShare 
+}: any) {
   const { user } = useAuth(); 
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(initialLikes || 0);
+  
+  // Naye states counts ke liye
+  const [commentCount, setCommentCount] = useState(initialComments || 0);
+  const [shareCount, setShareCount] = useState(initialShares || 0);
+  
   const [isUpdating, setIsUpdating] = useState(false);
   const [hearts, setHearts] = useState<any[]>([]);
 
-  // 1. Isse wrap kiya taaki faltu re-renders na hon
   const checkIfLiked = useCallback(async () => {
     if (!user || !videoId) return;
     try {
       const { data } = await supabase
         .from('likes')
-        .select('id') // Sirf ID mango, pura data nahi (Fast speed)
+        .select('id') 
         .eq('post_id', videoId)
         .eq('user_id', user.id)
         .maybeSingle();
@@ -28,7 +41,18 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
   useEffect(() => {
     checkIfLiked();
     setLikeCount(initialLikes || 0);
-  }, [videoId, initialLikes, checkIfLiked]); // Added checkIfLiked dependency
+    setCommentCount(initialComments || 0); // Sync comments
+    setShareCount(initialShares || 0);     // Sync shares
+  }, [videoId, initialLikes, initialComments, initialShares, checkIfLiked]);
+
+  // --- Comment Count Live Update Logic ---
+  // Jab user comment modal band karega ya comment karega, tab counts update honge
+  useEffect(() => {
+    if (!videoId) return;
+
+    // Real-time listener agar aap chahein toh yahan laga sakte hain, 
+    // par filhal hum props aur initial fetch par rely kar rahe hain.
+  }, [videoId]);
 
   const handleLike = async () => {
     if (!user) { toast.error("Pehle login karein!"); return; }
@@ -52,7 +76,6 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
 
     try {
       if (newIsLiked) {
-        // Parallel requests (Fast execution)
         await Promise.all([
            supabase.from('likes').insert([{ user_id: user.id, post_id: videoId }]),
            supabase.rpc('increment_likes', { post_id: videoId })
@@ -72,7 +95,8 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
       } else {
         await Promise.all([
           supabase.from('likes').delete().eq('post_id', videoId).eq('user_id', user.id),
-          supabase.from('posts').update({ likes_count: newCount }).eq('id', videoId)
+          // RPC use karna behtar hai decrement ke liye bhi
+          supabase.rpc('decrement_likes', { post_id: videoId })
         ]);
       }
     } catch (err) {
@@ -81,6 +105,14 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
       setLikeCount(likeCount);
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  // Share handler jo count ko local state mein bhi update karega
+  const handleShareInternal = async () => {
+    setShareCount(prev => prev + 1); // Optimistic update
+    if (onShare) {
+      await onShare();
     }
   };
 
@@ -99,20 +131,32 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
         <span className="text-white text-[12px] font-black drop-shadow-md">{likeCount}</span>
       </button>
 
-      {/* Reply Button */}
-      <button onClick={() => onComment(videoId, videoOwnerId)} className="flex flex-col items-center group outline-none bg-transparent border-none">
+      {/* Reply (Comment) Button */}
+      <button 
+        onClick={() => onComment(videoId, videoOwnerId)} 
+        className="flex flex-col items-center group outline-none bg-transparent border-none"
+      >
         <div className="p-2 active:scale-125 transition-transform text-white">
           <MessageCircle className="w-9 h-9" strokeWidth={2.5} />
         </div>
-        <span className="text-white text-[10px] font-black italic">Reply</span>
+        {/* Yahan 'Reply' ki jagah count dikhega */}
+        <span className="text-white text-[12px] font-black drop-shadow-md">
+          {commentCount > 0 ? commentCount : '0'}
+        </span>
       </button>
 
       {/* Share Button */}
-      <button onClick={() => onShare()} className="flex flex-col items-center group outline-none bg-transparent border-none">
+      <button 
+        onClick={handleShareInternal} 
+        className="flex flex-col items-center group outline-none bg-transparent border-none"
+      >
         <div className="p-2 active:scale-125 transition-transform text-white">
           <Share2 className="w-9 h-9" strokeWidth={2.5} />
         </div>
-        <span className="text-white text-[10px] font-black italic">Share</span>
+        {/* Yahan 'Share' ki jagah count dikhega */}
+        <span className="text-white text-[12px] font-black drop-shadow-md">
+          {shareCount > 0 ? shareCount : '0'}
+        </span>
       </button>
 
       <style>{`
@@ -124,4 +168,4 @@ export function VideoActions({ videoId, initialLikes, videoOwnerId, onComment, o
       `}</style>
     </div>
   );
-}
+} 
