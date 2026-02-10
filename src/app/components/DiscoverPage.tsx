@@ -1,5 +1,5 @@
 import { Search, TrendingUp, Hash, Loader2, Play, Film, X } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
 
@@ -15,7 +15,7 @@ export function DiscoverPage() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // Trending & Mock Data (Aapka original data preserved)
+  // Trending & Mock Data (Aapka original data)
   const trendingHashtags: TrendingItem[] = [
     { hashtag: 'dance', views: '12.5M', thumbnail: 'https://images.unsplash.com/photo-1504609773096-104ff2c73ba4?w=400' },
     { hashtag: 'comedy', views: '8.2M', thumbnail: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=400' },
@@ -48,7 +48,6 @@ export function DiscoverPage() {
   const performSearch = async () => {
     setLoading(true);
     try {
-      // Note: Make sure 'thumbnail_url' and 'video_url' exist in your 'posts' table
       const { data, error } = await supabase
         .from('posts')
         .select('*')
@@ -117,7 +116,10 @@ export function DiscoverPage() {
                     onClick={() => handleVideoClick(video.id)}
                     className="relative aspect-[9/16] bg-gray-900 rounded-md overflow-hidden active:scale-95 transition-transform cursor-pointer border border-white/5 group"
                   >
-                    {/* THUMBNAIL LOGIC: Prioitizing database thumbnail */}
+                    {/* UPDATED LOGIC:
+                       1. Pehle check karega agar 'thumbnail_url' hai.
+                       2. Agar nahi hai, toh seedha VIDEO dikhayega (muted) taaki "No Preview" na dikhe.
+                    */}
                     {video.thumbnail_url ? (
                       <img 
                         src={video.thumbnail_url}
@@ -126,16 +128,21 @@ export function DiscoverPage() {
                         loading="lazy"
                       />
                     ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-800 to-gray-900">
-                        <Film className="text-gray-700 mb-2 group-hover:text-purple-500 transition-colors" size={32} />
-                        <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">No Preview</span>
-                      </div>
+                      // Fallback: Show Video if thumbnail is missing
+                      <video 
+                        src={video.video_url}
+                        className="w-full h-full object-cover pointer-events-none"
+                        muted
+                        preload="metadata"
+                        // Mobile performance ke liye playsInline
+                        playsInline 
+                      />
                     )}
 
                     {/* Overlay Info */}
-                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="absolute inset-0 bg-black/10 group-hover:bg-black/30 transition-colors" />
                     
-                    <div className="absolute bottom-1.5 left-1.5 flex items-center text-[10px] font-bold bg-black/60 backdrop-blur-md px-2 py-1 rounded-full shadow-lg border border-white/10">
+                    <div className="absolute bottom-1.5 left-1.5 flex items-center text-[10px] font-bold bg-black/60 backdrop-blur-md px-2 py-1 rounded-full shadow-lg border border-white/10 z-10">
                       <Play size={10} className="mr-1 fill-white text-white" />
                       {video.views_count >= 1000 
                         ? `${(video.views_count / 1000).toFixed(1)}K` 
