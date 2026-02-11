@@ -1,12 +1,14 @@
 "use client";
+
 import { Upload, Video, Sparkles, Loader2, Send, X, CheckCircle2, AlertCircle } from 'lucide-react';
-import { useState, useRef } from 'react'; 
+import { useState, useRef } from 'react'; // useRef add kiya
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-// --- R2 Client Configuration (Using NEXT_PUBLIC_ variables) ---
+// --- R2 Client Configuration ---
+// Hum NEXT_PUBLIC use kar rahe hain taaki Vite aur Vercel dono ise pehchan sakein
 const r2Client = new S3Client({
   region: "auto",
   endpoint: `https://${import.meta.env.NEXT_PUBLIC_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -26,6 +28,7 @@ export function CreatePage() {
   const [selectedFilter, setSelectedFilter] = useState('none');
   const [progress, setProgress] = useState(0);
   
+  // Naya state thumbnail ke liye
   const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -36,11 +39,11 @@ export function CreatePage() {
     { name: 'Cinematic', value: 'cine', class: 'saturate-150 contrast-125 brightness-90' },
   ];
 
-  // --- THUMBNAIL GENERATOR FUNCTION ---
+  // --- THUMBNAIL GENERATOR FUNCTION (Aapka original logic) ---
   const generateThumbnail = (file: File) => {
     const video = document.createElement('video');
     video.src = URL.createObjectURL(file);
-    video.currentTime = 1; 
+    video.currentTime = 1; // 1 second par snapshot lega
     video.muted = true;
     video.playsInline = true;
 
@@ -70,11 +73,11 @@ export function CreatePage() {
 
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
-    generateThumbnail(file); 
+    generateThumbnail(file); // Thumbnail generate karo
     toast.success("Video added! Thumbnail generated.");
   };
 
-  // --- DIRECT R2 UPLOAD LOGIC ---
+  // --- HANDLE UPLOAD FUNCTION (Bina chhota kiye, direct R2 fix ke sath) ---
   const handleUpload = async () => {
     if (!selectedFile || !user) {
       toast.error("Please select a video and ensure you are logged in.");
@@ -83,7 +86,7 @@ export function CreatePage() {
 
     setIsUploading(true);
     setProgress(10);
-    const toastId = toast.loading('Preparing secure direct R2 upload...');
+    const toastId = toast.loading('Preparing secure R2 upload...');
 
     try {
       const fileExt = selectedFile.name.split('.').pop();
@@ -92,22 +95,19 @@ export function CreatePage() {
       const thumbFileName = `${baseName}.jpg`;
 
       setProgress(20);
-      toast.loading('Uploading Video & Thumbnail directly...', { id: toastId });
+      toast.loading('Uploading Video & Thumbnail...', { id: toastId });
 
-      // 1. Upload Video
+      // 1. Upload Video (Directly bypassing Vercel limits)
       const videoBuffer = await selectedFile.arrayBuffer();
       const videoCommand = new PutObjectCommand({
         Bucket: 'chiti-videos',
         Key: videoFileName,
         Body: new Uint8Array(videoBuffer),
         ContentType: selectedFile.type,
-        CacheControl: 'public, max-age=31536000',
       });
       await r2Client.send(videoCommand);
 
-      setProgress(50);
-
-      // 2. Upload Thumbnail
+      // 2. Upload Thumbnail (Agar generate hua hai toh)
       let finalThumbnailUrl = '';
       if (thumbnailBlob) {
         const thumbBuffer = await thumbnailBlob.arrayBuffer();
@@ -116,19 +116,20 @@ export function CreatePage() {
           Key: thumbFileName,
           Body: new Uint8Array(thumbBuffer),
           ContentType: 'image/jpeg',
-          CacheControl: 'public, max-age=31536000',
         });
         await r2Client.send(thumbCommand);
+        // Yahan humne aapka public domain URL use kiya hai
         finalThumbnailUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${thumbFileName}`;
       }
 
-      setProgress(80);
+      setProgress(70);
       const publicVideoUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${videoFileName}`;
 
-      // --- USER PROFILE PIC FIX ---
-      const userAvatar = user?.user_metadata?.avatar_url || 
-                        user?.user_metadata?.picture || 
-                        `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`;
+      // --- Profile Photo Fallback Logic ---
+      // Agar user ke metadata mein photo nahi hai, toh ek default avatar generate hoga
+      const finalAvatar = user?.user_metadata?.avatar_url || 
+                          user?.user_metadata?.picture || 
+                          `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`;
 
       // 3. Save Record to Supabase
       const { error: dbError } = await supabase.from('posts').insert([{
@@ -137,7 +138,7 @@ export function CreatePage() {
         caption: caption,
         user_id: user?.id,
         user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Chiti User',
-        user_avatar: userAvatar, 
+        user_avatar: finalAvatar, // Fix for profile photo
         likes_count: 0,
         views_count: 0
       }]);
@@ -147,6 +148,7 @@ export function CreatePage() {
       setProgress(100);
       toast.success('Short Published Successfully! 🚀', { id: toastId });
 
+      // State reset karein
       setSelectedFile(null);
       setPreviewUrl('');
       setCaption('');
@@ -154,13 +156,14 @@ export function CreatePage() {
 
     } catch (error: any) {
       console.error("Upload Error:", error);
-      toast.error(error.message || "Something went wrong during upload", { id: toastId });
+      toast.error(error.message || "Something went wrong", { id: toastId });
     } finally {
       setIsUploading(false);
       setProgress(0);
     }
   };
 
+  // --- UI CODE (Wahi styling jo aapne di thi) ---
   if (!user) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black p-10 text-center">
       <div className="p-6 bg-gray-900 rounded-full mb-4">
@@ -175,7 +178,14 @@ export function CreatePage() {
     <div className="min-h-screen bg-black text-white p-4 pb-24">
       <header className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-black italic">CHITI CREATOR</h1>
-        {selectedFile && <button onClick={() => setSelectedFile(null)} className="text-red-500 font-bold">Cancel</button>}
+        {selectedFile && (
+          <button 
+            onClick={() => setSelectedFile(null)} 
+            className="text-red-500 font-bold bg-red-500/10 px-4 py-1 rounded-full text-sm"
+          >
+            Cancel
+          </button>
+        )}
       </header>
 
       {!selectedFile ? (
@@ -204,7 +214,9 @@ export function CreatePage() {
                 <button 
                   key={f.value}
                   onClick={() => setSelectedFilter(f.value)}
-                  className={`px-5 py-2 rounded-full font-bold whitespace-nowrap transition-all ${selectedFilter === f.value ? 'bg-white text-black' : 'bg-gray-800 text-gray-400'}`}
+                  className={`px-5 py-2 rounded-full font-bold whitespace-nowrap transition-all ${
+                    selectedFilter === f.value ? 'bg-white text-black' : 'bg-gray-800 text-gray-400'
+                  }`}
                 >
                   {f.name}
                 </button>
@@ -231,4 +243,4 @@ export function CreatePage() {
       )}
     </div>
   );
-} 
+}
