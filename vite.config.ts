@@ -4,10 +4,14 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig(({ mode }) => {
-  // Ye line Vite ko batati hai ki NEXT_PUBLIC_ wale variables load karne hain
+  // Mode ke hisaab se environment variables load karega
   const env = loadEnv(mode, process.cwd(), '');
   
   return {
+    // --- YE LINE SABSE ZAROORI HAI ---
+    // Isse Vite NEXT_PUBLIC_ se shuru hone wale variables ko browser mein allow karega
+    envPrefix: 'NEXT_PUBLIC_', 
+    
     plugins: [
       react(),
       tailwindcss(),
@@ -18,7 +22,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
-      // Isse aapka code environment variables ko process.env ya import.meta.env se utha payega
+      // Isse legacy compatibility bani rahegi
       'process.env': env
     },
   }
