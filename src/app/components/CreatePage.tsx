@@ -8,10 +8,10 @@ import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 // --- R2 Client Configuration (Direct Browser Upload) ---
-// Vite/Next ke liye NEXT_PUBLIC prefix zaroori hai
+// Yahan humne fallback add kiya hai taaki Vite variables ko har haal mein pehchane
 const r2Client = new S3Client({
   region: "auto",
-  endpoint: `https://${import.meta.env.NEXT_PUBLIC_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  endpoint: `https://${import.meta.env.NEXT_PUBLIC_R2_ACCOUNT_ID || ''}.r2.cloudflarestorage.com`,
   credentials: {
     accessKeyId: import.meta.env.NEXT_PUBLIC_R2_ACCESS_KEY_ID || "",
     secretAccessKey: import.meta.env.NEXT_PUBLIC_R2_SECRET_ACCESS_KEY || "",
@@ -108,9 +108,10 @@ export function CreatePage() {
         Key: videoFileName,
         Body: new Uint8Array(videoBuffer),
         ContentType: selectedFile.type,
-        CacheControl: 'public, max-age=31536000, immutable', 
+        // CORS/Fetch fix ke liye humne header ko clean rakha hai
       });
 
+      // Execute S3 Upload
       await r2Client.send(videoCommand);
       setProgress(60);
 
@@ -124,7 +125,6 @@ export function CreatePage() {
           Key: thumbFileName,
           Body: new Uint8Array(thumbBuffer),
           ContentType: 'image/jpeg',
-          CacheControl: 'public, max-age=31536000, immutable',
         });
         await r2Client.send(thumbCommand);
         finalThumbnailUrl = `${PUBLIC_R2_DOMAIN}/${thumbFileName}`;
@@ -165,7 +165,9 @@ export function CreatePage() {
 
     } catch (error: any) {
       console.error("Upload Error:", error);
-      toast.error(error.message || "Upload failed", { id: toastId });
+      // Agar 'Failed to fetch' aaye toh iska matlab CORS setup missing hai
+      const errorMsg = error.name === 'TypeError' ? "R2 CORS Error: Check Cloudflare Settings" : error.message;
+      toast.error(errorMsg || "Upload failed", { id: toastId });
     } finally {
       setIsUploading(false);
       setTimeout(() => setProgress(0), 1000);
