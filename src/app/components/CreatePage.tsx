@@ -8,15 +8,15 @@ import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 // --- R2 Client Configuration (Direct Browser Upload) ---
-// Yahan humne fallback add kiya hai taaki Vite variables ko har haal mein pehchane
 const r2Client = new S3Client({
   region: "auto",
+  // Fallback endpoint logic for better compatibility
   endpoint: `https://${import.meta.env.NEXT_PUBLIC_R2_ACCOUNT_ID || ''}.r2.cloudflarestorage.com`,
   credentials: {
     accessKeyId: import.meta.env.NEXT_PUBLIC_R2_ACCESS_KEY_ID || "",
     secretAccessKey: import.meta.env.NEXT_PUBLIC_R2_SECRET_ACCESS_KEY || "",
   },
-  forcePathStyle: true,
+  forcePathStyle: true, // Zaroori hai R2/S3 browser uploads ke liye
 });
 
 // Aapka Public R2 Domain
@@ -47,7 +47,7 @@ export function CreatePage() {
   const generateThumbnail = (file: File) => {
     const video = document.createElement('video');
     video.src = URL.createObjectURL(file);
-    video.currentTime = 1; // 1 second par frame capture karega
+    video.currentTime = 1; 
     video.muted = true;
     video.playsInline = true;
 
@@ -70,7 +70,6 @@ export function CreatePage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // 100MB Limit Check
     if (file.size > 100 * 1024 * 1024) {
       toast.error("File size too big! Keep it under 100MB.");
       return;
@@ -78,11 +77,11 @@ export function CreatePage() {
 
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
-    generateThumbnail(file); // Thumbnail generate call
+    generateThumbnail(file); 
     toast.success("Video added! Thumbnail generated.");
   };
 
-  // --- NAYA UPLOAD LOGIC (DIRECT R2 + PROFILE PIC FIX) ---
+  // --- NAYA UPLOAD LOGIC (FIXED FOR CORS) ---
   const handleUpload = async () => {
     if (!selectedFile || !user) {
       toast.error("Please select a video and ensure you are logged in.");
@@ -108,10 +107,9 @@ export function CreatePage() {
         Key: videoFileName,
         Body: new Uint8Array(videoBuffer),
         ContentType: selectedFile.type,
-        // CORS/Fetch fix ke liye humne header ko clean rakha hai
       });
 
-      // Execute S3 Upload
+      // Execute R2 Upload with direct error catching for CORS
       await r2Client.send(videoCommand);
       setProgress(60);
 
@@ -133,10 +131,9 @@ export function CreatePage() {
       const publicVideoUrl = `${PUBLIC_R2_DOMAIN}/${videoFileName}`;
       setProgress(85);
 
-      // PHASE 3: DATABASE SAVE (Profile Pic & Video Playback Fix)
+      // PHASE 3: DATABASE SAVE
       toast.loading('Saving to Database...', { id: toastId });
       
-      // Fallback agar metadata mein photo na ho
       const userAvatar = user.user_metadata?.avatar_url || 
                         user.user_metadata?.picture || 
                         `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`;
@@ -147,7 +144,7 @@ export function CreatePage() {
         caption: caption,
         user_id: user.id,
         user_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Chiti User',
-        user_avatar: userAvatar, // Ab profile pic khali nahi dikhegi
+        user_avatar: userAvatar,
         likes_count: 0,
         views_count: 0
       }]);
@@ -157,24 +154,23 @@ export function CreatePage() {
       setProgress(100);
       toast.success('Your Short is Live! 🚀', { id: toastId });
 
-      // Clean Reset
       setSelectedFile(null);
       setPreviewUrl('');
       setCaption('');
       setThumbnailBlob(null);
 
     } catch (error: any) {
-      console.error("Upload Error:", error);
-      // Agar 'Failed to fetch' aaye toh iska matlab CORS setup missing hai
-      const errorMsg = error.name === 'TypeError' ? "R2 CORS Error: Check Cloudflare Settings" : error.message;
-      toast.error(errorMsg || "Upload failed", { id: toastId });
+      console.error("Critical Upload Error:", error);
+      // Agar browser fetch block kare toh ye message dikhega
+      const isCorsError = error.name === 'TypeError' || error.message.includes('fetch');
+      const errorMsg = isCorsError ? "CORS Blocked: Please verify R2 Settings or use Incognito" : error.message;
+      toast.error(errorMsg, { id: toastId });
     } finally {
       setIsUploading(false);
       setTimeout(() => setProgress(0), 1000);
     }
   };
 
-  // --- AAPKA PURANA UI (BINA KISI CHANGE KE) ---
   if (!user) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black p-10 text-center">
       <div className="p-6 bg-gray-900 rounded-full mb-4">
@@ -205,7 +201,7 @@ export function CreatePage() {
             <Upload size={32} className="text-white" />
           </div>
           <p className="font-bold text-lg">Upload Short</p>
-          <p className="text-gray-500 text-sm mt-1 text-center px-4">Fast Direct-to-R2 Upload</p>
+          <p className="text-gray-500 text-sm mt-1 text-center px-4">Direct-to-R2 (CORS Enabled)</p>
           <input type="file" accept="video/*" onChange={handleFileSelect} className="hidden" />
         </label>
       ) : (
