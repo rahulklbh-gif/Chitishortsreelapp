@@ -6,13 +6,13 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-// --- R2 Client Setup: NEXT_PUBLIC_ variables ke saath ---
+// R2 Client Config (Bypassing Vercel via Direct Browser Upload)
 const r2Client = new S3Client({
   region: "auto",
-  endpoint: `https://${process.env.NEXT_PUBLIC_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  endpoint: `https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com`,
   credentials: {
-    accessKeyId: process.env.NEXT_PUBLIC_R2_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.NEXT_PUBLIC_R2_SECRET_ACCESS_KEY!,
+    accessKeyId: import.meta.env.VITE_R2_ACCESS_KEY_ID,
+    secretAccessKey: import.meta.env.VITE_R2_SECRET_ACCESS_KEY,
   },
   forcePathStyle: true,
 });
@@ -36,9 +36,7 @@ export function CreatePage() {
     { name: 'Cinematic', value: 'cine', class: 'saturate-150 contrast-125 brightness-90' },
   ];
 
-  // ==========================================
-  // FUNCTION 1: THUMBNAIL GENERATOR (Same as before)
-  // ==========================================
+  // THUMBNAIL GENERATOR FUNCTION
   const generateThumbnail = (file: File) => {
     const video = document.createElement('video');
     video.src = URL.createObjectURL(file);
@@ -61,57 +59,61 @@ export function CreatePage() {
     };
   };
 
-  // ==========================================
-  // FUNCTION 2: FILE SELECTION
-  // ==========================================
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 100 * 1024 * 1024) {
+      toast.error("File size too big! Keep it under 100MB");
+      return;
+    }
+
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     generateThumbnail(file);
-    toast.success("Video ready for direct R2 upload!");
+    toast.success("Video added! Thumbnail generated.");
   };
 
   // ==========================================
-  // FUNCTION 3: DIRECT R2 UPLOAD LOGIC (No Compression)
+  // DIRECT R2 UPLOAD LOGIC (Bypassing Vercel)
   // ==========================================
   const handleUpload = async () => {
     if (!selectedFile || !user) {
-      toast.error("Please select a video first.");
+      toast.error("Please select a video and ensure you are logged in.");
       return;
     }
 
     setIsUploading(true);
-    const toastId = toast.loading('Preparing Direct Upload...');
+    setProgress(10);
+    const toastId = toast.loading('Initializing direct R2 stream...');
 
     try {
-      setProgress(10);
       const fileExt = selectedFile.name.split('.').pop();
       const baseName = `${Math.random().toString(36).substring(2)}-${Date.now()}`;
       const videoFileName = `${baseName}.${fileExt}`;
       const thumbFileName = `${baseName}.jpg`;
 
-      // PHASE 1: DIRECT VIDEO UPLOAD TO R2 (Bypassing Vercel)
-      toast.loading('Uploading video to Cloudflare R2...', { id: toastId });
+      setProgress(20);
+      toast.loading('Streaming video data to Cloudflare...', { id: toastId });
+
+      // PHASE 1: DIRECT VIDEO UPLOAD
+      // Convert file to ArrayBuffer to ensure browser handles large files correctly
       const videoBuffer = await selectedFile.arrayBuffer();
-      
       const videoCommand = new PutObjectCommand({
-        Bucket: 'chiti-videos', // Bucket name as requested
+        Bucket: 'chiti-videos',
         Key: videoFileName,
         Body: new Uint8Array(videoBuffer),
         ContentType: selectedFile.type,
-        CacheControl: 'public, max-age=31536000, immutable', 
+        CacheControl: 'public, max-age=31536000, immutable',
       });
 
       await r2Client.send(videoCommand);
-      setProgress(60);
+      setProgress(50);
 
-      // PHASE 2: THUMBNAIL UPLOAD
+      // PHASE 2: THUMBNAIL UPLOAD (Direct to R2)
       let finalThumbnailUrl = '';
       if (thumbnailBlob) {
-        toast.loading('Uploading thumbnail...', { id: toastId });
+        toast.loading('Uploading smart thumbnail...', { id: toastId });
         const thumbBuffer = await thumbnailBlob.arrayBuffer();
         const thumbCommand = new PutObjectCommand({
           Bucket: 'chiti-videos',
@@ -124,18 +126,18 @@ export function CreatePage() {
         finalThumbnailUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${thumbFileName}`;
       }
 
-      setProgress(85);
+      setProgress(80);
       const publicVideoUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${videoFileName}`;
 
-      // PHASE 3: SAVE TO SUPABASE
-      toast.loading('Finalizing post...', { id: toastId });
+      // PHASE 3: DATABASE RECORD (Supabase)
+      toast.loading('Saving post to Chiti feed...', { id: toastId });
       const { error: dbError } = await supabase.from('posts').insert([{
         video_url: publicVideoUrl,
         thumbnail_url: finalThumbnailUrl || publicVideoUrl + "#t=0.1",
         caption: caption,
         user_id: user?.id,
         user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Chiti User',
-        user_avatar: user?.user_metadata?.avatar_url,
+        user_avatar: user?.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.id}`,
         likes_count: 0,
         views_count: 0
       }]);
@@ -143,7 +145,7 @@ export function CreatePage() {
       if (dbError) throw dbError;
 
       setProgress(100);
-      toast.success('Your Short is Live! 🚀', { id: toastId });
+      toast.success('Short Published Successfully! 🚀', { id: toastId });
 
       // Clean Reset
       setSelectedFile(null);
@@ -153,21 +155,21 @@ export function CreatePage() {
 
     } catch (error: any) {
       console.error("Upload Error:", error);
-      toast.error(`Upload failed: ${error.message || "Check your R2 keys"}`, { id: toastId });
+      toast.error(error.message || "Something went wrong during R2 upload", { id: toastId });
     } finally {
       setIsUploading(false);
       setTimeout(() => setProgress(0), 1000);
     }
   };
 
-  // UI Code (Same as before)
+  // UI Code
   if (!user) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black p-10 text-center">
       <div className="p-6 bg-gray-900 rounded-full mb-4">
         <Video size={48} className="text-blue-500" />
       </div>
-      <h2 className="text-2xl font-bold mb-2">Login Required</h2>
-      <p className="text-gray-500">Sign in to share your creative moments.</p>
+      <h2 className="text-2xl font-bold mb-2">Please Login First</h2>
+      <p className="text-gray-500">You need to sign in to create shorts.</p>
     </div>
   );
 
@@ -183,8 +185,8 @@ export function CreatePage() {
           <div className="bg-blue-600 p-5 rounded-full mb-4 shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform">
             <Upload size={32} className="text-white" />
           </div>
-          <p className="font-bold text-lg">Upload Short</p>
-          <p className="text-gray-500 text-sm mt-1 text-center px-4">Fast Direct-to-R2 Upload</p>
+          <p className="font-bold text-lg">Pick a Video</p>
+          <p className="text-gray-500 text-sm mt-1">Direct Cloudflare R2 Upload</p>
           <input type="file" accept="video/*" onChange={handleFileSelect} className="hidden" />
         </label>
       ) : (
@@ -214,7 +216,7 @@ export function CreatePage() {
           </div>
 
           <textarea 
-            placeholder="Share the story behind this short..."
+            placeholder="Write a caption... #shorts"
             className="w-full bg-gray-900 p-5 rounded-[24px] outline-none border border-gray-800 focus:border-blue-500 min-h-[120px]"
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
@@ -226,10 +228,10 @@ export function CreatePage() {
             className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 py-5 rounded-[24px] font-black text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 shadow-xl shadow-blue-600/20"
           >
             {isUploading ? <Loader2 className="animate-spin" /> : <Send size={20} />}
-            {isUploading ? `UPLOADING ${progress}%` : 'PUBLISH NOW'}
+            {isUploading ? `UPLOADING ${progress}%` : 'PUBLISH VIDEO'}
           </button>
         </div>
       )}
     </div>
   );
-}
+} 
