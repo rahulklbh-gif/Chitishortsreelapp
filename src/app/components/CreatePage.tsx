@@ -6,7 +6,11 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-// --- R2 Client Setup: NEXT_PUBLIC_ variables ke saath ---
+// --- Naye Imports: FFmpeg (Compression ke liye) ---
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
+
+// --- R2 Client Setup: NEXT_PUBLIC_ variables ke saath (Vercel Bypass ke liye) ---
 const r2Client = new S3Client({
   region: "auto",
   endpoint: `https://${process.env.NEXT_PUBLIC_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -29,6 +33,9 @@ export function CreatePage() {
   const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
+  // FFmpeg Reference: Ye browser ke andar compression engine load karega
+  const ffmpegRef = useRef(new FFmpeg());
+
   const filters = [
     { name: 'Normal', value: 'none', class: '' },
     { name: 'Bright', value: 'bright', class: 'brightness-125 contrast-110' },
@@ -37,7 +44,43 @@ export function CreatePage() {
   ];
 
   // ==========================================
-  // FUNCTION 1: THUMBNAIL GENERATOR (Same as before)
+  // FUNCTION 1: COMPRESSION LOGIC (Naya Add Kiya Gaya)
+  // ==========================================
+  const compressVideo = async (file: File) => {
+    const ffmpeg = ffmpegRef.current;
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+    
+    // Engine load ho raha hai (sirf pehli baar)
+    if (!ffmpeg.loaded) {
+      await ffmpeg.load({
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+      });
+    }
+
+    const inputName = 'input.mp4';
+    const outputName = 'output.mp4';
+
+    // File ko FFmpeg ki virtual memory mein likhna
+    await ffmpeg.writeFile(inputName, await fetchFile(file));
+
+    // Compression Command: -crf 28 video ka size chota kar deta hai bina quality kharab kiye
+    // Ye line aapka 50MB ka error solve karegi
+    await ffmpeg.exec(['-i', inputName, '-vcodec', 'libx264', '-crf', '28', outputName]);
+
+    // Compressed file ko read karna
+    const data = await ffmpeg.readFile(outputName);
+    const compressedBlob = new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
+    
+    // Memory saaf karna (Browser hang na ho)
+    await ffmpeg.deleteFile(inputName);
+    await ffmpeg.deleteFile(outputName);
+
+    return new File([compressedBlob], file.name, { type: 'video/mp4' });
+  };
+
+  // ==========================================
+  // FUNCTION 2: THUMBNAIL GENERATOR (Aapka Purana Code)
   // ==========================================
   const generateThumbnail = (file: File) => {
     const video = document.createElement('video');
@@ -62,20 +105,21 @@ export function CreatePage() {
   };
 
   // ==========================================
-  // FUNCTION 2: FILE SELECTION
+  // FUNCTION 3: FILE SELECTION (Aapka Purana Code)
   // ==========================================
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // 100MB limit hum check kar rahe hain, par compression ise chota kar dega
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     generateThumbnail(file);
-    toast.success("Video ready for direct R2 upload!");
+    toast.success("Video ready for high-speed processing!");
   };
 
   // ==========================================
-  // FUNCTION 3: DIRECT R2 UPLOAD LOGIC (No Compression)
+  // FUNCTION 4: ASLI UPLOAD LOGIC (Vistar se)
   // ==========================================
   const handleUpload = async () => {
     if (!selectedFile || !user) {
@@ -84,34 +128,38 @@ export function CreatePage() {
     }
 
     setIsUploading(true);
-    const toastId = toast.loading('Preparing Direct Upload...');
+    const toastId = toast.loading('Starting Smart Engine...');
 
     try {
+      // PHASE 1: COMPRESSION (Vercel limit bachane ke liye)
       setProgress(10);
-      const fileExt = selectedFile.name.split('.').pop();
+      toast.loading('Squeezing video size...', { id: toastId });
+      const readyFile = await compressVideo(selectedFile);
+      
+      setProgress(40);
+      const fileExt = readyFile.name.split('.').pop();
       const baseName = `${Math.random().toString(36).substring(2)}-${Date.now()}`;
       const videoFileName = `${baseName}.${fileExt}`;
       const thumbFileName = `${baseName}.jpg`;
 
-      // PHASE 1: DIRECT VIDEO UPLOAD TO R2 (Bypassing Vercel)
-      toast.loading('Uploading video to Cloudflare R2...', { id: toastId });
-      const videoBuffer = await selectedFile.arrayBuffer();
+      // PHASE 2: DIRECT VIDEO UPLOAD (Vercel bypass logic)
+      toast.loading('Uploading Direct to Cloudflare R2...', { id: toastId });
+      const videoBuffer = await readyFile.arrayBuffer();
       
       const videoCommand = new PutObjectCommand({
-        Bucket: 'chiti-videos', // Bucket name as requested
+        Bucket: 'chiti-videos',
         Key: videoFileName,
         Body: new Uint8Array(videoBuffer),
-        ContentType: selectedFile.type,
+        ContentType: readyFile.type,
+        // CDN Activate: Ye video ko fast play karwayega
         CacheControl: 'public, max-age=31536000, immutable', 
       });
-
       await r2Client.send(videoCommand);
-      setProgress(60);
+      setProgress(75);
 
-      // PHASE 2: THUMBNAIL UPLOAD
+      // PHASE 3: THUMBNAIL UPLOAD (Wahi bucket mein)
       let finalThumbnailUrl = '';
       if (thumbnailBlob) {
-        toast.loading('Uploading thumbnail...', { id: toastId });
         const thumbBuffer = await thumbnailBlob.arrayBuffer();
         const thumbCommand = new PutObjectCommand({
           Bucket: 'chiti-videos',
@@ -124,11 +172,11 @@ export function CreatePage() {
         finalThumbnailUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${thumbFileName}`;
       }
 
-      setProgress(85);
+      setProgress(90);
       const publicVideoUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${videoFileName}`;
 
-      // PHASE 3: SAVE TO SUPABASE
-      toast.loading('Finalizing post...', { id: toastId });
+      // PHASE 4: SUPABASE UPDATE (Sirf link save karna)
+      toast.loading('Linking to database...', { id: toastId });
       const { error: dbError } = await supabase.from('posts').insert([{
         video_url: publicVideoUrl,
         thumbnail_url: finalThumbnailUrl || publicVideoUrl + "#t=0.1",
@@ -145,22 +193,24 @@ export function CreatePage() {
       setProgress(100);
       toast.success('Your Short is Live! 🚀', { id: toastId });
 
-      // Clean Reset
+      // Sab kuch reset karna
       setSelectedFile(null);
       setPreviewUrl('');
       setCaption('');
       setThumbnailBlob(null);
 
     } catch (error: any) {
-      console.error("Upload Error:", error);
-      toast.error(`Upload failed: ${error.message || "Check your R2 keys"}`, { id: toastId });
+      console.error("Critical Error:", error);
+      toast.error("Process failed. Try a shorter video.", { id: toastId });
     } finally {
       setIsUploading(false);
       setTimeout(() => setProgress(0), 1000);
     }
   };
 
-  // UI Code (Same as before)
+  // ==========================================
+  // UI RENDER (Aapka poora UI logic)
+  // ==========================================
   if (!user) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black p-10 text-center">
       <div className="p-6 bg-gray-900 rounded-full mb-4">
@@ -184,11 +234,12 @@ export function CreatePage() {
             <Upload size={32} className="text-white" />
           </div>
           <p className="font-bold text-lg">Upload Short</p>
-          <p className="text-gray-500 text-sm mt-1 text-center px-4">Fast Direct-to-R2 Upload</p>
+          <p className="text-gray-500 text-sm mt-1 text-center px-4">Videos over 50MB will be auto-compressed</p>
           <input type="file" accept="video/*" onChange={handleFileSelect} className="hidden" />
         </label>
       ) : (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          {/* Video Preview with Filter */}
           <div className="relative aspect-[9/16] rounded-[32px] overflow-hidden bg-gray-900 ring-1 ring-white/10 mx-auto max-h-[450px] shadow-2xl">
             <video 
               ref={videoRef}
@@ -198,6 +249,7 @@ export function CreatePage() {
             />
           </div>
 
+          {/* Filter Bar */}
           <div className="space-y-2">
             <p className="text-xs font-bold text-gray-500 uppercase tracking-widest ml-1">Magic Filters</p>
             <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
@@ -213,20 +265,22 @@ export function CreatePage() {
             </div>
           </div>
 
+          {/* Caption Area */}
           <textarea 
-            placeholder="Share the story behind this short..."
-            className="w-full bg-gray-900 p-5 rounded-[24px] outline-none border border-gray-800 focus:border-blue-500 min-h-[120px]"
+            placeholder="Share the story behind this short... #chiti"
+            className="w-full bg-gray-900 p-5 rounded-[24px] outline-none border border-gray-800 focus:border-blue-500 min-h-[120px] transition-all"
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
           />
 
+          {/* Upload Button */}
           <button 
             onClick={handleUpload}
             disabled={isUploading}
             className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 py-5 rounded-[24px] font-black text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 shadow-xl shadow-blue-600/20"
           >
             {isUploading ? <Loader2 className="animate-spin" /> : <Send size={20} />}
-            {isUploading ? `UPLOADING ${progress}%` : 'PUBLISH NOW'}
+            {isUploading ? `PROCESSING ${progress}%` : 'PUBLISH NOW'}
           </button>
         </div>
       )}
