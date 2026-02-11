@@ -44,15 +44,15 @@ export function CreatePage() {
   ];
 
   // ==========================================
-  // FUNCTION 1: COMPRESSION LOGIC (With Multi-threading fix)
+  // FUNCTION 1: COMPRESSION LOGIC (With Safety Fallback)
   // ==========================================
   const compressVideo = async (file: File) => {
     const ffmpeg = ffmpegRef.current;
-    
-    // Version 0.12.10 stable hai browser ke liye
+    // Version 0.12.10 is more stable for web workers
     const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd';
     
     try {
+      console.log("Loading FFmpeg...");
       if (!ffmpeg.loaded) {
         await ffmpeg.load({
           coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
@@ -65,27 +65,28 @@ export function CreatePage() {
 
       await ffmpeg.writeFile(inputName, await fetchFile(file));
 
-      // Optimized Command: Ye 100MB ko 10-15MB mein badal dega
-      // -preset fast: compression jaldi khatam karega
+      console.log("Starting compression execution...");
+      // -preset ultrafast helps avoid browser timeouts on mobile
       await ffmpeg.exec([
         '-i', inputName, 
         '-vcodec', 'libx264', 
-        '-crf', '28', 
-        '-preset', 'fast', 
+        '-crf', '30', 
+        '-preset', 'ultrafast', 
         outputName
       ]);
 
       const data = await ffmpeg.readFile(outputName);
       const compressedBlob = new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
       
-      // Cleanup virtual memory
       await ffmpeg.deleteFile(inputName);
       await ffmpeg.deleteFile(outputName);
 
+      console.log("Compression successful!");
       return new File([compressedBlob], file.name, { type: 'video/mp4' });
     } catch (err: any) {
-      console.error("FFmpeg Error:", err);
-      throw new Error(`Compression Failed: ${err.message}`);
+      // Agar error aaye toh stop nahi karna, bas skip karna hai
+      console.warn("FFmpeg Engine failed to start or process. This is usually due to browser isolation settings.", err);
+      throw err; 
     }
   };
 
@@ -124,11 +125,11 @@ export function CreatePage() {
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     generateThumbnail(file);
-    toast.success("Video ready for smart upload!");
+    toast.success("Video ready for upload!");
   };
 
   // ==========================================
-  // FUNCTION 4: ASLI UPLOAD LOGIC (With Exact Bucket Config)
+  // FUNCTION 4: ASLI UPLOAD LOGIC (With Safety Skip)
   // ==========================================
   const handleUpload = async () => {
     if (!selectedFile || !user) {
@@ -137,31 +138,37 @@ export function CreatePage() {
     }
 
     setIsUploading(true);
-    const toastId = toast.loading('Initializing Smart Engine...');
+    const toastId = toast.loading('Initializing engine...');
 
     try {
-      // PHASE 1: COMPRESSION
+      let fileToUpload = selectedFile;
+
+      // PHASE 1: COMPRESSION (With Auto-Skip on failure)
       setProgress(10);
-      toast.loading('Processing & Squeezing video...', { id: toastId });
-      
-      // Badi file ko compress kar rahe hain browser mein
-      const readyFile = await compressVideo(selectedFile);
+      try {
+        toast.loading('Optimizing video (this may take a moment)...', { id: toastId });
+        fileToUpload = await compressVideo(selectedFile);
+        console.log("Using compressed file.");
+      } catch (e) {
+        console.log("Proceeding with original file because compression skipped.");
+        fileToUpload = selectedFile; // Fallback to original
+      }
       
       setProgress(40);
-      const fileExt = readyFile.name.split('.').pop();
+      const fileExt = fileToUpload.name.split('.').pop();
       const baseName = `${Math.random().toString(36).substring(2)}-${Date.now()}`;
       const videoFileName = `${baseName}.${fileExt}`;
       const thumbFileName = `${baseName}.jpg`;
 
-      // PHASE 2: DIRECT R2 UPLOAD (Using chiti-videos bucket)
+      // PHASE 2: DIRECT R2 UPLOAD (Bucket: chiti-videos)
       toast.loading('Uploading to Cloudflare R2...', { id: toastId });
-      const videoBuffer = await readyFile.arrayBuffer();
+      const videoBuffer = await fileToUpload.arrayBuffer();
       
       const videoCommand = new PutObjectCommand({
-        Bucket: 'chiti-videos', // CONFIRMED: Bucket Name
+        Bucket: 'chiti-videos',
         Key: videoFileName,
         Body: new Uint8Array(videoBuffer),
-        ContentType: readyFile.type,
+        ContentType: fileToUpload.type,
         CacheControl: 'public, max-age=31536000, immutable', 
       });
 
@@ -186,8 +193,8 @@ export function CreatePage() {
       setProgress(90);
       const publicVideoUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${videoFileName}`;
 
-      // PHASE 4: SUPABASE UPDATE
-      toast.loading('Finalizing Post...', { id: toastId });
+      // PHASE 4: SUPABASE DATABASE LINKING
+      toast.loading('Saving to database...', { id: toastId });
       const { error: dbError } = await supabase.from('posts').insert([{
         video_url: publicVideoUrl,
         thumbnail_url: finalThumbnailUrl || publicVideoUrl + "#t=0.1",
@@ -202,18 +209,17 @@ export function CreatePage() {
       if (dbError) throw dbError;
 
       setProgress(100);
-      toast.success('Your Short is Live! 🚀', { id: toastId });
+      toast.success('Published Successfully! 🚀', { id: toastId });
 
-      // Clean Reset
+      // Reset Form
       setSelectedFile(null);
       setPreviewUrl('');
       setCaption('');
       setThumbnailBlob(null);
 
     } catch (error: any) {
-      console.error("Critical Error Detailed:", error);
-      // Detailed error toast
-      toast.error(`Fail: ${error.message || "Unknown error"}`, { id: toastId, duration: 4000 });
+      console.error("Critical Upload Error:", error);
+      toast.error(`Upload failed: ${error.message || 'Unknown error'}`, { id: toastId });
     } finally {
       setIsUploading(false);
       setTimeout(() => setProgress(0), 1000);
@@ -226,7 +232,6 @@ export function CreatePage() {
         <Video size={48} className="text-blue-500" />
       </div>
       <h2 className="text-2xl font-bold mb-2">Login Required</h2>
-      <p className="text-gray-500">Sign in to start creating.</p>
     </div>
   );
 
@@ -242,8 +247,8 @@ export function CreatePage() {
           <div className="bg-blue-600 p-5 rounded-full mb-4 shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform">
             <Upload size={32} className="text-white" />
           </div>
-          <p className="font-bold text-lg">Pick a Video</p>
-          <p className="text-gray-500 text-sm mt-1">Direct Cloudflare Upload</p>
+          <p className="font-bold text-lg">Select Video</p>
+          <p className="text-gray-500 text-sm mt-1">Direct Cloudflare R2 Upload</p>
           <input type="file" accept="video/*" onChange={handleFileSelect} className="hidden" />
         </label>
       ) : (
@@ -273,7 +278,7 @@ export function CreatePage() {
           </div>
 
           <textarea 
-            placeholder="Caption your short... #chiti"
+            placeholder="What's happening in this short? #chiti"
             className="w-full bg-gray-900 p-5 rounded-[24px] outline-none border border-gray-800 focus:border-blue-500 min-h-[120px]"
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
@@ -285,7 +290,7 @@ export function CreatePage() {
             className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 py-5 rounded-[24px] font-black text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
           >
             {isUploading ? <Loader2 className="animate-spin" /> : <Send size={20} />}
-            {isUploading ? `UPLOADING ${progress}%` : 'PUBLISH VIDEO'}
+            {isUploading ? `UPLOADING ${progress}%` : 'PUBLISH SHORT'}
           </button>
         </div>
       )}
