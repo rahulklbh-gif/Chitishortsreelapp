@@ -6,11 +6,7 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-// FFmpeg Imports
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
-
-// R2 Client Setup - Using NEXT_PUBLIC variables
+// --- R2 Client Setup: NEXT_PUBLIC_ variables ke saath ---
 const r2Client = new S3Client({
   region: "auto",
   endpoint: `https://${process.env.NEXT_PUBLIC_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
@@ -33,9 +29,6 @@ export function CreatePage() {
   const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // FFmpeg Reference
-  const ffmpegRef = useRef(new FFmpeg());
-
   const filters = [
     { name: 'Normal', value: 'none', class: '' },
     { name: 'Bright', value: 'bright', class: 'brightness-125 contrast-110' },
@@ -43,37 +36,9 @@ export function CreatePage() {
     { name: 'Cinematic', value: 'cine', class: 'saturate-150 contrast-125 brightness-90' },
   ];
 
-  // 1. COMPRESSION LOGIC
-  const compressVideo = async (file: File) => {
-    const ffmpeg = ffmpegRef.current;
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-    
-    if (!ffmpeg.loaded) {
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-      });
-    }
-
-    const inputName = 'input.mp4';
-    const outputName = 'output.mp4';
-
-    await ffmpeg.writeFile(inputName, await fetchFile(file));
-
-    // Compression Command: CRF 28 is best for balancing size/quality
-    await ffmpeg.exec(['-i', inputName, '-vcodec', 'libx264', '-crf', '28', outputName]);
-
-    const data = await ffmpeg.readFile(outputName);
-    const compressedBlob = new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
-    
-    // Cleanup memory
-    await ffmpeg.deleteFile(inputName);
-    await ffmpeg.deleteFile(outputName);
-
-    return new File([compressedBlob], file.name, { type: 'video/mp4' });
-  };
-
-  // 2. THUMBNAIL GENERATOR
+  // ==========================================
+  // FUNCTION 1: THUMBNAIL GENERATOR (Same as before)
+  // ==========================================
   const generateThumbnail = (file: File) => {
     const video = document.createElement('video');
     video.src = URL.createObjectURL(file);
@@ -96,18 +61,22 @@ export function CreatePage() {
     };
   };
 
+  // ==========================================
+  // FUNCTION 2: FILE SELECTION
+  // ==========================================
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Ab hum 100MB+ bhi handle kar sakte hain compression ki wajah se!
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
     generateThumbnail(file);
-    toast.success("Video ready for processing!");
+    toast.success("Video ready for direct R2 upload!");
   };
 
-  // 3. MAIN UPLOAD & COMPRESSION HANDLER
+  // ==========================================
+  // FUNCTION 3: DIRECT R2 UPLOAD LOGIC (No Compression)
+  // ==========================================
   const handleUpload = async () => {
     if (!selectedFile || !user) {
       toast.error("Please select a video first.");
@@ -115,37 +84,34 @@ export function CreatePage() {
     }
 
     setIsUploading(true);
-    const toastId = toast.loading('Initializing engine...');
+    const toastId = toast.loading('Preparing Direct Upload...');
 
     try {
-      // STEP A: COMPRESSION
       setProgress(10);
-      toast.loading('Squeezing video (Compressing)...', { id: toastId });
-      const readyFile = await compressVideo(selectedFile);
-      
-      setProgress(40);
-      const fileExt = readyFile.name.split('.').pop();
+      const fileExt = selectedFile.name.split('.').pop();
       const baseName = `${Math.random().toString(36).substring(2)}-${Date.now()}`;
       const videoFileName = `${baseName}.${fileExt}`;
       const thumbFileName = `${baseName}.jpg`;
 
-      // STEP B: VIDEO UPLOAD (Direct to R2)
-      toast.loading('Uploading compressed video to R2...', { id: toastId });
-      const videoBuffer = await readyFile.arrayBuffer();
+      // PHASE 1: DIRECT VIDEO UPLOAD TO R2 (Bypassing Vercel)
+      toast.loading('Uploading video to Cloudflare R2...', { id: toastId });
+      const videoBuffer = await selectedFile.arrayBuffer();
       
       const videoCommand = new PutObjectCommand({
-        Bucket: 'chiti-videos',
+        Bucket: 'chiti-videos', // Bucket name as requested
         Key: videoFileName,
         Body: new Uint8Array(videoBuffer),
-        ContentType: readyFile.type,
-        CacheControl: 'public, max-age=31536000, immutable',
+        ContentType: selectedFile.type,
+        CacheControl: 'public, max-age=31536000, immutable', 
       });
-      await r2Client.send(videoCommand);
-      setProgress(75);
 
-      // STEP C: THUMBNAIL UPLOAD
+      await r2Client.send(videoCommand);
+      setProgress(60);
+
+      // PHASE 2: THUMBNAIL UPLOAD
       let finalThumbnailUrl = '';
       if (thumbnailBlob) {
+        toast.loading('Uploading thumbnail...', { id: toastId });
         const thumbBuffer = await thumbnailBlob.arrayBuffer();
         const thumbCommand = new PutObjectCommand({
           Bucket: 'chiti-videos',
@@ -158,11 +124,11 @@ export function CreatePage() {
         finalThumbnailUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${thumbFileName}`;
       }
 
-      setProgress(90);
+      setProgress(85);
       const publicVideoUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${videoFileName}`;
 
-      // STEP D: DATABASE UPDATE (Supabase)
-      toast.loading('Saving to database...', { id: toastId });
+      // PHASE 3: SAVE TO SUPABASE
+      toast.loading('Finalizing post...', { id: toastId });
       const { error: dbError } = await supabase.from('posts').insert([{
         video_url: publicVideoUrl,
         thumbnail_url: finalThumbnailUrl || publicVideoUrl + "#t=0.1",
@@ -177,30 +143,31 @@ export function CreatePage() {
       if (dbError) throw dbError;
 
       setProgress(100);
-      toast.success('Published! 🚀', { id: toastId });
+      toast.success('Your Short is Live! 🚀', { id: toastId });
 
-      // Clean up
+      // Clean Reset
       setSelectedFile(null);
       setPreviewUrl('');
       setCaption('');
       setThumbnailBlob(null);
 
     } catch (error: any) {
-      console.error("Error:", error);
-      toast.error("Process failed. Please try a smaller video.", { id: toastId });
+      console.error("Upload Error:", error);
+      toast.error(`Upload failed: ${error.message || "Check your R2 keys"}`, { id: toastId });
     } finally {
       setIsUploading(false);
       setTimeout(() => setProgress(0), 1000);
     }
   };
 
-  // UI remains the same...
+  // UI Code (Same as before)
   if (!user) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black p-10 text-center">
       <div className="p-6 bg-gray-900 rounded-full mb-4">
         <Video size={48} className="text-blue-500" />
       </div>
-      <h2 className="text-2xl font-bold mb-2">Please Login First</h2>
+      <h2 className="text-2xl font-bold mb-2">Login Required</h2>
+      <p className="text-gray-500">Sign in to share your creative moments.</p>
     </div>
   );
 
@@ -216,8 +183,8 @@ export function CreatePage() {
           <div className="bg-blue-600 p-5 rounded-full mb-4 shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform">
             <Upload size={32} className="text-white" />
           </div>
-          <p className="font-bold text-lg">Pick a Video</p>
-          <p className="text-gray-500 text-sm mt-1">MP4, WebM or QuickTime</p>
+          <p className="font-bold text-lg">Upload Short</p>
+          <p className="text-gray-500 text-sm mt-1 text-center px-4">Fast Direct-to-R2 Upload</p>
           <input type="file" accept="video/*" onChange={handleFileSelect} className="hidden" />
         </label>
       ) : (
@@ -247,7 +214,7 @@ export function CreatePage() {
           </div>
 
           <textarea 
-            placeholder="Write a caption... #chiti"
+            placeholder="Share the story behind this short..."
             className="w-full bg-gray-900 p-5 rounded-[24px] outline-none border border-gray-800 focus:border-blue-500 min-h-[120px]"
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
@@ -256,13 +223,13 @@ export function CreatePage() {
           <button 
             onClick={handleUpload}
             disabled={isUploading}
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 py-5 rounded-[24px] font-black text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 py-5 rounded-[24px] font-black text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 shadow-xl shadow-blue-600/20"
           >
             {isUploading ? <Loader2 className="animate-spin" /> : <Send size={20} />}
-            {isUploading ? `PROCESSING & UPLOADING ${progress}%` : 'PUBLISH VIDEO'}
+            {isUploading ? `UPLOADING ${progress}%` : 'PUBLISH NOW'}
           </button>
         </div>
       )}
     </div>
   );
-} 
+}
