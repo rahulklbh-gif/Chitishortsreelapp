@@ -1,11 +1,12 @@
 "use client";
 import { Upload, Video, Sparkles, Loader2, Send, X, CheckCircle2, AlertCircle } from 'lucide-react';
-import { useState, useRef } from 'react'; // useRef add kiya
+import { useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
+// R2 Client Setup - Ye Frontend par hone ki wajah se Vercel ka 100GB bypass ho raha hai
 const r2Client = new S3Client({
   region: "auto",
   endpoint: `https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com`,
@@ -25,7 +26,6 @@ export function CreatePage() {
   const [selectedFilter, setSelectedFilter] = useState('none');
   const [progress, setProgress] = useState(0);
   
-  // Naya state thumbnail ke liye
   const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -36,11 +36,11 @@ export function CreatePage() {
     { name: 'Cinematic', value: 'cine', class: 'saturate-150 contrast-125 brightness-90' },
   ];
 
-  // THUMBNAIL GENERATOR FUNCTION
+  // THUMBNAIL GENERATOR
   const generateThumbnail = (file: File) => {
     const video = document.createElement('video');
     video.src = URL.createObjectURL(file);
-    video.currentTime = 1; // 1 second par snapshot lega
+    video.currentTime = 1;
     video.muted = true;
     video.playsInline = true;
 
@@ -70,10 +70,11 @@ export function CreatePage() {
 
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
-    generateThumbnail(file); // Thumbnail generate karo
+    generateThumbnail(file);
     toast.success("Video added! Thumbnail generated.");
   };
 
+  // ASLI LOGIC: DIRECT R2 UPLOAD + CDN HEADERS
   const handleUpload = async () => {
     if (!selectedFile || !user) {
       toast.error("Please select a video and ensure you are logged in.");
@@ -81,8 +82,8 @@ export function CreatePage() {
     }
 
     setIsUploading(true);
-    setProgress(10);
-    const toastId = toast.loading('Preparing secure R2 upload...');
+    setProgress(5); // Start Progress
+    const toastId = toast.loading('Connecting to Cloudflare R2...');
 
     try {
       const fileExt = selectedFile.name.split('.').pop();
@@ -90,20 +91,26 @@ export function CreatePage() {
       const videoFileName = `${baseName}.${fileExt}`;
       const thumbFileName = `${baseName}.jpg`;
 
-      setProgress(20);
-      toast.loading('Uploading Video & Thumbnail...', { id: toastId });
-
-      // 1. Upload Video
+      // 1. Prepare Video Data
+      setProgress(15);
       const videoBuffer = await selectedFile.arrayBuffer();
+      
+      // CDN SETUP: Cache-Control header yahan add kiya gaya hai
+      // Isse Cloudflare ko pata chalta hai ki video ko worldwide servers par cache karna hai
       const videoCommand = new PutObjectCommand({
         Bucket: 'chiti-videos',
         Key: videoFileName,
         Body: new Uint8Array(videoBuffer),
         ContentType: selectedFile.type,
+        CacheControl: 'public, max-age=31536000, immutable', // Ye line CDN activate karti hai
       });
-      await r2Client.send(videoCommand);
 
-      // 2. Upload Thumbnail (Agar generate hua hai toh)
+      // 2. Direct Upload to R2 (Bypassing Vercel)
+      toast.loading('Uploading Video (Direct to R2)...', { id: toastId });
+      await r2Client.send(videoCommand);
+      setProgress(60);
+
+      // 3. Upload Thumbnail (With Caching)
       let finalThumbnailUrl = '';
       if (thumbnailBlob) {
         const thumbBuffer = await thumbnailBlob.arrayBuffer();
@@ -112,18 +119,20 @@ export function CreatePage() {
           Key: thumbFileName,
           Body: new Uint8Array(thumbBuffer),
           ContentType: 'image/jpeg',
+          CacheControl: 'public, max-age=31536000, immutable',
         });
         await r2Client.send(thumbCommand);
         finalThumbnailUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${thumbFileName}`;
       }
 
-      setProgress(70);
+      setProgress(85);
       const publicVideoUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${videoFileName}`;
 
-      // 3. Save Record to Supabase
+      // 4. Save Record to Supabase (Metadata Only - Very Light)
+      toast.loading('Finalizing Post...', { id: toastId });
       const { error: dbError } = await supabase.from('posts').insert([{
         video_url: publicVideoUrl,
-        thumbnail_url: finalThumbnailUrl || publicVideoUrl + "#t=0.1", // Fallback agar blob fail ho
+        thumbnail_url: finalThumbnailUrl || publicVideoUrl + "#t=0.1",
         caption: caption,
         user_id: user?.id,
         user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Chiti User',
@@ -137,6 +146,7 @@ export function CreatePage() {
       setProgress(100);
       toast.success('Short Published Successfully! 🚀', { id: toastId });
 
+      // Reset State
       setSelectedFile(null);
       setPreviewUrl('');
       setCaption('');
@@ -144,14 +154,14 @@ export function CreatePage() {
 
     } catch (error: any) {
       console.error("Upload Error:", error);
-      toast.error(error.message || "Something went wrong", { id: toastId });
+      toast.error(error.message || "Upload failed. Check R2 permissions.", { id: toastId });
     } finally {
       setIsUploading(false);
-      setProgress(0);
+      setTimeout(() => setProgress(0), 1000);
     }
   };
 
-  // ... (Baaki UI code bilkul same rahega jaisa aapne diya tha) ...
+  // UI Code (Existing)
   if (!user) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black p-10 text-center">
       <div className="p-6 bg-gray-900 rounded-full mb-4">
@@ -165,21 +175,22 @@ export function CreatePage() {
   return (
     <div className="min-h-screen bg-black text-white p-4 pb-24">
       <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-black italic">CHITI CREATOR</h1>
-        {selectedFile && <button onClick={() => setSelectedFile(null)} className="text-red-500 font-bold">Cancel</button>}
+        <h1 className="text-2xl font-black italic tracking-tighter">CHITI <span className="text-blue-500">CREATOR</span></h1>
+        {selectedFile && <button onClick={() => setSelectedFile(null)} className="text-red-500 font-bold bg-red-500/10 px-4 py-1 rounded-full text-sm">Cancel</button>}
       </header>
 
       {!selectedFile ? (
-        <label className="flex flex-col items-center justify-center aspect-[9/16] bg-gray-900 border-2 border-dashed border-gray-700 rounded-[40px] cursor-pointer transition-all hover:border-blue-500">
-          <div className="bg-blue-600 p-5 rounded-full mb-4 shadow-lg shadow-blue-500/20">
+        <label className="flex flex-col items-center justify-center aspect-[9/16] bg-gray-900 border-2 border-dashed border-gray-700 rounded-[40px] cursor-pointer transition-all hover:border-blue-500 group">
+          <div className="bg-blue-600 p-5 rounded-full mb-4 shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform">
             <Upload size={32} className="text-white" />
           </div>
           <p className="font-bold text-lg">Pick a Video</p>
+          <p className="text-gray-500 text-sm mt-1">MP4, WebM or QuickTime</p>
           <input type="file" accept="video/*" onChange={handleFileSelect} className="hidden" />
         </label>
       ) : (
-        <div className="space-y-6">
-          <div className="relative aspect-[9/16] rounded-[32px] overflow-hidden bg-gray-900 ring-1 ring-white/10 mx-auto max-h-[450px]">
+        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+          <div className="relative aspect-[9/16] rounded-[32px] overflow-hidden bg-gray-900 ring-1 ring-white/10 mx-auto max-h-[450px] shadow-2xl">
             <video 
               ref={videoRef}
               src={previewUrl} 
@@ -189,13 +200,13 @@ export function CreatePage() {
           </div>
 
           <div className="space-y-2">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Apply Filter</p>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-widest ml-1">Magic Filters</p>
             <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
               {filters.map(f => (
                 <button 
                   key={f.value}
                   onClick={() => setSelectedFilter(f.value)}
-                  className={`px-5 py-2 rounded-full font-bold whitespace-nowrap transition-all ${selectedFilter === f.value ? 'bg-white text-black' : 'bg-gray-800 text-gray-400'}`}
+                  className={`px-5 py-2 rounded-full font-bold whitespace-nowrap transition-all ${selectedFilter === f.value ? 'bg-white text-black shadow-lg' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'}`}
                 >
                   {f.name}
                 </button>
@@ -204,8 +215,8 @@ export function CreatePage() {
           </div>
 
           <textarea 
-            placeholder="Write a caption... #shorts"
-            className="w-full bg-gray-900 p-5 rounded-[24px] outline-none border border-gray-800 focus:border-blue-500 min-h-[120px]"
+            placeholder="What's happening? #chiti #trending"
+            className="w-full bg-gray-900 p-5 rounded-[24px] outline-none border border-gray-800 focus:border-blue-500 min-h-[120px] transition-all"
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
           />
@@ -222,4 +233,4 @@ export function CreatePage() {
       )}
     </div>
   );
-}
+} 
