@@ -1,23 +1,22 @@
 "use client";
 import { Upload, Video, Sparkles, Loader2, Send, X, CheckCircle2, AlertCircle } from 'lucide-react';
-import { useState, useRef } from 'react';
+import { useState, useRef } from 'react'; // useRef add kiya
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-// R2 Client Config
+// --- R2 Client Configuration ---
 const r2Client = new S3Client({
   region: "auto",
-  endpoint: `https://${import.meta.env.VITE_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  endpoint: `https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com`,
   credentials: {
-    accessKeyId: import.meta.env.VITE_R2_ACCESS_KEY_ID,
-    secretAccessKey: import.meta.env.VITE_R2_SECRET_ACCESS_KEY,
+    // Vite ke liye VITE_ prefix check karein
+    accessKeyId: import.meta.env.VITE_R2_ACCESS_KEY_ID || "",
+    secretAccessKey: import.meta.env.VITE_R2_SECRET_ACCESS_KEY || "",
   },
   forcePathStyle: true,
 });
-
-const PUBLIC_R2_DOMAIN = "https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev";
 
 export function CreatePage() {
   const { user } = useAuth();
@@ -27,6 +26,8 @@ export function CreatePage() {
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('none');
   const [progress, setProgress] = useState(0);
+  
+  // Naya state thumbnail ke liye
   const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -37,11 +38,11 @@ export function CreatePage() {
     { name: 'Cinematic', value: 'cine', class: 'saturate-150 contrast-125 brightness-90' },
   ];
 
-  // Browser-native Thumbnail Generator (No FFmpeg needed)
+  // --- THUMBNAIL GENERATOR FUNCTION ---
   const generateThumbnail = (file: File) => {
     const video = document.createElement('video');
     video.src = URL.createObjectURL(file);
-    video.currentTime = 1;
+    video.currentTime = 1; // 1 second par snapshot lega
     video.muted = true;
     video.playsInline = true;
 
@@ -51,7 +52,11 @@ export function CreatePage() {
       canvas.height = video.videoHeight;
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob((blob) => { if (blob) setThumbnailBlob(blob); }, 'image/jpeg', 0.8);
+      
+      canvas.toBlob((blob) => {
+        if (blob) setThumbnailBlob(blob);
+      }, 'image/jpeg', 0.8);
+      
       URL.revokeObjectURL(video.src);
     };
   };
@@ -59,60 +64,82 @@ export function CreatePage() {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
     if (file.size > 100 * 1024 * 1024) {
-      toast.error("File size too big! Keep it under 100MB.");
+      toast.error("File size too big! Keep it under 100MB");
       return;
     }
+
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
-    generateThumbnail(file);
+    generateThumbnail(file); // Thumbnail generate karo
+    toast.success("Video added! Thumbnail generated.");
   };
 
+  // --- DIRECT R2 UPLOAD LOGIC ---
   const handleUpload = async () => {
-    if (!selectedFile || !user) return toast.error("Please login and select a video.");
+    if (!selectedFile || !user) {
+      toast.error("Please select a video and ensure you are logged in.");
+      return;
+    }
+
     setIsUploading(true);
-    const toastId = toast.loading('Uploading direct to R2...');
+    setProgress(10);
+    const toastId = toast.loading('Preparing secure direct R2 upload...');
 
     try {
+      const fileExt = selectedFile.name.split('.').pop();
       const baseName = `${Math.random().toString(36).substring(2)}-${Date.now()}`;
-      const videoFileName = `${baseName}.mp4`;
+      const videoFileName = `${baseName}.${fileExt}`;
       const thumbFileName = `${baseName}.jpg`;
 
-      // 1. Upload Video
+      setProgress(20);
+      toast.loading('Uploading Video & Thumbnail directly...', { id: toastId });
+
+      // 1. Upload Video (Directly from Browser)
       const videoBuffer = await selectedFile.arrayBuffer();
-      await r2Client.send(new PutObjectCommand({
+      const videoCommand = new PutObjectCommand({
         Bucket: 'chiti-videos',
         Key: videoFileName,
         Body: new Uint8Array(videoBuffer),
-        ContentType: 'video/mp4',
-        CacheControl: 'public, max-age=31536000',
-      }));
+        ContentType: selectedFile.type,
+        CacheControl: 'public, max-age=31536000', // Browser caching for speed
+      });
+      await r2Client.send(videoCommand);
+
       setProgress(50);
 
-      // 2. Upload Thumbnail
+      // 2. Upload Thumbnail (Directly from Browser)
       let finalThumbnailUrl = '';
       if (thumbnailBlob) {
         const thumbBuffer = await thumbnailBlob.arrayBuffer();
-        await r2Client.send(new PutObjectCommand({
+        const thumbCommand = new PutObjectCommand({
           Bucket: 'chiti-videos',
           Key: thumbFileName,
           Body: new Uint8Array(thumbBuffer),
           ContentType: 'image/jpeg',
           CacheControl: 'public, max-age=31536000',
-        }));
-        finalThumbnailUrl = `${PUBLIC_R2_DOMAIN}/${thumbFileName}`;
+        });
+        await r2Client.send(thumbCommand);
+        finalThumbnailUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${thumbFileName}`;
       }
 
-      const publicVideoUrl = `${PUBLIC_R2_DOMAIN}/${videoFileName}`;
-      
-      // 3. Supabase Record (Fixing Profile Pic and Video Play)
+      setProgress(80);
+      const publicVideoUrl = `https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/${videoFileName}`;
+
+      // --- USER PROFILE PIC FIX ---
+      const userAvatar = user?.user_metadata?.avatar_url || 
+                        user?.user_metadata?.picture || 
+                        `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`;
+
+      // 3. Save Record to Supabase
       const { error: dbError } = await supabase.from('posts').insert([{
         video_url: publicVideoUrl,
-        thumbnail_url: finalThumbnailUrl || publicVideoUrl + "#t=0.1",
+        thumbnail_url: finalThumbnailUrl || publicVideoUrl + "#t=0.1", 
         caption: caption,
-        user_id: user.id,
-        user_name: user.user_metadata?.full_name || user.email?.split('@')[0] || 'Creator',
-        user_avatar: user.user_metadata?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`,
+        user_id: user?.id,
+        user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Chiti User',
+        user_avatar: userAvatar, // Ab profile pic blank nahi hogi
         likes_count: 0,
         views_count: 0
       }]);
@@ -120,36 +147,51 @@ export function CreatePage() {
       if (dbError) throw dbError;
 
       setProgress(100);
-      toast.success('Published Successfully! 🚀', { id: toastId });
+      toast.success('Short Published Successfully! 🚀', { id: toastId });
+
+      // Reset State
       setSelectedFile(null);
       setPreviewUrl('');
+      setCaption('');
+      setThumbnailBlob(null);
+
     } catch (error: any) {
-      toast.error(error.message, { id: toastId });
+      console.error("Upload Error:", error);
+      toast.error(error.message || "Something went wrong during upload", { id: toastId });
     } finally {
       setIsUploading(false);
       setProgress(0);
     }
   };
 
-  if (!user) return <div className="text-white text-center mt-20 font-bold">Please Login</div>;
+  // --- UI CODE ---
+  if (!user) return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-black p-10 text-center">
+      <div className="p-6 bg-gray-900 rounded-full mb-4">
+        <Video size={48} className="text-blue-500" />
+      </div>
+      <h2 className="text-2xl font-bold mb-2">Please Login First</h2>
+      <p className="text-gray-500">You need to sign in to create shorts.</p>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-black text-white p-4 pb-24">
       <header className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-black italic tracking-tighter">CHITI <span className="text-blue-500">CREATOR</span></h1>
-        {selectedFile && <button onClick={() => setSelectedFile(null)} className="text-red-500 font-bold bg-red-500/10 px-4 py-1 rounded-full text-sm">Cancel</button>}
+        <h1 className="text-2xl font-black italic">CHITI CREATOR</h1>
+        {selectedFile && <button onClick={() => setSelectedFile(null)} className="text-red-500 font-bold">Cancel</button>}
       </header>
 
       {!selectedFile ? (
-        <label className="flex flex-col items-center justify-center aspect-[9/16] bg-gray-900 border-2 border-dashed border-gray-700 rounded-[40px] cursor-pointer transition-all hover:border-blue-500 group">
-          <div className="bg-blue-600 p-5 rounded-full mb-4 shadow-lg shadow-blue-500/20 group-hover:scale-110 transition-transform">
+        <label className="flex flex-col items-center justify-center aspect-[9/16] bg-gray-900 border-2 border-dashed border-gray-700 rounded-[40px] cursor-pointer transition-all hover:border-blue-500">
+          <div className="bg-blue-600 p-5 rounded-full mb-4 shadow-lg shadow-blue-500/20">
             <Upload size={32} className="text-white" />
           </div>
           <p className="font-bold text-lg">Pick a Video</p>
           <input type="file" accept="video/*" onChange={handleFileSelect} className="hidden" />
         </label>
       ) : (
-        <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <div className="space-y-6">
           <div className="relative aspect-[9/16] rounded-[32px] overflow-hidden bg-gray-900 ring-1 ring-white/10 mx-auto max-h-[450px]">
             <video 
               ref={videoRef}
@@ -160,7 +202,7 @@ export function CreatePage() {
           </div>
 
           <div className="space-y-2">
-            <p className="text-xs font-bold text-gray-500 uppercase tracking-widest ml-1">Filters</p>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-widest">Apply Filter</p>
             <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
               {filters.map(f => (
                 <button 
@@ -175,8 +217,8 @@ export function CreatePage() {
           </div>
 
           <textarea 
-            placeholder="Write a caption..."
-            className="w-full bg-gray-900 p-5 rounded-[24px] outline-none border border-gray-800 focus:border-blue-500"
+            placeholder="Write a caption... #shorts"
+            className="w-full bg-gray-900 p-5 rounded-[24px] outline-none border border-gray-800 focus:border-blue-500 min-h-[120px]"
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
           />
@@ -184,7 +226,7 @@ export function CreatePage() {
           <button 
             onClick={handleUpload}
             disabled={isUploading}
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 py-5 rounded-[24px] font-black text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 py-5 rounded-[24px] font-black text-xl flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50 shadow-xl shadow-blue-600/20"
           >
             {isUploading ? <Loader2 className="animate-spin" /> : <Send size={20} />}
             {isUploading ? `UPLOADING ${progress}%` : 'PUBLISH VIDEO'}
