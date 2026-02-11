@@ -5,39 +5,19 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [
-    react(), 
-    tailwindcss()
+    react(),
+    tailwindcss(),
   ],
   resolve: {
-    alias: { 
-      '@': path.resolve(__dirname, './src') 
+    alias: {
+      // Alias @ to the src directory
+      '@': path.resolve(__dirname, './src'),
     },
-  },
-  // Ye headers Local Development ke liye hain
-  server: {
-    headers: {
-      "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
-    },
-  },
-  // Ye headers Production Preview ke liye hain
-  preview: {
-    headers: {
-      "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "require-corp",
-    },
-  },
-  optimizeDeps: {
-    // FFmpeg ko bundle hone se rokta hai taaki browser crash na ho
-    exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
-  },
-  worker: {
-    format: 'es',
-    plugins: () => [react()],
   },
   build: {
-    // Isse badi files handle karne mein aasani hogi
+    // Purani browsers ke bajaye modern browser target karte hain (clean build ke liye)
     target: 'esnext',
+    // Badi files hone par warning limit thodi badha dete hain
     chunkSizeWarningLimit: 1000,
-  }
-}) 
+  },
+})
