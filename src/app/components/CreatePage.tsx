@@ -1,19 +1,18 @@
 "use client";
 import { Upload, Video, Sparkles, Loader2, Send, X, CheckCircle2, AlertCircle } from 'lucide-react';
-import { useState, useRef } from 'react'; // useRef add kiya
+import { useState, useRef } from 'react'; 
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-// --- R2 Client Configuration ---
+// --- R2 Client Configuration (Using NEXT_PUBLIC_ variables) ---
 const r2Client = new S3Client({
   region: "auto",
-  endpoint: `https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com`,
+  endpoint: `https://${import.meta.env.NEXT_PUBLIC_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
   credentials: {
-    // Vite ke liye VITE_ prefix check karein
-    accessKeyId: import.meta.env.VITE_R2_ACCESS_KEY_ID || "",
-    secretAccessKey: import.meta.env.VITE_R2_SECRET_ACCESS_KEY || "",
+    accessKeyId: import.meta.env.NEXT_PUBLIC_R2_ACCESS_KEY_ID || "",
+    secretAccessKey: import.meta.env.NEXT_PUBLIC_R2_SECRET_ACCESS_KEY || "",
   },
   forcePathStyle: true,
 });
@@ -27,7 +26,6 @@ export function CreatePage() {
   const [selectedFilter, setSelectedFilter] = useState('none');
   const [progress, setProgress] = useState(0);
   
-  // Naya state thumbnail ke liye
   const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -42,7 +40,7 @@ export function CreatePage() {
   const generateThumbnail = (file: File) => {
     const video = document.createElement('video');
     video.src = URL.createObjectURL(file);
-    video.currentTime = 1; // 1 second par snapshot lega
+    video.currentTime = 1; 
     video.muted = true;
     video.playsInline = true;
 
@@ -72,7 +70,7 @@ export function CreatePage() {
 
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
-    generateThumbnail(file); // Thumbnail generate karo
+    generateThumbnail(file); 
     toast.success("Video added! Thumbnail generated.");
   };
 
@@ -96,20 +94,20 @@ export function CreatePage() {
       setProgress(20);
       toast.loading('Uploading Video & Thumbnail directly...', { id: toastId });
 
-      // 1. Upload Video (Directly from Browser)
+      // 1. Upload Video
       const videoBuffer = await selectedFile.arrayBuffer();
       const videoCommand = new PutObjectCommand({
         Bucket: 'chiti-videos',
         Key: videoFileName,
         Body: new Uint8Array(videoBuffer),
         ContentType: selectedFile.type,
-        CacheControl: 'public, max-age=31536000', // Browser caching for speed
+        CacheControl: 'public, max-age=31536000',
       });
       await r2Client.send(videoCommand);
 
       setProgress(50);
 
-      // 2. Upload Thumbnail (Directly from Browser)
+      // 2. Upload Thumbnail
       let finalThumbnailUrl = '';
       if (thumbnailBlob) {
         const thumbBuffer = await thumbnailBlob.arrayBuffer();
@@ -139,7 +137,7 @@ export function CreatePage() {
         caption: caption,
         user_id: user?.id,
         user_name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Chiti User',
-        user_avatar: userAvatar, // Ab profile pic blank nahi hogi
+        user_avatar: userAvatar, 
         likes_count: 0,
         views_count: 0
       }]);
@@ -149,7 +147,6 @@ export function CreatePage() {
       setProgress(100);
       toast.success('Short Published Successfully! 🚀', { id: toastId });
 
-      // Reset State
       setSelectedFile(null);
       setPreviewUrl('');
       setCaption('');
@@ -164,7 +161,6 @@ export function CreatePage() {
     }
   };
 
-  // --- UI CODE ---
   if (!user) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black p-10 text-center">
       <div className="p-6 bg-gray-900 rounded-full mb-4">
