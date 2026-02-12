@@ -5,6 +5,20 @@ import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+
+// --- R2 Client Configuration ---
+const r2Client = new S3Client({
+  region: "auto",
+  endpoint: `https://${import.meta.env.NEXT_PUBLIC_R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: import.meta.env.NEXT_PUBLIC_R2_ACCESS_KEY_ID || "",
+    secretAccessKey: import.meta.env.NEXT_PUBLIC_R2_SECRET_ACCESS_KEY || "",
+  },
+  forcePathStyle: true,
+});
+
+const PUBLIC_R2_DOMAIN = "https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev";
 
 const PERMANENT_MUSIC = [
   { id: 'p1', title: 'Chiti Beats Viral', audio_url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
@@ -17,17 +31,21 @@ export function CreatePage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [caption, setCaption] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
   
+  // Camera & Recording States
   const [isCameraMode, setIsCameraMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordLimit, setRecordLimit] = useState(15);
   const [timeLeft, setTimeLeft] = useState(15);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   
+  // Effects & Music States
   const [showMusic, setShowMusic] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedMusic, setSelectedMusic] = useState<any>(null);
   const [selectedFilter, setSelectedFilter] = useState('none');
+  const [musicList, setMusicList] = useState<any[]>(PERMANENT_MUSIC);
 
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -45,10 +63,21 @@ export function CreatePage() {
     cine: "contrast(1.4) saturate(1.4) hue-rotate(-10deg)"
   };
 
+  // 1. Load Music
+  useEffect(() => {
+    const loadMusic = async () => {
+      const { data } = await supabase.from('music_library').select('*');
+      if (data && data.length > 0) setMusicList([...data, ...PERMANENT_MUSIC]);
+    };
+    loadMusic();
+  }, []);
+
+  // 2. Hide Navigation
   useEffect(() => {
     const nav = document.querySelector('nav');
     if (isCameraMode) { if (nav) nav.style.display = 'none'; }
     else { if (nav) nav.style.display = 'flex'; }
+    return () => { if (nav) nav.style.display = 'flex'; };
   }, [isCameraMode]);
 
   const stopTracks = () => {
@@ -66,7 +95,7 @@ export function CreatePage() {
     try {
       stopTracks();
       const stream = await navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: facingMode, width: 1280, height: 720 }, 
+        video: { facingMode: facingMode, width: 1280, height: 720, aspectRatio: 0.5625 }, 
         audio: true 
       });
       streamRef.current = stream;
@@ -77,9 +106,14 @@ export function CreatePage() {
       setIsCameraMode(true);
       setTimeLeft(recordLimit);
     } catch (err) {
-      toast.error("Camera error!");
+      toast.error("Camera error! Permissions check karein.");
     }
   };
+
+  useEffect(() => {
+    if (isCameraMode) startCamera();
+    return () => stopTracks();
+  }, [facingMode]);
 
   const processFinalVideo = () => {
     if (chunksRef.current.length === 0) return;
@@ -89,55 +123,45 @@ export function CreatePage() {
     setIsCameraMode(false);
     setIsRecording(false);
     if (audioRef.current) audioRef.current.pause();
+    toast.success("Ready to Post!");
   };
 
-  // --- MIXING LOGIC: Video + Mic + Music ---
+  // MIXING AUDIO & VIDEO LOGIC
   const startRecording = async () => {
     if (!streamRef.current) return;
-    
     chunksRef.current = [];
     let finalStream = streamRef.current;
 
-    // Agar music selected hai, toh AudioContext se merge karo
     if (selectedMusic && audioRef.current) {
       const audioCtx = new AudioContext();
       audioCtxRef.current = audioCtx;
-      
       const sourceMic = audioCtx.createMediaStreamSource(streamRef.current);
       const sourceMusic = audioCtx.createMediaElementSource(audioRef.current);
       const destination = audioCtx.createMediaStreamDestination();
-
       sourceMic.connect(destination);
       sourceMusic.connect(destination);
-      sourceMusic.connect(audioCtx.destination); // Speaker ke liye
-
-      // Naya stream banao: Original Video + Mixed Audio
+      sourceMusic.connect(audioCtx.destination);
       finalStream = new MediaStream([
         streamRef.current.getVideoTracks()[0],
         destination.stream.getAudioTracks()[0]
       ]);
-
       audioRef.current.src = selectedMusic.audio_url;
       audioRef.current.crossOrigin = "anonymous";
       await audioRef.current.play();
     }
 
     const recorder = new MediaRecorder(finalStream, { mimeType: 'video/webm;codecs=vp8,opus' });
-    recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
     recorder.onstop = processFinalVideo;
-
     recorder.start();
     mediaRecorderRef.current = recorder;
     setIsRecording(true);
 
-    // FIXED TIMER: Har second check karega limit
     timerRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(timerRef.current);
-          if (mediaRecorderRef.current?.state !== "inactive") {
-            mediaRecorderRef.current?.stop();
-          }
+          if (mediaRecorderRef.current?.state !== "inactive") mediaRecorderRef.current?.stop();
           return 0;
         }
         return prev - 1;
@@ -150,6 +174,32 @@ export function CreatePage() {
       clearInterval(timerRef.current);
       mediaRecorderRef.current.stop();
     }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile || !user) return;
+    setIsUploading(true);
+    const toastId = toast.loading('Publishing Chiti...');
+    try {
+      const videoFileName = `${Math.random().toString(36).substring(2)}-${Date.now()}.webm`;
+      await r2Client.send(new PutObjectCommand({
+        Bucket: 'chiti-videos',
+        Key: videoFileName,
+        Body: new Uint8Array(await selectedFile.arrayBuffer()),
+        ContentType: 'video/webm',
+      }));
+      const videoUrl = `${PUBLIC_R2_DOMAIN}/${videoFileName}`;
+      await supabase.from('posts').insert([{
+        video_url: videoUrl,
+        thumbnail_url: videoUrl + "#t=0.1",
+        caption,
+        user_id: user.id,
+        user_name: user.user_metadata?.full_name || 'User'
+      }]);
+      toast.success('Shared! 🚀', { id: toastId });
+      setSelectedFile(null);
+      setPreviewUrl('');
+    } catch (err) { toast.error("Upload failed!"); } finally { setIsUploading(false); }
   };
 
   return (
@@ -191,7 +241,7 @@ export function CreatePage() {
             {!isRecording && (
               <div className="flex bg-black/40 backdrop-blur-xl p-1 rounded-full border border-white/10">
                 {[15, 30].map(s => (
-                  <button key={s} onClick={() => {setRecordLimit(s); setTimeLeft(s);}} className={`px-5 py-1.5 rounded-full text-xs font-black transition-all ${recordLimit === s ? 'bg-white text-black shadow-lg' : 'text-gray-400'}`}>{s}s</button>
+                  <button key={s} onClick={() => {setRecordLimit(s); setTimeLeft(s);}} className={`px-5 py-1.5 rounded-full text-xs font-black transition-all ${recordLimit === s ? 'bg-white text-black' : 'text-gray-400'}`}>{s}s</button>
                 ))}
               </div>
             )}
@@ -204,11 +254,11 @@ export function CreatePage() {
           </div>
 
           {showMusic && (
-            <div className="absolute inset-0 bg-black/95 z-[1050] p-6 pt-20 animate-in slide-in-from-bottom duration-300 overflow-y-auto">
+            <div className="absolute inset-0 bg-black/95 z-[1050] p-6 pt-20 animate-in slide-in-from-bottom duration-300">
               <div className="flex justify-between items-center mb-6"><h2 className="text-xl font-black">MUSIC</h2><button onClick={() => setShowMusic(false)}><X/></button></div>
-              <div className="space-y-4 pb-20">
-                {PERMANENT_MUSIC.map(m => (
-                  <div key={m.id} onClick={() => { setSelectedMusic(m); setShowMusic(false); }} className={`p-5 rounded-[25px] flex justify-between items-center transition-all ${selectedMusic?.id === m.id ? 'bg-blue-600' : 'bg-gray-900 border border-white/5 active:bg-gray-800'}`}>
+              <div className="space-y-4 overflow-y-auto max-h-[65vh]">
+                {musicList.map(m => (
+                  <div key={m.id} onClick={() => { setSelectedMusic(m); setShowMusic(false); }} className={`p-5 rounded-[25px] flex justify-between items-center transition-all ${selectedMusic?.id === m.id ? 'bg-blue-600' : 'bg-gray-900 active:bg-gray-800'}`}>
                     <span className="font-bold text-sm">{m.title}</span>
                     <Play size={18} fill={selectedMusic?.id === m.id ? "white" : "none"}/>
                   </div>
@@ -237,13 +287,16 @@ export function CreatePage() {
             <video src={previewUrl} style={{ filter: filterStyles[selectedFilter] }} controls className="w-full h-full object-cover" />
           </div>
           <textarea 
-            placeholder="Write a caption... #chiti" 
+            placeholder="Kamaal ki caption... #chiti" 
             className="w-full bg-gray-900 rounded-[25px] p-5 outline-none border border-gray-800 text-base mb-6"
             rows={3}
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
           />
-          <button className="w-full bg-blue-600 py-5 rounded-[25px] font-black text-xl active:scale-95 transition-all">POST CHITI</button>
+          <button onClick={handleUpload} disabled={isUploading} className="w-full bg-blue-600 py-5 rounded-[25px] font-black text-xl active:scale-95 disabled:opacity-50 transition-all flex items-center justify-center gap-2">
+            {isUploading ? <Loader2 className="animate-spin"/> : <Send size={20}/>}
+            {isUploading ? 'POSTING...' : 'POST CHITI'}
+          </button>
         </div>
       )}
       <audio ref={audioRef} hidden crossOrigin="anonymous" />
