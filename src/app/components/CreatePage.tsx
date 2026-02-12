@@ -7,19 +7,17 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-// --- R2 Client Configuration (Direct Browser Upload) ---
+// --- R2 Client Configuration ---
 const r2Client = new S3Client({
   region: "auto",
-  // Fallback endpoint logic for better compatibility
   endpoint: `https://${import.meta.env.NEXT_PUBLIC_R2_ACCOUNT_ID || ''}.r2.cloudflarestorage.com`,
   credentials: {
     accessKeyId: import.meta.env.NEXT_PUBLIC_R2_ACCESS_KEY_ID || "",
     secretAccessKey: import.meta.env.NEXT_PUBLIC_R2_SECRET_ACCESS_KEY || "",
   },
-  forcePathStyle: true, // Zaroori hai R2/S3 browser uploads ke liye
+  forcePathStyle: true,
 });
 
-// Aapka Public R2 Domain
 const PUBLIC_R2_DOMAIN = "https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev";
 
 export function CreatePage() {
@@ -30,12 +28,9 @@ export function CreatePage() {
   const [isUploading, setIsUploading] = useState(false);
   const [selectedFilter, setSelectedFilter] = useState('none');
   const [progress, setProgress] = useState(0);
-  
-  // States for thumbnail and video reference
   const [thumbnailBlob, setThumbnailBlob] = useState<Blob | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // --- AAPKE PURANE FILTERS (BINA KISI CHANGE KE) ---
   const filters = [
     { name: 'Normal', value: 'none', class: '' },
     { name: 'Bright', value: 'bright', class: 'brightness-125 contrast-110' },
@@ -43,7 +38,6 @@ export function CreatePage() {
     { name: 'Cinematic', value: 'cine', class: 'saturate-150 contrast-125 brightness-90' },
   ];
 
-  // --- THUMBNAIL GENERATOR (Native Browser API - FFmpeg Free) ---
   const generateThumbnail = (file: File) => {
     const video = document.createElement('video');
     video.src = URL.createObjectURL(file);
@@ -66,6 +60,7 @@ export function CreatePage() {
     };
   };
 
+  // --- LOGIC 1: 30 SECOND LIMIT CHECK ---
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -75,13 +70,29 @@ export function CreatePage() {
       return;
     }
 
-    setSelectedFile(file);
-    setPreviewUrl(URL.createObjectURL(file));
-    generateThumbnail(file); 
-    toast.success("Video added! Thumbnail generated.");
+    // Temporary video element to check duration
+    const videoDurationCheck = document.createElement('video');
+    videoDurationCheck.preload = 'metadata';
+    videoDurationCheck.onloadedmetadata = () => {
+      window.URL.revokeObjectURL(videoDurationCheck.src);
+      const duration = videoDurationCheck.duration;
+
+      if (duration > 30.5) { // 30 second limit
+        toast.error("Video is too long! Chiti supports max 30 seconds.");
+        setSelectedFile(null);
+        if (e.target) e.target.value = ""; // Reset input
+        return;
+      }
+
+      // If valid, proceed
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(file));
+      generateThumbnail(file); 
+      toast.success(`Video ready! Duration: ${Math.round(duration)}s`);
+    };
+    videoDurationCheck.src = URL.createObjectURL(file);
   };
 
-  // --- NAYA UPLOAD LOGIC (FIXED FOR CORS) ---
   const handleUpload = async () => {
     if (!selectedFile || !user) {
       toast.error("Please select a video and ensure you are logged in.");
@@ -109,9 +120,8 @@ export function CreatePage() {
         ContentType: selectedFile.type,
       });
 
-      // Execute R2 Upload with direct error catching for CORS
       await r2Client.send(videoCommand);
-      setProgress(60);
+      setProgress(50);
 
       // PHASE 2: THUMBNAIL UPLOAD
       let finalThumbnailUrl = '';
@@ -129,9 +139,9 @@ export function CreatePage() {
       }
 
       const publicVideoUrl = `${PUBLIC_R2_DOMAIN}/${videoFileName}`;
-      setProgress(85);
+      setProgress(70);
 
-      // PHASE 3: DATABASE SAVE
+      // PHASE 3: DATABASE SAVE (POSTS TABLE)
       toast.loading('Saving to Database...', { id: toastId });
       
       const userAvatar = user.user_metadata?.avatar_url || 
@@ -151,9 +161,22 @@ export function CreatePage() {
 
       if (dbError) throw dbError;
 
-      setProgress(100);
-      toast.success('Your Short is Live! 🚀', { id: toastId });
+      // --- LOGIC 2: AUTO-ADD TO MUSIC LIBRARY ---
+      // Hum video URL ko hi audio_url ki tarah treat kar rahe hain
+      const { error: musicError } = await supabase.from('music_library').insert([{
+        title: caption.substring(0, 30) || `${user.user_metadata?.full_name || 'User'}'s Original Audio`,
+        audio_url: publicVideoUrl,
+        duration: 30,
+        user_id: user.id,
+        thumbnail_url: finalThumbnailUrl
+      }]);
 
+      if (musicError) console.error("Music Library Error:", musicError);
+
+      setProgress(100);
+      toast.success('Your Short & Music are Live! 🚀', { id: toastId });
+
+      // Clean Reset
       setSelectedFile(null);
       setPreviewUrl('');
       setCaption('');
@@ -161,9 +184,8 @@ export function CreatePage() {
 
     } catch (error: any) {
       console.error("Critical Upload Error:", error);
-      // Agar browser fetch block kare toh ye message dikhega
       const isCorsError = error.name === 'TypeError' || error.message.includes('fetch');
-      const errorMsg = isCorsError ? "CORS Blocked: Please verify R2 Settings or use Incognito" : error.message;
+      const errorMsg = isCorsError ? "R2 CORS Error: Check Settings" : error.message;
       toast.error(errorMsg, { id: toastId });
     } finally {
       setIsUploading(false);
@@ -201,7 +223,7 @@ export function CreatePage() {
             <Upload size={32} className="text-white" />
           </div>
           <p className="font-bold text-lg">Upload Short</p>
-          <p className="text-gray-500 text-sm mt-1 text-center px-4">Direct-to-R2 (CORS Enabled)</p>
+          <p className="text-gray-500 text-sm mt-1 text-center px-4">Max 30s • Direct R2</p>
           <input type="file" accept="video/*" onChange={handleFileSelect} className="hidden" />
         </label>
       ) : (
