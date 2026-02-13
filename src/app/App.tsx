@@ -7,7 +7,7 @@ import { RealVideoFeed } from '@/app/components/RealVideoFeed';
 import { CommentSheet } from '@/app/components/CommentSheet';
 import { DiscoverPage } from '@/app/components/DiscoverPage';
 
-// ✅ FIX: Curly braces {} hata diye kyunki CreatePage "default export" hai
+// ✅ IMPORT FIX: Curly braces hata diye gaye hain
 import CreatePage from '@/app/components/CreatePage'; 
 
 import { InboxPage } from '@/app/components/InboxPage';
@@ -16,6 +16,7 @@ import { AuthModal } from '@/app/components/AuthModal';
 import { LogIn } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 
+// ... (Baki poora AppContent aur App function bilkul same rahega jaise aapne diya tha)
 function AppContent() {
   const [commentSheetOpen, setCommentSheetOpen] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<string>('');
@@ -56,23 +57,23 @@ function AppContent() {
       {location.pathname === '/' && (
         <div className="fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-black/90 to-transparent p-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-black italic text-white tracking-tighter">
-              CHITI <span className="text-blue-500">SHORTS</span>
+            <h1 className="text-2xl font-bold text-white tracking-tight">
+              Chiti Shorts Reel
             </h1>
             {!user ? (
               <button
                 onClick={() => setAuthModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 rounded-full text-sm font-bold hover:opacity-90 transition shadow-lg shadow-blue-600/20"
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full text-sm font-semibold hover:opacity-90 transition"
               >
                 <LogIn className="w-4 h-4" />
-                SIGN IN
+                Sign In
               </button>
             ) : (
               <button
                 onClick={() => signOut()}
-                className="px-4 py-2 bg-white/10 rounded-full text-sm font-bold text-white hover:bg-white/20 transition"
+                className="px-4 py-2 bg-gray-800 rounded-full text-sm font-semibold text-white hover:bg-gray-700 transition"
               >
-                LOGOUT
+                Sign Out
               </button>
             )}
           </div>
