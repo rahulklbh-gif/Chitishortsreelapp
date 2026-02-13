@@ -11,19 +11,21 @@ import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 /**
- * 🛠️ CLOUDFLARE R2 CONFIG
+ * 🛠️ DIRECT R2 CONFIGURATION
+ * Yahan humne endpoint ko hardcode kiya hai taaki bypass ho sake.
  */
+const R2_ENDPOINT = "https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com";
+const PUBLIC_R2_DOMAIN = "https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev";
+
 const r2Client = new S3Client({
   region: "auto",
-  endpoint: import.meta.env.VITE_R2_ENDPOINT, 
+  endpoint: R2_ENDPOINT, 
   credentials: {
     accessKeyId: import.meta.env.VITE_R2_ACCESS_KEY_ID || "",
     secretAccessKey: import.meta.env.VITE_R2_SECRET_ACCESS_KEY || "",
   },
   forcePathStyle: true, 
 });
-
-const PUBLIC_R2_DOMAIN = import.meta.env.VITE_R2_PUBLIC_URL || "";
 
 const PERMANENT_MUSIC = [
   { id: 'p1', title: 'Chiti Beats Viral', audio_url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3' },
@@ -34,6 +36,7 @@ const PERMANENT_MUSIC = [
 export default function CreatePage() {
   const { user } = useAuth();
   
+  // -- ALL STATES --
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [caption, setCaption] = useState('');
@@ -52,6 +55,7 @@ export default function CreatePage() {
   const [selectedFilter, setSelectedFilter] = useState('none');
   const [musicList, setMusicList] = useState<any[]>(PERMANENT_MUSIC);
 
+  // -- ALL REFS --
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -75,6 +79,7 @@ export default function CreatePage() {
     gold: "brightness(1.1) sepia(0.4) saturate(1.5)"
   };
 
+  // Music Loader
   useEffect(() => {
     const loadMusic = async () => {
       try {
@@ -130,26 +135,39 @@ export default function CreatePage() {
 
     if (selectedMusic && audioRef.current) {
       try {
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        const ctx = new AudioCtx();
         audioCtxRef.current = ctx;
+
         audioRef.current.crossOrigin = "anonymous";
         const musicSource = ctx.createMediaElementSource(audioRef.current);
         const micSource = ctx.createMediaStreamSource(streamRef.current);
         const dest = ctx.createMediaStreamDestination();
+
         musicSource.connect(dest);
         micSource.connect(dest);
-        dest.connect(ctx.destination);
+        dest.connect(ctx.destination); 
+
         mixedStream = new MediaStream([
           streamRef.current.getVideoTracks()[0],
           dest.stream.getAudioTracks()[0]
         ]);
+
         audioRef.current.currentTime = 0;
         await audioRef.current.play();
-      } catch (e) { console.error("Audio mixing blocked", e); }
+      } catch (e) {
+        console.warn("Audio mixing error", e);
+      }
     }
 
-    const recorder = new MediaRecorder(mixedStream, { mimeType: 'video/webm;codecs=vp8,opus' });
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    const recorder = new MediaRecorder(mixedStream, { 
+      mimeType: 'video/webm;codecs=vp8,opus' 
+    });
+    
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
+
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
       setPreviewUrl(URL.createObjectURL(blob));
@@ -159,53 +177,54 @@ export default function CreatePage() {
       audioRef.current?.pause();
       stopTracks();
     };
+
     recorder.start(100);
     mediaRecorderRef.current = recorder;
     setIsRecording(true);
+
     timerRef.current = setInterval(() => {
       setTimeLeft(p => {
-        if (p <= 1) { mediaRecorderRef.current?.stop(); clearInterval(timerRef.current); return 0; }
+        if (p <= 1) {
+          mediaRecorderRef.current?.stop();
+          clearInterval(timerRef.current);
+          return 0;
+        }
         return p - 1;
       });
     }, 1000);
   };
 
-  // 🔥 THE UPLOAD ENGINE
   const handleUpload = async () => {
-    if (!selectedFile || !user) {
-      toast.error("Please select a video first.");
-      return;
-    }
+    if (!selectedFile || !user) return;
 
-    // DEBUG: Check if variables are loaded
-    if (!import.meta.env.VITE_R2_ENDPOINT) {
-      toast.error("VITE_R2_ENDPOINT is missing. Check Vercel settings!");
+    // Direct check for keys because endpoint is now hardcoded
+    if (!import.meta.env.VITE_R2_ACCESS_KEY_ID) {
+      toast.error("Keys not found. Please redeploy on Vercel.");
       return;
     }
 
     setIsUploading(true);
-    const toastId = toast.loading('Uploading video...');
+    const toastId = toast.loading('Publishing to Chiti...');
     
     try {
       const fileName = `${user.id}/${Date.now()}.webm`;
       const arrayBuffer = await selectedFile.arrayBuffer();
 
       const command = new PutObjectCommand({
-        Bucket: "chiti-videos",
+        Bucket: 'chiti-videos',
         Key: fileName,
         Body: new Uint8Array(arrayBuffer),
-        ContentType: "video/webm",
+        ContentType: 'video/webm',
       });
 
-      // Send to R2
       await r2Client.send(command);
 
       const url = `${PUBLIC_R2_DOMAIN}/${fileName}`;
       
       const { error: dbError } = await supabase.from('posts').insert([{
-        video_url: url,
-        caption,
-        user_id: user.id,
+        video_url: url, 
+        caption: caption, 
+        user_id: user.id, 
         user_name: user.user_metadata?.full_name || 'Chiti Star',
         thumbnail_url: url + "#t=0.5"
       }]);
@@ -216,7 +235,7 @@ export default function CreatePage() {
       setTimeout(() => window.location.reload(), 1500);
 
     } catch (err: any) {
-      console.error("FULL ERROR OBJECT:", err);
+      console.error("SDK Error:", err);
       toast.error(`Upload Failed: ${err.message}`, { id: toastId });
       setIsUploading(false);
     }
@@ -225,79 +244,106 @@ export default function CreatePage() {
   return (
     <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden">
       
-      {/* HEADER */}
-      <div className="p-4 flex justify-between items-center z-[1001] bg-black/50 backdrop-blur-md">
-        <h1 className="text-xl font-black italic text-blue-500">CHITI</h1>
+      {/* 1. HEADER */}
+      <div className="p-4 flex justify-between items-center z-[1001] bg-black/50 backdrop-blur-md border-b border-white/5">
+        <h1 className="text-xl font-black italic tracking-tighter text-blue-500">CHITI</h1>
         {(isCameraMode || previewUrl) && (
-          <button onClick={() => window.location.reload()} className="p-2 bg-white/10 rounded-full"><X/></button>
+          <button onClick={() => window.location.reload()} className="p-2 bg-white/10 rounded-full active:scale-90"><X/></button>
         )}
       </div>
 
       {!user ? (
+        /* AUTH GUARD */
         <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-          <Lock size={64} className="text-blue-600 mb-6" />
-          <h2 className="text-2xl font-black mb-6 uppercase">Login Required</h2>
-          <a href="/login" className="px-12 py-4 bg-blue-600 rounded-full font-black">SIGN IN</a>
+          <Lock size={60} className="text-blue-600 mb-6" />
+          <h2 className="text-2xl font-black mb-6 uppercase tracking-tighter">Sign in to share</h2>
+          <a href="/login" className="px-14 py-4 bg-blue-600 rounded-full font-black shadow-lg">LOGIN</a>
         </div>
       ) : !isCameraMode && !previewUrl ? (
+        /* INITIAL CHOICE */
         <div className="flex-1 flex flex-col items-center justify-center p-8 gap-10">
-          <button onClick={() => setIsCameraMode(true)} className="w-64 h-64 bg-blue-600 rounded-[50px] flex flex-col items-center justify-center shadow-2xl active:scale-95 transition-all">
+          <button 
+            onClick={() => setIsCameraMode(true)} 
+            className="w-64 h-64 bg-blue-600 rounded-[60px] flex flex-col items-center justify-center shadow-2xl active:scale-95 transition-all"
+          >
             <Camera size={70} />
             <span className="text-xl font-black italic mt-4 uppercase">Camera</span>
           </button>
           
-          <label className="w-64 p-5 bg-zinc-900 rounded-[30px] flex items-center justify-center gap-3 border border-white/5 cursor-pointer active:scale-95 transition-all">
+          <label className="w-64 p-5 bg-zinc-900 rounded-[30px] flex items-center justify-center gap-3 border border-white/5 cursor-pointer active:scale-95">
             <Upload size={24} className="text-blue-500"/>
-            <span className="font-bold uppercase text-xs">Gallery</span>
+            <span className="font-bold uppercase tracking-widest text-xs">Gallery Upload</span>
             <input type="file" hidden accept="video/*" onChange={(e) => {
                const file = e.target.files?.[0];
-               if(file) { setSelectedFile(file); setPreviewUrl(URL.createObjectURL(file)); setRecordedFacingMode('environment'); }
+               if(file) {
+                 setSelectedFile(file);
+                 setPreviewUrl(URL.createObjectURL(file));
+                 setRecordedFacingMode('environment'); 
+               }
             }} />
           </label>
         </div>
       ) : isCameraMode ? (
+        /* CAMERA SCREEN */
         <div className="relative flex-1 bg-black">
           <video 
             ref={videoPreviewRef} 
             className="h-full w-full object-cover" 
-            style={{ filter: filterStyles[selectedFilter], transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' }} 
+            style={{ 
+              filter: filterStyles[selectedFilter], 
+              transform: facingMode === 'user' ? 'scaleX(-1)' : 'none' 
+            }} 
             autoPlay playsInline muted 
           />
           
-          <div className="absolute right-4 top-1/4 flex flex-col gap-6">
-            <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="p-4 bg-black/40 rounded-2xl border border-white/10"><RefreshCw/></button>
-            <button onClick={() => setShowFilters(!showFilters)} className={`p-4 bg-black/40 rounded-2xl border border-white/10 ${selectedFilter !== 'none' ? 'text-blue-400 border-blue-500' : ''}`}><Sparkles/></button>
-            <button onClick={() => setShowMusic(true)} className={`p-4 bg-black/40 rounded-2xl border border-white/10 ${selectedMusic ? 'text-pink-400 border-pink-500' : ''}`}><Music/></button>
+          <div className="absolute right-4 top-1/4 flex flex-col gap-6 z-[1010]">
+            <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="p-4 bg-black/40 backdrop-blur-md rounded-2xl border border-white/10"><RefreshCw size={24}/></button>
+            <button onClick={() => setShowFilters(!showFilters)} className={`p-4 bg-black/40 backdrop-blur-md rounded-2xl border border-white/10 ${selectedFilter !== 'none' ? 'text-blue-400 border-blue-500' : ''}`}><Sparkles size={24}/></button>
+            <button onClick={() => setShowMusic(true)} className={`p-4 bg-black/40 backdrop-blur-md rounded-2xl border border-white/10 ${selectedMusic ? 'text-pink-400 border-pink-500' : ''}`}><Music size={24}/></button>
           </div>
 
-          <div className="absolute bottom-12 left-0 right-0 flex flex-col items-center gap-6">
+          <div className="absolute bottom-12 left-0 right-0 flex flex-col items-center gap-6 z-[1010]">
+            {!isRecording && (
+               <div className="flex bg-black/60 backdrop-blur-md p-1.5 rounded-full border border-white/10">
+                 {[15, 30].map(s => (
+                   <button key={s} onClick={() => {setRecordLimit(s); setTimeLeft(s);}} className={`px-8 py-2.5 rounded-full text-[10px] font-black tracking-widest ${recordLimit === s ? 'bg-white text-black' : 'text-gray-400'}`}>{s}S</button>
+                 ))}
+               </div>
+            )}
             <div className="relative flex items-center justify-center">
-                <button onClick={isRecording ? () => mediaRecorderRef.current?.stop() : startRecording} className={`w-24 h-24 rounded-full border-[6px] flex items-center justify-center transition-all ${isRecording ? 'border-red-500 scale-110' : 'border-white'}`}>
+                <button 
+                  onClick={isRecording ? () => mediaRecorderRef.current?.stop() : startRecording} 
+                  className={`w-24 h-24 rounded-full border-[6px] flex items-center justify-center transition-all ${isRecording ? 'border-red-500 scale-110' : 'border-white'}`}
+                >
                     <div className={`${isRecording ? 'w-10 h-10 bg-red-500 rounded-lg animate-pulse' : 'w-18 h-18 bg-white rounded-full'}`} />
                 </button>
                 <div className="absolute -top-12 px-4 py-1 bg-red-600 rounded-full font-black text-sm shadow-xl">{timeLeft}s</div>
             </div>
           </div>
 
+          {/* MUSIC PICKER */}
           {showMusic && (
             <div className="absolute inset-0 bg-black/95 z-[1050] p-6 pt-24 overflow-y-auto">
-              <div className="flex justify-between items-center mb-10"><h2 className="text-2xl font-black italic">SOUNDS</h2><button onClick={() => setShowMusic(false)}><X/></button></div>
-              {musicList.map(m => (
-                <div key={m.id} className={`p-4 mb-3 rounded-2xl flex items-center justify-between border ${selectedMusic?.id === m.id ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-white/5'}`}>
-                  <div className="flex items-center gap-4 flex-1" onClick={() => {
-                      if(playingMusicId === m.id) { audioRef.current?.pause(); setPlayingMusicId(null); }
-                      else { audioRef.current!.src = m.audio_url; audioRef.current?.play(); setPlayingMusicId(m.id); }
-                  }}>
-                    <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">{playingMusicId === m.id ? <Pause/> : <Play/>}</div>
-                    <p className="font-bold text-sm truncate w-40">{m.title}</p>
+              <div className="flex justify-between items-center mb-10"><h2 className="text-2xl font-black italic">CHOOSE SOUND</h2><button onClick={() => setShowMusic(false)} className="p-2 bg-white/10 rounded-full"><X/></button></div>
+              <div className="space-y-4">
+                {musicList.map(m => (
+                  <div key={m.id} className={`p-4 rounded-2xl flex items-center justify-between border ${selectedMusic?.id === m.id ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-white/5'}`}>
+                    <div className="flex items-center gap-4 flex-1" onClick={() => {
+                        if(playingMusicId === m.id) { audioRef.current?.pause(); setPlayingMusicId(null); }
+                        else { audioRef.current!.src = m.audio_url; audioRef.current?.play(); setPlayingMusicId(m.id); }
+                    }}>
+                      <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">{playingMusicId === m.id ? <Pause/> : <Play className="ml-1"/>}</div>
+                      <div><p className="font-bold text-sm truncate w-40">{m.title}</p></div>
+                    </div>
+                    <button onClick={() => {setSelectedMusic(m); setShowMusic(false); audioRef.current?.pause(); setPlayingMusicId(null);}} className={`p-3 rounded-full ${selectedMusic?.id === m.id ? 'bg-green-500 text-black' : 'bg-white/10'}`}><Check/></button>
                   </div>
-                  <button onClick={() => {setSelectedMusic(m); setShowMusic(false); audioRef.current?.pause(); setPlayingMusicId(null);}} className="p-3 bg-white/10 rounded-full"><Check/></button>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
           )}
         </div>
       ) : (
+        /* PREVIEW & POST SCREEN */
         <div className="fixed inset-0 bg-black flex flex-col z-[1100]">
           {!isFinalStep ? (
             <div className="flex-1 flex flex-col relative">
@@ -311,39 +357,52 @@ export default function CreatePage() {
                 <button onClick={() => setIsFinalStep(true)} className="px-10 py-3 bg-blue-600 rounded-full font-black">NEXT</button>
               </div>
               <div className="absolute bottom-6 left-0 right-0 flex gap-4 overflow-x-auto p-4 no-scrollbar">
-                {Object.keys(filterStyles).map(f => (
-                  <button key={f} onClick={() => setSelectedFilter(f)} className={`w-16 h-16 rounded-xl border-2 flex-shrink-0 ${selectedFilter === f ? 'border-blue-500 scale-110' : 'border-white/20'}`} style={{ filter: filterStyles[f], background: '#222' }} />
-                ))}
+                  {Object.keys(filterStyles).map((f) => (
+                    <button key={f} onClick={() => setSelectedFilter(f)} className={`w-16 h-16 rounded-xl border-2 flex-shrink-0 transition-transform ${selectedFilter === f ? 'border-blue-500 scale-110' : 'border-white/20'}`} style={{ filter: filterStyles[f], background: '#222' }} />
+                  ))}
               </div>
             </div>
           ) : (
+            /* FINAL STEP */
             <div className="flex-1 p-6 flex flex-col bg-zinc-950">
-              <div className="flex items-center gap-4 mb-10"><button onClick={() => setIsFinalStep(false)}><ArrowLeft/></button><h2 className="text-xl font-black uppercase">Post</h2></div>
+              <div className="flex items-center gap-4 mb-10">
+                 <button onClick={() => setIsFinalStep(false)} className="p-2 bg-white/10 rounded-full"><ArrowLeft/></button>
+                 <h2 className="text-xl font-black uppercase">Publish</h2>
+              </div>
+              
               <div className="flex gap-5 mb-10">
                 <div className="w-32 h-48 bg-zinc-900 rounded-[25px] overflow-hidden border border-white/5">
-                  <video src={previewUrl} style={{ filter: filterStyles[selectedFilter], transform: recordedFacingMode === 'user' ? 'scaleX(-1)' : 'none' }} muted className="w-full h-full object-cover" />
+                  <video 
+                    src={previewUrl} 
+                    style={{ filter: filterStyles[selectedFilter], transform: recordedFacingMode === 'user' ? 'scaleX(-1)' : 'none' }} 
+                    muted className="w-full h-full object-cover" 
+                  />
                 </div>
-                <textarea 
-                  placeholder="Caption..." 
-                  className="flex-1 bg-transparent border-b border-white/10 py-2 outline-none resize-none font-bold text-lg"
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value)}
-                />
+                <div className="flex-1">
+                  <textarea 
+                    placeholder="Write a caption..." 
+                    className="w-full h-32 bg-transparent border-b border-white/10 py-2 outline-none resize-none font-bold text-lg"
+                    value={caption}
+                    onChange={(e) => setCaption(e.target.value)}
+                  />
+                </div>
               </div>
+              
               <button 
                 onClick={handleUpload} 
                 disabled={isUploading} 
-                className="mt-auto w-full bg-blue-600 py-5 rounded-[35px] font-black text-xl flex items-center justify-center gap-4 active:scale-95 disabled:opacity-50 shadow-xl"
+                className="mt-auto w-full bg-blue-600 py-5 rounded-[35px] font-black text-xl flex items-center justify-center gap-4 active:scale-95 disabled:opacity-50 transition-all shadow-xl"
               >
-                {isUploading ? <Loader2 className="animate-spin"/> : <Send/>}
-                {isUploading ? 'POSTING...' : 'SHARE NOW'}
+                {isUploading ? <Loader2 className="animate-spin" size={24}/> : <Send size={24}/>}
+                {isUploading ? 'UPLOADING...' : 'POST NOW'}
               </button>
             </div>
           )}
         </div>
       )}
 
+      {/* GLOBAL AUDIO TAG */}
       <audio ref={audioRef} hidden crossOrigin="anonymous" />
     </div>
   );
-}
+} 
