@@ -2,18 +2,16 @@
 
 import { 
   Upload, Video, Sparkles, Loader2, Send, X, Camera, 
-  RefreshCw, Music, Check, Play, Pause, Lock, ArrowLeft,
-  Settings, Volume2, ShieldCheck, Search, Zap, Clock, Info
+  RefreshCw, Music, Check, Play, Pause, Zap, ArrowLeft,
+  ShieldCheck, Search
 } from 'lucide-react';
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'; 
+import { useState, useRef, useEffect, useMemo } from 'react'; 
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
-/**
- * 🛠️ CLOUDFLARE R2 CONFIGURATION
- */
+// R2 Configuration
 const R2_CONFIG = {
   endpoint: "https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com",
   accessKeyId: "bace896e3eba07cdbcb983394bd20da1", 
@@ -22,40 +20,24 @@ const R2_CONFIG = {
   publicDomain: "https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev"
 };
 
-/**
- * 🎨 FILTERS DATA WITH GRID CONFIG
- */
+// Filter Data (CSS Based - No Lag)
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
-  crystal: { name: "Crystal Glow", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
-  angel: { name: "Angel White", style: "brightness(1.6) saturate(1.2) contrast(0.9)", thumb: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100" },
-  ivory: { name: "Ivory", style: "brightness(1.3) sepia(0.1) contrast(1.1)", thumb: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" },
-  soft: { name: "Soft Skin", style: "brightness(1.2) blur(0.5px)", thumb: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100" },
-  storm: { name: "Lightning", style: "contrast(1.3) brightness(1.1)", isVFX: true, vfxType: 'lightning', thumb: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100" },
-  pulse: { name: "Flash Beat", style: "", isVFX: true, vfxType: 'pulse', thumb: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=100" },
+  crystal: { name: "Crystal", style: "brightness(1.3) contrast(1.1) saturate(1.2)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
+  angel: { name: "Angel", style: "brightness(1.5) saturate(1.1) contrast(0.9)", thumb: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100" },
+  soft: { name: "Soft", style: "brightness(1.1) blur(0.4px)", thumb: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100" },
+  retro: { name: "Vintage", style: "sepia(0.6) contrast(1.1)", thumb: "https://images.unsplash.com/photo-1502823403499-6ccfcf4fb453?w=100" },
+  noir: { name: "Noir", style: "grayscale(1) contrast(1.5)", thumb: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100" },
   quad: { name: "4-Grid", style: "", isGrid: true, gridCount: 4, cols: 2, rows: 2, thumb: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=100" },
-  sixer: { name: "6-Grid", style: "", isGrid: true, gridCount: 6, cols: 2, rows: 3, thumb: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100" },
-  triple: { name: "3-Column", style: "", isGrid: true, gridCount: 3, cols: 1, rows: 3, thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
-  cine: { name: "CineMax", style: "contrast(1.6) saturate(0.8) brightness(0.9)", thumb: "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=100" },
-  teal: { name: "Teal&Orange", style: "hue-rotate(-10deg) saturate(1.8) contrast(1.2)", thumb: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100" },
-  retro: { name: "Vintage", style: "sepia(0.8) contrast(1.2) brightness(0.9)", thumb: "https://images.unsplash.com/photo-1502823403499-6ccfcf4fb453?w=100" },
-  noir: { name: "Noir", style: "grayscale(1) contrast(1.8)", thumb: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100" },
-  warm: { name: "Sunny", style: "sepia(0.4) saturate(1.6) brightness(1.1)", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
-  gold: { name: "Royal Gold", style: "sepia(0.5) brightness(1.1) saturate(2)", thumb: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100" },
-  cyber: { name: "Cyberpunk", style: "hue-rotate(280deg) saturate(2) contrast(1.2)", thumb: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100" },
-  dream: { name: "Dreamy", style: "blur(1.2px) brightness(1.2)", thumb: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=100" },
-  mono: { name: "Classic", style: "grayscale(1) contrast(1.1)", thumb: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" },
-  vivid: { name: "Ultra Vivid", style: "saturate(3) contrast(1.2)", thumb: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=100" },
-  ocean: { name: "Oceanic", style: "hue-rotate(180deg) brightness(1.1)", thumb: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=100" }
+  sixer: { name: "6-Grid", style: "", isGrid: true, gridCount: 6, cols: 2, rows: 3, thumb: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100" }
 };
 
 export default function CreatePage() {
   const { user } = useAuth();
   
-  // -- ALL STATES --
+  // States
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
-  const [videoDuration, setVideoDuration] = useState(0);
   const [caption, setCaption] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -64,392 +46,275 @@ export default function CreatePage() {
   const [recordLimit, setRecordLimit] = useState(15);
   const [timeLeft, setTimeLeft] = useState(15);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
-  const [showMusic, setShowMusic] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [isFinalStep, setIsFinalStep] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedMusic, setSelectedMusic] = useState<any>(null);
-  const [playingMusicId, setPlayingMusicId] = useState<string | null>(null);
-  const [musicList, setMusicList] = useState<any[]>([]);
   const [selectedFilter, setSelectedFilter] = useState('none');
 
-  // -- REFS --
+  // Refs
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const timerRef = useRef<any>(null);
 
-  // 1. Music Loader
-  useEffect(() => {
-    const fetchMusic = async () => {
-      const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false });
-      if (data) setMusicList(data);
-    };
-    fetchMusic();
-  }, []);
-
-  const filteredMusic = useMemo(() => {
-    return musicList.filter(m => m.title?.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [musicList, searchTerm]);
-
-  // 2. Camera Start
+  // Camera Management
   const startCamera = async () => {
-    if (!user) return;
     try {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: facingMode }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: { ideal: facingMode }, width: { ideal: 720 } },
         audio: true
       });
       streamRef.current = stream;
-      if (videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = stream;
-        videoPreviewRef.current.onloadedmetadata = () => {
-          videoPreviewRef.current?.play().catch(e => console.error(e));
-        };
-      }
+      if (videoPreviewRef.current) videoPreviewRef.current.srcObject = stream;
       setIsCameraMode(true);
     } catch (err) {
-      toast.error("Camera Access Denied.");
-      setIsCameraMode(false);
+      toast.error("Camera access failed");
     }
   };
 
   useEffect(() => {
     if (isCameraMode) startCamera();
-    return () => streamRef.current?.getTracks().forEach(t => t.stop());
+    return () => {
+        streamRef.current?.getTracks().forEach(t => t.stop());
+        if (timerRef.current) clearInterval(timerRef.current);
+    };
   }, [isCameraMode, facingMode]);
 
-  // 3. Recording Process
-  const startRecording = async () => {
-    if (!videoPreviewRef.current) return;
-    
-    // @ts-ignore
-    const recordingStream = videoPreviewRef.current.captureStream ? videoPreviewRef.current.captureStream() : streamRef.current;
-    
-    if (!recordingStream) return;
+  // Recording Logic (Optimized for Small File Size)
+  const startRecording = () => {
+    if (!streamRef.current) return;
     chunksRef.current = [];
+    
+    // Low Bitrate (1.5Mbps) = Fast Upload on Slow Internet
+    const recorder = new MediaRecorder(streamRef.current, { 
+      mimeType: 'video/webm;codecs=vp8',
+      videoBitsPerSecond: 1500000 
+    });
 
-    const recorder = new MediaRecorder(recordingStream, { mimeType: 'video/webm' });
     recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      setPreviewUrl(url);
-      setSelectedFile(new File([blob], `chiti_vid.webm`, { type: 'video/webm' }));
+      const file = new File([blob], "vid.webm", { type: 'video/webm' });
+      setSelectedFile(file);
+      setPreviewUrl(URL.createObjectURL(blob));
       setIsCameraMode(false);
       setIsRecording(false);
     };
 
-    recorder.start(100);
+    recorder.start();
     mediaRecorderRef.current = recorder;
     setIsRecording(true);
     setTimeLeft(recordLimit);
+
     timerRef.current = setInterval(() => {
-      setTimeLeft(p => {
-        if (p <= 1) { mediaRecorderRef.current?.stop(); clearInterval(timerRef.current); return 0; }
-        return p - 1;
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          stopRecording();
+          return 0;
+        }
+        return prev - 1;
       });
     }, 1000);
   };
 
-  /**
-   * 🚀 HANDLE PUBLISH (RE-ADDED FULL CANVAS PROCESSING WITH MEMORY FIX)
-   */
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+  };
+
+  // Publish Logic (Super Fast - No Baking)
   const handlePublish = async () => {
-    if (!selectedFile || !user || !videoPreviewRef.current) return;
-    
+    if (!selectedFile || !user) return;
     setIsUploading(true);
     setUploadProgress(10);
 
     try {
-      let finalBlob: Blob = selectedFile;
-      const filter = FILTERS_DATA[selectedFilter];
-
-      // Logic: Filter ya Grid "bake" karne ke liye canvas ka use
-      if (selectedFilter !== 'none') {
-        const video = videoPreviewRef.current;
-        const canvas = document.createElement('canvas');
-        // Quality balanced for mobile
-        canvas.width = 720;
-        canvas.height = 1280;
-        const ctx = canvas.getContext('2d', { alpha: false }); // alpha false for performance
-        
-        if (ctx) {
-          const stream = (canvas as any).captureStream(24); // 24 FPS enough for mobile
-          const recorder = new MediaRecorder(stream, { 
-            mimeType: 'video/webm;codecs=vp8', // vp8 is lighter than vp9
-            videoBitsPerSecond: 2500000 
-          });
-          
-          const localChunks: Blob[] = [];
-          recorder.ondataavailable = (e) => localChunks.push(e.data);
-          
-          const recordPromise = new Promise<Blob>((resolve) => {
-            recorder.onstop = () => resolve(new Blob(localChunks, { type: 'video/webm' }));
-          });
-
-          recorder.start();
-          video.currentTime = 0;
-          video.muted = true;
-          await video.play();
-
-          // Performance optimized frame processing
-          const processFrames = () => {
-            if (video.paused || video.ended) {
-              recorder.stop();
-              return;
-            }
-            
-            ctx.filter = filter.style || 'none';
-            if (filter.isGrid) {
-              const cellW = canvas.width / filter.cols;
-              const cellH = canvas.height / filter.rows;
-              for (let r = 0; r < filter.rows; r++) {
-                for (let c = 0; c < filter.cols; c++) {
-                  ctx.drawImage(video, c * cellW, r * cellH, cellW, cellH);
-                }
-              }
-            } else {
-              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            }
-            
-            // Limit frame processing to avoid crash
-            setTimeout(() => {
-              requestAnimationFrame(processFrames);
-            }, 10); 
-          };
-
-          processFrames();
-          finalBlob = await recordPromise;
-          setUploadProgress(50);
-        }
-      }
-
-      // -- UPLOAD TO R2 --
       const fileName = `chiti_vids/${user.id}/${Date.now()}.webm`;
       const client = new S3Client({
         region: "auto",
-        endpoint: R2_CONFIG.endpoint, 
+        endpoint: R2_CONFIG.endpoint,
         credentials: { accessKeyId: R2_CONFIG.accessKeyId, secretAccessKey: R2_CONFIG.secretAccessKey },
-        forcePathStyle: true, 
+        forcePathStyle: true
       });
 
+      // Upload Raw File (No heavy processing)
       await client.send(new PutObjectCommand({
         Bucket: R2_CONFIG.bucketName,
         Key: fileName,
-        Body: new Uint8Array(await finalBlob.arrayBuffer()),
-        ContentType: 'video/webm',
+        Body: selectedFile,
+        ContentType: 'video/webm'
       }));
 
+      setUploadProgress(80);
       const videoUrl = `${R2_CONFIG.publicDomain}/${fileName}`;
-      
-      // -- SAVE TO DATABASE --
-      await Promise.all([
-        supabase.from('posts').insert([{ 
-            video_url: videoUrl, 
-            caption, 
-            user_id: user.id, 
-            user_name: user.user_metadata?.full_name || 'Creator',
-            filter_name: selectedFilter // Saving for player reference too
-        }]),
-        supabase.from('music_library').insert([{ 
-            title: caption || "Chiti Sound", 
-            audio_url: videoUrl, 
-            user_id: user.id 
-        }])
-      ]);
+
+      // Save to Supabase with Filter Metadata
+      const { error } = await supabase.from('posts').insert([{
+        video_url: videoUrl,
+        caption,
+        user_id: user.id,
+        user_name: user.user_metadata?.username || 'User',
+        filter_name: selectedFilter // This tells the player which filter to show
+      }]);
+
+      if (error) throw error;
 
       setUploadProgress(100);
-      toast.success('Filter Applied & Posted!');
-      setTimeout(() => window.location.href = '/', 1000);
-    } catch (err) { 
-      console.error(err);
+      toast.success("Video Published!");
+      window.location.href = '/';
+    } catch (err) {
       setIsUploading(false);
-      toast.error("Upload failed.");
+      toast.error("Upload failed. Check internet.");
     }
   };
 
-  /**
-   * 📺 STUDIO RENDERER
-   */
-  const renderStudioDisplay = (url?: string) => {
+  // Studio Renderer (Live Filter Preview)
+  const renderDisplay = (url?: string) => {
     const filter = FILTERS_DATA[selectedFilter];
-    const gridCount = filter.isGrid ? filter.gridCount : 1;
-    const shouldMirror = facingMode === 'user' && !url;
-
-    let gridClass = "w-full h-full";
-    if (filter.isGrid) {
-      if (gridCount === 4) gridClass = "w-full h-full grid grid-cols-2 grid-rows-2";
-      if (gridCount === 6) gridClass = "w-full h-full grid grid-cols-2 grid-rows-3";
-      if (gridCount === 3) gridClass = "w-full h-full grid grid-cols-1 grid-rows-3";
-    }
+    const isGrid = filter.isGrid;
+    const gridCount = isGrid ? filter.gridCount : 1;
 
     return (
-      <div className={gridClass}>
+      <div className={`w-full h-full ${isGrid ? 'grid' : ''}`} style={isGrid ? {
+        gridTemplateColumns: `repeat(${filter.cols}, 1fr)`,
+        gridTemplateRows: `repeat(${filter.rows}, 1fr)`
+      } : {}}>
         {[...Array(gridCount)].map((_, i) => (
-          <div key={i} className="relative w-full h-full overflow-hidden border-[0.5px] border-black/10">
+          <div key={i} className="relative w-full h-full overflow-hidden border-[0.2px] border-white/5">
             <video 
               ref={i === 0 ? videoPreviewRef : null}
               src={url}
-              className={`w-full h-full object-cover ${shouldMirror ? 'scale-x-[-1]' : ''}`}
+              autoPlay playsInline muted loop
+              className={`w-full h-full object-cover ${facingMode === 'user' && !url ? 'scale-x-[-1]' : ''}`}
               style={{ filter: filter.style }}
-              autoPlay 
-              playsInline 
-              muted={i !== 0 || !url} 
-              loop
-              crossOrigin="anonymous"
             />
           </div>
         ))}
-        {filter.vfxType === 'lightning' && <div className="absolute inset-0 bg-blue-500/10 animate-pulse pointer-events-none z-10" />}
       </div>
     );
   };
 
-  // --- UI RENDER (All Original Components) ---
   return (
     <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden">
-      <div className="p-4 flex justify-between items-center z-[1001] bg-gradient-to-b from-black/80 to-transparent">
-        <h1 className="text-xl font-black italic text-blue-600 flex items-center gap-1 tracking-tighter">CHITI <Zap size={18} fill="currentColor"/></h1>
+      {/* Header */}
+      <div className="p-4 flex justify-between items-center z-50">
+        <h1 className="text-xl font-black italic text-blue-600 flex items-center gap-1">
+          CHITI <Zap size={18} fill="currentColor"/>
+        </h1>
         {(isCameraMode || previewUrl) && (
-          <button onClick={() => window.location.reload()} className="p-2 bg-white/10 rounded-full"><X size={20}/></button>
+          <button onClick={() => window.location.reload()} className="p-2 bg-white/10 rounded-full"><X/></button>
         )}
       </div>
 
-      {!user ? (
-        <div className="flex-1 flex flex-col items-center justify-center p-10"><ShieldCheck size={50} className="text-blue-500 mb-4"/><a href="/login" className="px-10 py-4 bg-blue-600 rounded-full font-black text-xs uppercase">Sign In</a></div>
-      ) : !isCameraMode && !previewUrl ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-16">
-          <button onClick={() => setIsCameraMode(true)} className="w-52 h-52 bg-blue-600 rounded-[70px] flex flex-col items-center justify-center shadow-2xl active:scale-90 transition-all">
-            <Camera size={70} />
-            <span className="text-[10px] font-black uppercase mt-2 italic">Start Shoot</span>
+      {!isCameraMode && !previewUrl ? (
+        <div className="flex-1 flex flex-col items-center justify-center gap-10">
+          <button onClick={() => setIsCameraMode(true)} className="w-40 h-40 bg-blue-600 rounded-[50px] flex items-center justify-center shadow-2xl active:scale-95 transition-all">
+            <Camera size={50} />
           </button>
-          <label className="flex items-center gap-4 px-10 py-5 bg-zinc-900 rounded-full border border-white/5 cursor-pointer">
-            <Upload size={24} className="text-blue-500" />
-            <span className="text-xs font-black uppercase italic">Gallery</span>
+          <label className="flex items-center gap-3 px-8 py-4 bg-zinc-900 rounded-full border border-white/10 cursor-pointer active:scale-95 transition-all">
+            <Upload size={20} className="text-blue-500"/>
+            <span className="text-xs font-bold uppercase italic">Upload from Gallery</span>
             <input type="file" hidden accept="video/*" onChange={(e) => {
-               const file = e.target.files?.[0];
-               if(file) {
-                 setSelectedFile(file);
-                 setPreviewUrl(URL.createObjectURL(file));
-                 const v = document.createElement('video');
-                 v.src = URL.createObjectURL(file);
-                 v.onloadedmetadata = () => setVideoDuration(Math.round(v.duration));
-               }
+              const file = e.target.files?.[0];
+              if(file) { setSelectedFile(file); setPreviewUrl(URL.createObjectURL(file)); }
             }} />
           </label>
         </div>
       ) : isCameraMode ? (
-        <div className="relative flex-1 bg-black overflow-hidden">
-          {renderStudioDisplay()}
-          <div className="absolute right-4 top-1/4 flex flex-col gap-5 z-[1010]">
-            <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="p-4 bg-black/40 backdrop-blur-xl rounded-2xl"><RefreshCw size={22}/></button>
-            <button onClick={() => setShowFilters(true)} className="p-4 bg-black/40 backdrop-blur-xl rounded-2xl text-blue-400"><Sparkles size={22}/></button>
-            <button onClick={() => setShowMusic(true)} className="p-4 bg-black/40 backdrop-blur-xl rounded-2xl text-pink-500"><Music size={22}/></button>
+        <div className="relative flex-1 bg-black">
+          {renderDisplay()}
+          <div className="absolute right-4 top-20 flex flex-col gap-6">
+            <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="p-4 bg-black/40 backdrop-blur-md rounded-2xl"><RefreshCw/></button>
+            <button onClick={() => setShowFilters(true)} className="p-4 bg-black/40 backdrop-blur-md rounded-2xl text-blue-400"><Sparkles/></button>
           </div>
-          <div className="absolute bottom-10 inset-x-0 flex flex-col items-center gap-6 z-[1010]">
+          <div className="absolute bottom-10 inset-x-0 flex flex-col items-center gap-6">
             {!isRecording && (
-              <div className="flex bg-black/50 p-1 rounded-full border border-white/10">
-                {[15, 30].map(sec => (
-                  <button key={sec} onClick={() => {setRecordLimit(sec); setTimeLeft(sec);}} className={`px-10 py-2.5 rounded-full text-[10px] font-black ${recordLimit === sec ? 'bg-white text-black' : 'text-gray-400'}`}>{sec}S</button>
+              <div className="flex bg-black/50 rounded-full border border-white/10 p-1">
+                {[15, 30].map(s => (
+                  <button key={s} onClick={() => setRecordLimit(s)} className={`px-6 py-2 rounded-full text-[10px] font-bold ${recordLimit === s ? 'bg-white text-black' : ''}`}>{s}s</button>
                 ))}
               </div>
             )}
-            <button onClick={isRecording ? () => mediaRecorderRef.current?.stop() : startRecording} className={`w-20 h-20 rounded-full border-4 flex items-center justify-center ${isRecording ? 'border-red-600' : 'border-white'}`}>
-              <div className={`${isRecording ? 'w-8 h-8 bg-red-600 rounded-lg' : 'w-14 h-14 bg-white rounded-full'}`} />
+            <button 
+                onClick={isRecording ? stopRecording : startRecording} 
+                className={`w-20 h-20 rounded-full border-4 flex items-center justify-center ${isRecording ? 'border-red-600' : 'border-white'}`}
+            >
+              <div className={isRecording ? 'w-8 h-8 bg-red-600 rounded-sm' : 'w-14 h-14 bg-white rounded-full'} />
             </button>
+            {isRecording && <span className="text-red-500 font-bold animate-pulse">{timeLeft}s</span>}
           </div>
         </div>
       ) : (
-        <div className="fixed inset-0 bg-zinc-950 flex flex-col z-[1300]">
+        <div className="fixed inset-0 bg-black flex flex-col">
           {!isFinalStep ? (
-            <div className="flex-1 flex flex-col relative overflow-hidden">
-              {renderStudioDisplay(previewUrl)}
-              <div className="absolute bottom-10 inset-x-0 px-8 flex justify-between items-center z-[1320]">
-                <button onClick={() => setShowFilters(true)} className="p-4 bg-black/40 backdrop-blur-xl rounded-full text-blue-400"><Sparkles size={24}/></button>
-                <button onClick={() => setIsFinalStep(true)} className="px-12 py-4 bg-blue-600 rounded-full font-black text-xs">NEXT</button>
+            <div className="flex-1 relative">
+              {renderDisplay(previewUrl)}
+              <div className="absolute bottom-10 inset-x-0 px-10 flex justify-between items-center">
+                <button onClick={() => setShowFilters(true)} className="p-4 bg-black/40 rounded-full text-blue-400"><Sparkles/></button>
+                <button onClick={() => setIsFinalStep(true)} className="px-10 py-4 bg-blue-600 rounded-full font-black text-xs italic">NEXT</button>
               </div>
             </div>
           ) : (
-            <div className="flex-1 p-6 flex flex-col bg-black">
-               <div className="flex items-center gap-4 mb-10 pt-4">
-                <button onClick={() => setIsFinalStep(false)} className="p-3 bg-white/5 rounded-full"><ArrowLeft size={24}/></button>
-                <h2 className="text-xl font-black italic uppercase">Ready to Post</h2>
+            <div className="p-6 flex flex-col h-full bg-zinc-950">
+              <div className="flex items-center gap-4 mb-8">
+                <button onClick={() => setIsFinalStep(false)}><ArrowLeft/></button>
+                <span className="font-bold italic">POST VIDEO</span>
               </div>
-              <div className="flex gap-6 mb-12">
-                <div className="w-32 h-48 bg-zinc-900 rounded-[30px] overflow-hidden relative">
-                   {renderStudioDisplay(previewUrl)}
-                </div>
-                <div className="flex-1 pt-2">
-                  <textarea placeholder="Describe your video..." className="w-full h-32 bg-transparent border-b border-white/10 py-4 outline-none font-bold text-sm resize-none" value={caption} onChange={(e) => setCaption(e.target.value)} />
-                </div>
+              <div className="flex gap-4 mb-10">
+                <div className="w-24 h-36 bg-zinc-800 rounded-xl overflow-hidden">{renderDisplay(previewUrl)}</div>
+                <textarea 
+                  placeholder="Write a caption..." 
+                  className="flex-1 bg-transparent border-b border-white/10 outline-none p-2 text-sm italic h-36"
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                />
               </div>
               {isUploading && (
-                <div className="mb-10 space-y-2">
-                   <div className="flex justify-between items-end text-[9px] font-black text-blue-500 uppercase italic"><span>Processing Filter & Grid...</span><span>{uploadProgress}%</span></div>
-                   <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${uploadProgress}%` }} /></div>
+                <div className="mb-6">
+                  <div className="flex justify-between text-[10px] mb-2 font-bold text-blue-500 italic">
+                    <span>UPLOADING...</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+                  </div>
                 </div>
               )}
-              <button onClick={handlePublish} disabled={isUploading} className="mt-auto w-full bg-blue-600 py-6 rounded-[30px] font-black text-lg flex items-center justify-center gap-4 shadow-xl active:scale-95 transition-all disabled:opacity-50">
-                {isUploading ? <Loader2 className="animate-spin" size={28}/> : <Send size={28}/>}
-                <span className="uppercase tracking-tighter">{isUploading ? 'Applying Filter...' : 'Publish'}</span>
+              <button 
+                onClick={handlePublish}
+                disabled={isUploading}
+                className="mt-auto w-full bg-blue-600 py-5 rounded-3xl font-black text-lg flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
+              >
+                {isUploading ? <Loader2 className="animate-spin" /> : <Send />}
+                PUBLISH
               </button>
             </div>
           )}
         </div>
       )}
 
-      {/* FILTERS DRAWER */}
+      {/* Filter Drawer */}
       {showFilters && (
-        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[50px] z-[1500] border-t border-white/5">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="font-black text-xs uppercase italic text-zinc-500">Filters</h3>
-            <button onClick={() => setShowFilters(false)} className="p-2 bg-white/5 rounded-full"><X size={18}/></button>
+        <div className="absolute bottom-0 inset-x-0 bg-zinc-900 p-6 rounded-t-3xl z-[1000] border-t border-white/5">
+          <div className="flex justify-between items-center mb-4">
+            <span className="text-[10px] font-bold text-zinc-500 italic uppercase">Effects</span>
+            <button onClick={() => setShowFilters(false)} className="p-1 bg-white/5 rounded-full"><X size={16}/></button>
           </div>
-          <div className="flex gap-5 overflow-x-auto no-scrollbar pb-4">
+          <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
             {Object.keys(FILTERS_DATA).map(key => (
-              <button key={key} onClick={() => setSelectedFilter(key)} className="flex flex-col items-center gap-3">
-                <div className={`w-16 h-20 rounded-2xl overflow-hidden border-2 transition-all duration-300 ${selectedFilter === key ? 'border-blue-500 scale-105 shadow-lg' : 'border-transparent opacity-40 hover:opacity-100'}`}>
+              <button key={key} onClick={() => setSelectedFilter(key)} className="flex flex-col items-center gap-2 flex-shrink-0">
+                <div className={`w-14 h-14 rounded-2xl overflow-hidden border-2 ${selectedFilter === key ? 'border-blue-500 scale-105' : 'border-transparent opacity-50'}`}>
                   <img src={FILTERS_DATA[key].thumb} className="w-full h-full object-cover" style={{ filter: FILTERS_DATA[key].style }} />
                 </div>
-                <span className="text-[8px] font-black uppercase text-zinc-600">{FILTERS_DATA[key].name}</span>
+                <span className="text-[8px] font-bold uppercase">{FILTERS_DATA[key].name}</span>
               </button>
             ))}
           </div>
         </div>
       )}
-
-      {/* MUSIC DRAWER */}
-      {showMusic && (
-        <div className="absolute inset-0 bg-zinc-950 z-[1600] flex flex-col">
-           <div className="w-full max-w-md mx-auto h-full flex flex-col p-6 pt-16">
-              <div className="flex justify-between items-center mb-10">
-                <h2 className="text-4xl font-black italic tracking-tighter text-blue-600 uppercase">Sounds</h2>
-                <button onClick={() => setShowMusic(false)} className="p-3 bg-white/5 rounded-full"><X size={24}/></button>
-              </div>
-              <div className="flex-1 overflow-y-auto space-y-4 pb-20 no-scrollbar">
-                {filteredMusic.map(music => (
-                  <div key={music.id} className={`p-5 rounded-[35px] flex items-center justify-between border ${selectedMusic?.id === music.id ? 'bg-blue-600/10 border-blue-500' : 'bg-zinc-900 border-white/5'}`}>
-                    <div className="flex items-center gap-5 flex-1" onClick={() => {
-                        if(playingMusicId === music.id) { audioRef.current?.pause(); setPlayingMusicId(null); }
-                        else { audioRef.current!.src = music.audio_url; audioRef.current?.play(); setPlayingMusicId(music.id); }
-                    }}>
-                      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${playingMusicId === music.id ? 'bg-blue-600' : 'bg-white/5'}`}><Play size={20}/></div>
-                      <p className="font-black text-sm uppercase">{music.title}</p>
-                    </div>
-                    <button onClick={() => {setSelectedMusic(music); setShowMusic(false); audioRef.current?.pause(); setPlayingMusicId(null);}} className={`p-4 rounded-2xl ${selectedMusic?.id === music.id ? 'bg-blue-600' : 'bg-white/5'}`}><Check size={20}/></button>
-                  </div>
-                ))}
-              </div>
-           </div>
-        </div>
-      )}
-      <audio ref={audioRef} hidden crossOrigin="anonymous" />
     </div>
   );
 } 
