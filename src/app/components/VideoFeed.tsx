@@ -20,6 +20,7 @@ export interface Video {
   likes_count?: number;
   comments_count?: number;
   shares_count?: number;
+  filter_name?: string; // --- Naya Field: Filter support ke liye ---
 }
 
 interface VideoFeedProps {
@@ -32,9 +33,7 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
   const [videos, setVideos] = useState<Video[]>(initialVideos);
   const [currentIndex, setCurrentIndex] = useState(0);
   
-  // Ref to track if we have already handled the URL redirect
   const hasHandledDeepLink = useRef(false);
-  
   const containerRef = useRef<HTMLDivElement>(null);
   const startY = useRef(0);
   const isDragging = useRef(false);
@@ -44,29 +43,23 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
     if (!searchParams.get('video')) {
         setVideos(initialVideos);
     } else if (initialVideos.length > 0 && !hasHandledDeepLink.current) {
-        // Agar initialVideos load ho gaye hain, toh check karo ki unme wo video hai ya nahi
         checkAndSetupVideo();
     }
   }, [initialVideos, searchParams]);
 
   /**
    * --- MAIN FIX: URL VIDEO HANDLER ---
-   * Ye function check karega ki URL wala video list mein hai ya nahi.
-   * Agar nahi hai, to use fetch karke Top par layega.
    */
   const checkAndSetupVideo = async () => {
     const videoIdFromUrl = searchParams.get('video');
     if (!videoIdFromUrl || hasHandledDeepLink.current) return;
 
-    // 1. Check karo ki kya video already list mein hai?
     const existingIndex = videos.findIndex((v) => v.id === videoIdFromUrl);
     
     if (existingIndex !== -1) {
-        // Agar mil gaya, to wahan jump karo
         setCurrentIndex(existingIndex);
         hasHandledDeepLink.current = true;
     } else {
-        // 2. Agar list mein nahi mila (search result purana ho sakta hai), to use FETCH karo
         try {
             const { data: singleVideo, error } = await supabase
                 .from('posts')
@@ -82,9 +75,8 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
                 .single();
 
             if (singleVideo && !error) {
-                // Naye video ko sabse upar (Index 0) par add karo
                 setVideos((prev) => [singleVideo, ...prev]);
-                setCurrentIndex(0); // Pehla video play karo
+                setCurrentIndex(0);
                 hasHandledDeepLink.current = true;
             }
         } catch (err) {
@@ -93,7 +85,6 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
     }
   };
 
-  // Jab component mount ho, tab bhi check karo
   useEffect(() => {
     checkAndSetupVideo();
   }, [searchParams]);
@@ -206,16 +197,14 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
               <OptimizedVideoPlayer
                 videoId={video.id}
                 videoUrl={video.video_url}
-                thumbnailUrl={video.thumbnail_url}
                 isActive={index === currentIndex}
                 caption={video.caption}
                 username={finalUsername}
                 avatarUrl={finalAvatar} 
-                music={video.music}
+                filterName={video.filter_name || 'none'} // --- NAYA PROP PASS KIYA ---
                 likesCount={video.likes_count || 0}
                 commentsCount={video.comments_count || 0}
                 sharesCount={video.shares_count || 0}
-                onVideoClick={() => {}} 
                 onComment={() => onComment(video.id)}
               />
             </div>
@@ -223,6 +212,7 @@ export function VideoFeed({ videos: initialVideos, onComment }: VideoFeedProps) 
         })}
       </div>
 
+      {/* Vertical Navigation Dots */}
       <div className="fixed right-2 top-1/2 -translate-y-1/2 flex flex-col gap-1 z-50 pointer-events-none">
         {videos.map((_, index) => (
           <div
