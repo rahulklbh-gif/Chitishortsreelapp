@@ -1,13 +1,40 @@
-import { useRef, useEffect, useState } from 'react';
+"use client";
+
+import { useRef, useEffect, useState, useMemo } from 'react';
 import { VideoActions } from './VideoActions';
-import { Volume2, VolumeX } from 'lucide-react';
+import { Volume2, VolumeX, Zap } from 'lucide-react';
 import { supabase } from '@/lib/supabase'; 
 import { useAuth } from '@/contexts/AuthContext'; 
 import { toast } from 'sonner';
 
+// --- FILTERS CONFIG (Same as Create Page for exact match) ---
+const FILTERS_STYLE: any = {
+  none: { style: "" },
+  crystal: { style: "brightness(1.4) contrast(1.1) saturate(1.1)" },
+  angel: { style: "brightness(1.6) saturate(1.2) contrast(0.9)" },
+  ivory: { style: "brightness(1.3) sepia(0.1) contrast(1.1)" },
+  soft: { style: "brightness(1.2) blur(0.5px)" },
+  storm: { style: "contrast(1.3) brightness(1.1)", vfx: 'lightning' },
+  pulse: { style: "", vfx: 'pulse' },
+  quad: { isGrid: true, cols: 2, rows: 2, count: 4 },
+  sixer: { isGrid: true, cols: 2, rows: 3, count: 6 },
+  triple: { isGrid: true, cols: 1, rows: 3, count: 3 },
+  cine: { style: "contrast(1.6) saturate(0.8) brightness(0.9)" },
+  teal: { style: "hue-rotate(-10deg) saturate(1.8) contrast(1.2)" },
+  retro: { style: "sepia(0.8) contrast(1.2) brightness(0.9)" },
+  noir: { style: "grayscale(1) contrast(1.8)" },
+  warm: { style: "sepia(0.4) saturate(1.6) brightness(1.1)" },
+  gold: { style: "sepia(0.5) brightness(1.1) saturate(2)" },
+  cyber: { style: "hue-rotate(280deg) saturate(2) contrast(1.2)" },
+  dream: { style: "blur(1.2px) brightness(1.2)" },
+  mono: { style: "grayscale(1) contrast(1.1)" },
+  vivid: { style: "saturate(3) contrast(1.2)" },
+  ocean: { style: "hue-rotate(180deg) brightness(1.1)" }
+};
+
 export interface Video {
   id: string;
-  url: string; // Ab isme Cloudflare R2 ka link (https://pub-xxx.r2.dev/video.mp4) aayega
+  url: string;
   thumbnail: string;
   username: string;
   avatar: string;
@@ -18,6 +45,7 @@ export interface Video {
   shares: number;
   hashtags: string[];
   user_id?: string; 
+  filter_name?: string; // Naya field jo humne DB mein add kiya tha
 }
 
 interface VideoPlayerProps {
@@ -31,32 +59,36 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
   const { user: currentUser } = useAuth(); 
   const [isMuted, setIsMuted] = useState(true);
 
-  // 1. Views Badhane ka logic (Bilkul Safe)
+  // Filter settings nikalna
+  const currentFilter = useMemo(() => {
+    return FILTERS_STYLE[video.filter_name || 'none'] || FILTERS_STYLE.none;
+  }, [video.filter_name]);
+
+  // 1. Views Badhane ka logic
   useEffect(() => {
     if (isActive && video.id) {
       supabase.rpc('increment_views', { post_id: video.id });
     }
   }, [isActive, video.id]);
 
-  // 2. Play/Pause Control logic (R2 optimized)
+  // 2. Play/Pause Control logic
   useEffect(() => {
     if (videoRef.current) {
       if (isActive) {
-        // Play() return a promise, handle it to avoid console errors
         const playPromise = videoRef.current.play();
         if (playPromise !== undefined) {
           playPromise.catch(() => {
-            console.log("Auto-play was prevented. Waiting for user interaction.");
+            console.log("Auto-play prevented.");
           });
         }
       } else {
         videoRef.current.pause();
-        videoRef.current.currentTime = 0; // Video ko start se reset karein jab swipe ho jaye
+        videoRef.current.currentTime = 0;
       }
     }
   }, [isActive]);
 
-  // 3. Follow Handle karne ka asli logic (Database Connection)
+  // 3. Follow Logic
   const handleFollow = async () => {
     if (!currentUser) {
       toast.error("Pehle login karein!");
@@ -77,7 +109,6 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
         }
       } else {
         await supabase.rpc('increment_followers', { user_id: video.user_id });
-        
         await supabase.from('notifications').insert([{
           type: 'follow',
           sender_id: currentUser.id,
@@ -85,7 +116,6 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
           receiver_id: video.user_id,
           content: 'started following you'
         }]);
-        
         toast.success(`@${video.username} ko follow kar liya!`);
       }
     } catch (err) {
@@ -101,7 +131,7 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({
-        title: `${video.username}'s video on Chiti Shorts`,
+        title: `${video.username}'s video on Chiti`,
         text: video.caption,
         url: window.location.href,
       });
@@ -111,41 +141,78 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
     }
   };
 
-  return (
-    <div className="relative w-full h-full bg-black flex items-center justify-center">
-      
-      {/* --- FAST LOADING HACK: Background Thumbnail --- */}
-      {/* Jab tak video load ho raha ho, blur thumbnail dikhao */}
-      <img 
-        src={video.thumbnail} 
-        alt="background blur" 
-        className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-40 scale-110"
-        style={{ zIndex: 0 }} 
-      />
+  /**
+   * 🎨 RENDER VIDEO WITH DYNAMIC FILTERS/GRID
+   */
+  const renderVideoContent = () => {
+    if (currentFilter.isGrid) {
+      return (
+        <div className={`w-full h-full grid`} style={{ 
+          gridTemplateColumns: `repeat(${currentFilter.cols}, 1fr)`,
+          gridTemplateRows: `repeat(${currentFilter.rows}, 1fr)` 
+        }}>
+          {[...Array(currentFilter.count)].map((_, i) => (
+            <div key={i} className="relative w-full h-full overflow-hidden border-[0.2px] border-white/5">
+              <video
+                ref={i === 0 ? videoRef : null}
+                src={video.url}
+                loop
+                muted={isMuted || i !== 0}
+                playsInline
+                className="w-full h-full object-cover"
+                style={{ filter: currentFilter.style }}
+              />
+            </div>
+          ))}
+        </div>
+      );
+    }
 
-      {/* --- CLOUDFLARE R2 VIDEO PLAYER --- */}
-      {/* Humne YouTube iframe ko poori tarah hata diya hai fast loading ke liye */}
+    return (
       <video
         ref={videoRef}
-        src={video.url} // Aapka R2 link yahan aayega
+        src={video.url}
         poster={video.thumbnail}
         loop
         muted={isMuted}
         playsInline
-        preload="auto" // Isse browser video ko background mein load kar lega
+        preload="auto"
         className="relative z-10 w-full h-full object-contain md:object-cover"
+        style={{ filter: currentFilter.style }}
         onClick={toggleMute}
       />
+    );
+  };
 
-      {/* --- Mute Button --- */}
+  return (
+    <div className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden">
+      
+      {/* Background Blur */}
+      <img 
+        src={video.thumbnail} 
+        alt="bg" 
+        className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-30 scale-110"
+      />
+
+      {/* Main Video Content */}
+      <div className="relative z-10 w-full h-full">
+        {renderVideoContent()}
+        
+        {/* VFX Overlay */}
+        {currentFilter.vfx === 'lightning' && (
+          <div className="absolute inset-0 bg-blue-400/10 animate-pulse pointer-events-none z-20" />
+        )}
+      </div>
+
+      {/* Mute Button */}
       <button
         onClick={toggleMute}
-        className="absolute top-20 right-3 w-10 h-10 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center z-30 pointer-events-auto border border-white/10"
+        className="absolute top-20 right-3 w-10 h-10 bg-black/50 backdrop-blur-md rounded-full flex items-center justify-center z-30 border border-white/10"
       >
         {isMuted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
       </button>
 
-      {/* --- Video Info Overlay --- */}
+      {/* Info Overlay */}
       <div className="absolute bottom-24 left-3 right-20 z-20 pointer-events-none">
         <div className="space-y-3 pointer-events-auto">
           <div className="flex items-center gap-2">
@@ -154,8 +221,8 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
           </div>
           <p className="text-white text-sm line-clamp-2 drop-shadow-md">{video.caption}</p>
           <div className="flex flex-wrap gap-2">
-            {video.hashtags && video.hashtags.map((tag) => (
-              <span key={tag} className="text-white text-sm font-semibold drop-shadow-md opacity-90">#{tag}</span>
+            {video.hashtags?.map((tag) => (
+              <span key={tag} className="text-white text-sm font-semibold drop-shadow-md">#{tag}</span>
             ))}
           </div>
           <div className="flex items-center gap-2 text-white/90 text-xs bg-black/20 w-fit px-3 py-1 rounded-full backdrop-blur-sm">
@@ -164,7 +231,7 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
         </div>
       </div>
 
-      {/* --- Sidebar Actions --- */}
+      {/* Sidebar Actions */}
       <div className="relative z-30">
         <VideoActions
           videoId={video.id}
@@ -177,4 +244,4 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
       </div>
     </div>
   );
-}
+} 
