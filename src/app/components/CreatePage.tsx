@@ -125,50 +125,25 @@ export default function CreatePage() {
     return () => streamRef.current?.getTracks().forEach(t => t.stop());
   }, [isCameraMode, facingMode]);
 
-  // 3. Recording Process
+  // 3. Recording Process (Modified for Filter Injection)
   const startRecording = async () => {
-    if (!streamRef.current) return;
+    if (!videoPreviewRef.current) return;
+    
+    // @ts-ignore
+    const recordingStream = videoPreviewRef.current.captureStream ? videoPreviewRef.current.captureStream() : streamRef.current;
+    
+    if (!recordingStream) return;
     chunksRef.current = [];
-    let mixedStream = streamRef.current;
 
-    if (selectedMusic && audioRef.current) {
-      try {
-        const AudioCtx = (window.AudioContext || (window as any).webkitAudioContext);
-        const ctx = new AudioCtx();
-        audioCtxRef.current = ctx;
-        const musicSource = ctx.createMediaElementSource(audioRef.current);
-        const micSource = ctx.createMediaStreamSource(streamRef.current);
-        const destination = ctx.createMediaStreamDestination();
-        const musicGain = ctx.createGain(); musicGain.gain.value = 1.0;
-        const micGain = ctx.createGain(); micGain.gain.value = 0.4;
-        musicSource.connect(musicGain).connect(destination);
-        micSource.connect(micGain).connect(destination);
-        musicGain.connect(ctx.destination);
-
-        mixedStream = new MediaStream([
-          streamRef.current.getVideoTracks()[0],
-          destination.stream.getAudioTracks()[0]
-        ]);
-
-        audioRef.current.currentTime = 0;
-        audioRef.current.play();
-      } catch (e) { console.error(e); }
-    }
-
-    const recorder = new MediaRecorder(mixedStream, { mimeType: 'video/webm' });
+    const recorder = new MediaRecorder(recordingStream, { mimeType: 'video/webm' });
     recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
       const url = URL.createObjectURL(blob);
       setPreviewUrl(url);
       setSelectedFile(new File([blob], `chiti_vid.webm`, { type: 'video/webm' }));
-      const v = document.createElement('video');
-      v.src = url;
-      v.onloadedmetadata = () => setVideoDuration(Math.round(v.duration));
       setIsCameraMode(false);
       setIsRecording(false);
-      audioRef.current?.pause();
-      if (audioCtxRef.current) audioCtxRef.current.close();
     };
 
     recorder.start(100);
@@ -183,12 +158,42 @@ export default function CreatePage() {
     }, 1000);
   };
 
-  // 4. Publish Function
+  // 4. Publish Function (FIX: Re-records gallery video with filter if needed)
   const handlePublish = async () => {
-    if (!selectedFile || !user) return;
+    if (!selectedFile || !user || !videoPreviewRef.current) return;
+    
     setIsUploading(true);
     setUploadProgress(5);
+
     try {
+      let finalBlob = selectedFile;
+
+      // Agar filter 'none' nahi hai, toh hum video element ka filtered stream capture karenge
+      if (selectedFilter !== 'none') {
+        // @ts-ignore
+        const captureStream = videoPreviewRef.current.captureStream ? videoPreviewRef.current.captureStream() : null;
+        
+        if (captureStream) {
+            const recorder = new MediaRecorder(captureStream, { mimeType: 'video/webm' });
+            const localChunks: Blob[] = [];
+            recorder.ondataavailable = (e) => localChunks.push(e.data);
+            
+            const recordPromise = new Promise((resolve) => {
+                recorder.onstop = () => resolve(new Blob(localChunks, { type: 'video/webm' }));
+            });
+
+            recorder.start();
+            // Video ko shuru se play karo record karne ke liye
+            videoPreviewRef.current.currentTime = 0;
+            videoPreviewRef.current.play();
+
+            // Poori duration wait karo
+            await new Promise(r => setTimeout(r, (videoDuration || 1) * 1000));
+            recorder.stop();
+            finalBlob = await recordPromise as any;
+        }
+      }
+
       const fileName = `chiti_vids/${user.id}/${Date.now()}.webm`;
       const client = new S3Client({
         region: "auto",
@@ -197,17 +202,12 @@ export default function CreatePage() {
         forcePathStyle: true, 
       });
 
-      const progInterval = setInterval(() => setUploadProgress(p => (p < 95 ? p + 2 : p)), 400);
-
       await client.send(new PutObjectCommand({
         Bucket: R2_CONFIG.bucketName,
         Key: fileName,
-        Body: new Uint8Array(await selectedFile.arrayBuffer()),
+        Body: new Uint8Array(await (finalBlob as any).arrayBuffer()),
         ContentType: 'video/webm',
       }));
-
-      clearInterval(progInterval);
-      setUploadProgress(98);
 
       const videoUrl = `${R2_CONFIG.publicDomain}/${fileName}`;
       await Promise.all([
@@ -218,18 +218,20 @@ export default function CreatePage() {
       setUploadProgress(100);
       toast.success('Posted!');
       setTimeout(() => window.location.href = '/', 1000);
-    } catch (err) { setIsUploading(false); }
+    } catch (err) { 
+      setIsUploading(false);
+      toast.error("Upload failed.");
+    }
   };
 
   /**
-   * 📺 STUDIO RENDERER (GRID FIX & AUDIO FIX)
+   * 📺 STUDIO RENDERER
    */
   const renderStudioDisplay = (url?: string) => {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
-    const shouldMirror = facingMode === 'user';
+    const shouldMirror = facingMode === 'user' && !url; // Gallery video mirror nahi honi chahiye
 
-    // Grid CSS Configuration
     let gridClass = "w-full h-full";
     if (filter.isGrid) {
       if (gridCount === 4) gridClass = "w-full h-full grid grid-cols-2 grid-rows-2";
@@ -242,15 +244,15 @@ export default function CreatePage() {
         {[...Array(gridCount)].map((_, i) => (
           <div key={i} className="relative w-full h-full overflow-hidden border-[0.5px] border-black/10">
             <video 
-              ref={i === 0 && !url ? videoPreviewRef : null}
+              ref={i === 0 ? videoPreviewRef : null}
               src={url}
               className={`w-full h-full object-cover ${shouldMirror ? 'scale-x-[-1]' : ''}`}
               style={{ filter: filter.style }}
               autoPlay 
               playsInline 
-              // IMPORTANT: Only the first video has sound to prevent "Double Audio"
               muted={i !== 0 || !url} 
               loop
+              crossOrigin="anonymous"
             />
           </div>
         ))}
@@ -273,7 +275,6 @@ export default function CreatePage() {
       {!user ? (
         <div className="flex-1 flex flex-col items-center justify-center p-10"><ShieldCheck size={50} className="text-blue-500 mb-4"/><a href="/login" className="px-10 py-4 bg-blue-600 rounded-full font-black text-xs uppercase">Sign In</a></div>
       ) : !isCameraMode && !previewUrl ? (
-        /* MAIN MENU */
         <div className="flex-1 flex flex-col items-center justify-center gap-16">
           <button onClick={() => setIsCameraMode(true)} className="w-52 h-52 bg-blue-600 rounded-[70px] flex flex-col items-center justify-center shadow-2xl active:scale-90 transition-all">
             <Camera size={70} />
@@ -295,7 +296,6 @@ export default function CreatePage() {
           </label>
         </div>
       ) : isCameraMode ? (
-        /* CAMERA SCREEN */
         <div className="relative flex-1 bg-black overflow-hidden">
           {renderStudioDisplay()}
           <div className="absolute right-4 top-1/4 flex flex-col gap-5 z-[1010]">
@@ -314,32 +314,21 @@ export default function CreatePage() {
             <button onClick={isRecording ? () => mediaRecorderRef.current?.stop() : startRecording} className={`w-20 h-20 rounded-full border-4 flex items-center justify-center transition-all ${isRecording ? 'border-red-600 scale-110 shadow-lg' : 'border-white'}`}>
               <div className={`${isRecording ? 'w-8 h-8 bg-red-600 rounded-lg animate-pulse' : 'w-14 h-14 bg-white rounded-full'}`} />
             </button>
-            {isRecording && <div className="font-black text-red-500 text-[9px] tracking-[0.3em] uppercase">{timeLeft}S recording</div>}
           </div>
         </div>
       ) : (
-        /* PREVIEW SCREEN */
         <div className="fixed inset-0 bg-zinc-950 flex flex-col z-[1300] animate-in slide-in-from-right">
           {!isFinalStep ? (
             <div className="flex-1 flex flex-col relative overflow-hidden">
               {renderStudioDisplay(previewUrl)}
-              
-              <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-black/50 px-4 py-1.5 rounded-full border border-white/10 z-[1320] flex items-center gap-2">
-                <Clock size={12} className="text-blue-500"/>
-                <span className="text-[10px] font-black tracking-widest uppercase">{videoDuration}s Video</span>
-              </div>
-              <div className="absolute top-4 left-4 z-[1310]">
-                <button onClick={() => {setPreviewUrl(''); setSelectedFile(null);}} className="p-3 bg-black/50 rounded-full"><ArrowLeft size={20}/></button>
-              </div>
               <div className="absolute bottom-10 inset-x-0 px-8 flex justify-between items-center z-[1320]">
                 <button onClick={() => setShowFilters(true)} className="p-4 bg-black/40 backdrop-blur-xl rounded-full border border-white/10 text-blue-400"><Sparkles size={24}/></button>
                 <button onClick={() => setIsFinalStep(true)} className="px-12 py-4 bg-blue-600 rounded-full font-black text-xs tracking-widest shadow-2xl active:scale-95">NEXT</button>
               </div>
             </div>
           ) : (
-            /* FINAL STEP */
             <div className="flex-1 p-6 flex flex-col bg-black">
-              <div className="flex items-center gap-4 mb-10 pt-4">
+               <div className="flex items-center gap-4 mb-10 pt-4">
                 <button onClick={() => setIsFinalStep(false)} className="p-3 bg-white/5 rounded-full"><ArrowLeft size={24}/></button>
                 <h2 className="text-xl font-black italic tracking-tighter uppercase">Ready to Post</h2>
               </div>
@@ -353,13 +342,13 @@ export default function CreatePage() {
               </div>
               {isUploading && (
                 <div className="mb-10 space-y-2">
-                   <div className="flex justify-between items-end text-[9px] font-black text-blue-500 tracking-widest uppercase italic"><span>Uploading...</span><span>{uploadProgress}%</span></div>
+                   <div className="flex justify-between items-end text-[9px] font-black text-blue-500 tracking-widest uppercase italic"><span>{selectedFilter !== 'none' ? 'Applying Filter & Posting...' : 'Uploading...'}</span><span>{uploadProgress}%</span></div>
                    <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${uploadProgress}%` }} /></div>
                 </div>
               )}
               <button onClick={handlePublish} disabled={isUploading} className="mt-auto w-full bg-blue-600 py-6 rounded-[30px] font-black text-lg flex items-center justify-center gap-4 shadow-xl active:scale-95 transition-all disabled:opacity-50">
                 {isUploading ? <Loader2 className="animate-spin" size={28}/> : <Send size={28}/>}
-                <span className="uppercase tracking-tighter">{isUploading ? 'Sending...' : 'Publish'}</span>
+                <span className="uppercase tracking-tighter">{isUploading ? 'Processing...' : 'Publish'}</span>
               </button>
             </div>
           )}
@@ -368,7 +357,7 @@ export default function CreatePage() {
 
       {/* FILTERS DRAWER */}
       {showFilters && (
-        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[50px] z-[1500] border-t border-white/5 animate-in slide-in-from-bottom duration-500">
+        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[50px] z-[1500] border-t border-white/5">
           <div className="flex justify-between items-center mb-6">
             <h3 className="font-black text-xs uppercase tracking-widest italic text-zinc-500">Filters</h3>
             <button onClick={() => setShowFilters(false)} className="p-2 bg-white/5 rounded-full"><X size={18}/></button>
@@ -388,24 +377,21 @@ export default function CreatePage() {
 
       {/* MUSIC DRAWER */}
       {showMusic && (
-        <div className="absolute inset-0 bg-zinc-950 z-[1600] flex flex-col animate-in fade-in duration-300">
+        <div className="absolute inset-0 bg-zinc-950 z-[1600] flex flex-col">
            <div className="w-full max-w-md mx-auto h-full flex flex-col p-6 pt-16">
               <div className="flex justify-between items-center mb-10">
                 <h2 className="text-4xl font-black italic tracking-tighter text-blue-600 uppercase">Sounds</h2>
                 <button onClick={() => setShowMusic(false)} className="p-3 bg-white/5 rounded-full"><X size={24}/></button>
               </div>
-              <div className="relative mb-8">
-                <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500" size={20}/><input type="text" placeholder="Search..." className="w-full bg-zinc-900 border border-white/5 rounded-2xl py-5 pl-14 pr-5 outline-none font-bold text-sm focus:border-blue-600 transition-all" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-              </div>
               <div className="flex-1 overflow-y-auto space-y-4 pb-20 no-scrollbar">
                 {filteredMusic.map(music => (
-                  <div key={music.id} className={`p-5 rounded-[35px] flex items-center justify-between border transition-all duration-300 ${selectedMusic?.id === music.id ? 'bg-blue-600/10 border-blue-500' : 'bg-zinc-900 border-white/5'}`}>
+                  <div key={music.id} className={`p-5 rounded-[35px] flex items-center justify-between border ${selectedMusic?.id === music.id ? 'bg-blue-600/10 border-blue-500' : 'bg-zinc-900 border-white/5'}`}>
                     <div className="flex items-center gap-5 flex-1" onClick={() => {
                         if(playingMusicId === music.id) { audioRef.current?.pause(); setPlayingMusicId(null); }
                         else { audioRef.current!.src = music.audio_url; audioRef.current?.play(); setPlayingMusicId(music.id); }
                     }}>
                       <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${playingMusicId === music.id ? 'bg-blue-600' : 'bg-white/5'}`}><Play size={20}/></div>
-                      <div className="flex flex-col"><p className="font-black text-sm uppercase">{music.title}</p></div>
+                      <p className="font-black text-sm uppercase">{music.title}</p>
                     </div>
                     <button onClick={() => {setSelectedMusic(music); setShowMusic(false); audioRef.current?.pause(); setPlayingMusicId(null);}} className={`p-4 rounded-2xl ${selectedMusic?.id === music.id ? 'bg-blue-600' : 'bg-white/5'}`}><Check size={20}/></button>
                   </div>
@@ -414,7 +400,6 @@ export default function CreatePage() {
            </div>
         </div>
       )}
-      
       <audio ref={audioRef} hidden crossOrigin="anonymous" />
     </div>
   );
