@@ -52,6 +52,7 @@ const FILTERS_DATA: any = {
 export default function CreatePage() {
   const { user } = useAuth();
   
+  // -- ALL STATES --
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [videoDuration, setVideoDuration] = useState(0);
@@ -72,6 +73,7 @@ export default function CreatePage() {
   const [musicList, setMusicList] = useState<any[]>([]);
   const [selectedFilter, setSelectedFilter] = useState('none');
 
+  // -- REFS --
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -79,6 +81,7 @@ export default function CreatePage() {
   const timerRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // 1. Music Loader
   useEffect(() => {
     const fetchMusic = async () => {
       const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false });
@@ -91,6 +94,7 @@ export default function CreatePage() {
     return musicList.filter(m => m.title?.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [musicList, searchTerm]);
 
+  // 2. Camera Start
   const startCamera = async () => {
     if (!user) return;
     try {
@@ -120,6 +124,7 @@ export default function CreatePage() {
     return () => streamRef.current?.getTracks().forEach(t => t.stop());
   }, [isCameraMode, facingMode]);
 
+  // 3. Recording Process
   const startRecording = async () => {
     if (!videoPreviewRef.current) return;
     
@@ -152,7 +157,9 @@ export default function CreatePage() {
     }, 1000);
   };
 
-  // --- UPDATED HANDLE PUBLISH: ADDED filter_name TO SUPABASE INSERT ---
+  /**
+   * 🚀 HANDLE PUBLISH (RE-ADDED FULL CANVAS PROCESSING WITH MEMORY FIX)
+   */
   const handlePublish = async () => {
     if (!selectedFile || !user || !videoPreviewRef.current) return;
     
@@ -163,33 +170,41 @@ export default function CreatePage() {
       let finalBlob: Blob = selectedFile;
       const filter = FILTERS_DATA[selectedFilter];
 
-      // Canvas processing logic (Baking filter if needed)
+      // Logic: Filter ya Grid "bake" karne ke liye canvas ka use
       if (selectedFilter !== 'none') {
         const video = videoPreviewRef.current;
         const canvas = document.createElement('canvas');
+        // Quality balanced for mobile
         canvas.width = 720;
         canvas.height = 1280;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { alpha: false }); // alpha false for performance
         
         if (ctx) {
-          const stream = (canvas as any).captureStream(30);
-          const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
-          const localChunks: Blob[] = [];
+          const stream = (canvas as any).captureStream(24); // 24 FPS enough for mobile
+          const recorder = new MediaRecorder(stream, { 
+            mimeType: 'video/webm;codecs=vp8', // vp8 is lighter than vp9
+            videoBitsPerSecond: 2500000 
+          });
           
+          const localChunks: Blob[] = [];
           recorder.ondataavailable = (e) => localChunks.push(e.data);
+          
           const recordPromise = new Promise<Blob>((resolve) => {
             recorder.onstop = () => resolve(new Blob(localChunks, { type: 'video/webm' }));
           });
 
           recorder.start();
           video.currentTime = 0;
-          video.play();
+          video.muted = true;
+          await video.play();
 
+          // Performance optimized frame processing
           const processFrames = () => {
             if (video.paused || video.ended) {
               recorder.stop();
               return;
             }
+            
             ctx.filter = filter.style || 'none';
             if (filter.isGrid) {
               const cellW = canvas.width / filter.cols;
@@ -202,7 +217,11 @@ export default function CreatePage() {
             } else {
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             }
-            requestAnimationFrame(processFrames);
+            
+            // Limit frame processing to avoid crash
+            setTimeout(() => {
+              requestAnimationFrame(processFrames);
+            }, 10); 
           };
 
           processFrames();
@@ -211,6 +230,7 @@ export default function CreatePage() {
         }
       }
 
+      // -- UPLOAD TO R2 --
       const fileName = `chiti_vids/${user.id}/${Date.now()}.webm`;
       const client = new S3Client({
         region: "auto",
@@ -228,19 +248,19 @@ export default function CreatePage() {
 
       const videoUrl = `${R2_CONFIG.publicDomain}/${fileName}`;
       
-      // SAVE TO DATABASE: Now includes filter_name
+      // -- SAVE TO DATABASE --
       await Promise.all([
         supabase.from('posts').insert([{ 
-          video_url: videoUrl, 
-          caption, 
-          user_id: user.id, 
-          user_name: user.user_metadata?.full_name || 'Creator',
-          filter_name: selectedFilter // <--- ADDED THIS LINE
+            video_url: videoUrl, 
+            caption, 
+            user_id: user.id, 
+            user_name: user.user_metadata?.full_name || 'Creator',
+            filter_name: selectedFilter // Saving for player reference too
         }]),
         supabase.from('music_library').insert([{ 
-          title: caption || "Chiti Sound", 
-          audio_url: videoUrl, 
-          user_id: user.id 
+            title: caption || "Chiti Sound", 
+            audio_url: videoUrl, 
+            user_id: user.id 
         }])
       ]);
 
@@ -248,11 +268,15 @@ export default function CreatePage() {
       toast.success('Filter Applied & Posted!');
       setTimeout(() => window.location.href = '/', 1000);
     } catch (err) { 
+      console.error(err);
       setIsUploading(false);
       toast.error("Upload failed.");
     }
   };
 
+  /**
+   * 📺 STUDIO RENDERER
+   */
   const renderStudioDisplay = (url?: string) => {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
@@ -287,9 +311,9 @@ export default function CreatePage() {
     );
   };
 
+  // --- UI RENDER (All Original Components) ---
   return (
     <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden">
-      
       <div className="p-4 flex justify-between items-center z-[1001] bg-gradient-to-b from-black/80 to-transparent">
         <h1 className="text-xl font-black italic text-blue-600 flex items-center gap-1 tracking-tighter">CHITI <Zap size={18} fill="currentColor"/></h1>
         {(isCameraMode || previewUrl) && (
@@ -380,6 +404,7 @@ export default function CreatePage() {
         </div>
       )}
 
+      {/* FILTERS DRAWER */}
       {showFilters && (
         <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[50px] z-[1500] border-t border-white/5">
           <div className="flex justify-between items-center mb-6">
@@ -399,6 +424,7 @@ export default function CreatePage() {
         </div>
       )}
 
+      {/* MUSIC DRAWER */}
       {showMusic && (
         <div className="absolute inset-0 bg-zinc-950 z-[1600] flex flex-col">
            <div className="w-full max-w-md mx-auto h-full flex flex-col p-6 pt-16">
