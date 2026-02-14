@@ -3,7 +3,7 @@
 import { 
   Upload, Video, Sparkles, Loader2, Send, X, Camera, 
   RefreshCw, Music, Check, Play, Pause, Lock, ArrowLeft,
-  Settings, Volume2, ShieldCheck, Search, Zap
+  Settings, Volume2, ShieldCheck, Search, Zap, Layers, Image as ImageIcon
 } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'; 
 import { useAuth } from '@/contexts/AuthContext';
@@ -33,46 +33,44 @@ const r2Client = new S3Client({
 });
 
 /**
- * 🎨 ADVANCED FILTERS DATA (Split Screen + Beauty + VFX)
+ * 🎨 20 ADVANCED FILTERS (Beauty, VFX, Grids)
  */
 const FILTERS_DATA: any = {
-  none: { name: "Normal", style: "", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=200&h=300&fit=crop" },
+  none: { name: "Normal", style: "", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
   
-  // 🌟 GORA DIKHANE WALA (Crystal Glow)
-  crystal: { 
-    name: "Crystal", 
-    style: "brightness(1.4) contrast(1.1) saturate(1.1) blur(0.1px)", 
-    thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=200&h=300&fit=crop" 
-  },
+  // --- BEAUTY & GLOW (Gora Karne Wale) ---
+  crystal: { name: "Crystal Glow", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
+  angel: { name: "Angel White", style: "brightness(1.6) saturate(1.2) contrast(0.9)", thumb: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100" },
+  ivory: { name: "Ivory", style: "brightness(1.3) sepia(0.1) contrast(1.1)", thumb: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" },
+  soft: { name: "Soft Skin", style: "brightness(1.2) blur(0.4px) contrast(1.1)", thumb: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100" },
 
-  // ⚡ BIJLI WALA EFFECT
-  storm: { 
-    name: "Storm", 
-    style: "contrast(1.4) brightness(1.1) hue-rotate(10deg)", 
-    isVFX: true,
-    vfxType: 'lightning',
-    thumb: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&h=300&fit=crop" 
-  },
+  // --- VFX & ANIMATIONS ---
+  storm: { name: "Lightning", style: "contrast(1.4) brightness(1.1)", isVFX: true, vfxType: 'lightning', thumb: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100" },
+  pulse: { name: "Blink", style: "", isVFX: true, vfxType: 'pulse', thumb: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=100" },
+  
+  // --- GRID FILTERS (Column View) ---
+  quad: { name: "4-Grid", style: "", isGrid: true, gridCount: 4, thumb: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=100" },
+  sixer: { name: "6-Grid", style: "", isGrid: true, gridCount: 6, thumb: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100" },
+  triple: { name: "3-Column", style: "", isGrid: true, gridCount: 3, thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
 
-  // 📱 4-COLUMN SPLIT SCREEN
-  quad: { 
-    name: "4-Grid", 
-    style: "brightness(1.1)", 
-    isGrid: true,
-    gridCount: 4,
-    thumb: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=200&h=300&fit=crop" 
-  },
-
-  retro: { name: "Retro", style: "sepia(0.6) hue-rotate(-20deg) saturate(1.4)", thumb: "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=200&h=300&fit=crop" },
-  cine: { name: "Cine", style: "contrast(1.5) saturate(0.8) brightness(0.9)", thumb: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&h=300&fit=crop" },
-  mono: { name: "B&W", style: "grayscale(1) contrast(1.2)", thumb: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&h=300&fit=crop" },
-  vivid: { name: "Vivid", style: "saturate(2.2) contrast(1.1)", thumb: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=200&h=300&fit=crop" }
+  // --- CINEMATIC & COLORS ---
+  cine: { name: "CineMax", style: "contrast(1.6) saturate(0.8) brightness(0.9)", thumb: "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=100" },
+  teal: { name: "Teal&Orange", style: "hue-rotate(-10deg) saturate(1.8) contrast(1.2)", thumb: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100" },
+  retro: { name: "Vintage", style: "sepia(0.8) contrast(1.2) brightness(0.9)", thumb: "https://images.unsplash.com/photo-1502823403499-6ccfcf4fb453?w=100" },
+  noir: { name: "Noir", style: "grayscale(1) contrast(1.8)", thumb: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100" },
+  warm: { name: "Sunny", style: "sepia(0.4) saturate(1.6) brightness(1.1)", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
+  cool: { name: "Ice Blue", style: "hue-rotate(180deg) brightness(1.2) saturate(1.2)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
+  vivid: { name: "Vivid", style: "saturate(2.5) contrast(1.1)", thumb: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" },
+  gold: { name: "Royal Gold", style: "sepia(0.5) brightness(1.1) saturate(2)", thumb: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100" },
+  cyber: { name: "Cyberpunk", style: "hue-rotate(280deg) saturate(2) contrast(1.2)", thumb: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100" },
+  mono: { name: "Classic", style: "grayscale(1) contrast(1.1)", thumb: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=100" },
+  dream: { name: "Dreamy", style: "blur(1px) brightness(1.2) saturate(1.3)", thumb: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=100" }
 };
 
 export default function CreatePage() {
   const { user } = useAuth();
   
-  // -- STATES --
+  // -- BASIC STATES --
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [caption, setCaption] = useState('');
@@ -101,12 +99,13 @@ export default function CreatePage() {
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
+  /**
+   * 🎵 LOAD MUSIC FROM DATABASE
+   */
   useEffect(() => {
     const loadMusic = async () => {
-      try {
-        const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false });
-        if (data) setMusicList(data);
-      } catch (e) { console.error(e); }
+      const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false });
+      if (data) setMusicList(data);
     };
     loadMusic();
   }, []);
@@ -115,17 +114,39 @@ export default function CreatePage() {
     return musicList.filter(m => m.title?.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [musicList, searchTerm]);
 
-  const stopTracks = useCallback(() => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
-      audioCtxRef.current.close();
-      audioCtxRef.current = null;
-    }
-  }, []);
+  /**
+   * 🎥 CAMERA START LOGIC
+   */
+  const startCamera = async () => {
+    if (!user) return;
+    try {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: facingMode }, width: 1280, height: 720 },
+        audio: true
+      });
+      streamRef.current = stream;
+      if (videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = stream;
+        videoPreviewRef.current.play();
+      }
+      setIsCameraMode(true);
+      setTimeLeft(recordLimit);
+    } catch (err) { toast.error("Camera access denied."); }
+  };
 
+  useEffect(() => {
+    if (isCameraMode) startCamera();
+    return () => {
+        streamRef.current?.getTracks().forEach(t => t.stop());
+    };
+  }, [isCameraMode, facingMode]);
+
+  /**
+   * 📁 GALLERY UPLOAD LOGIC
+   */
   const handleGalleryVideo = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -144,31 +165,8 @@ export default function CreatePage() {
     videoElement.src = URL.createObjectURL(file);
   };
 
-  const startCamera = async () => {
-    if (!user) return;
-    try {
-      stopTracks();
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: facingMode }, width: 1280, height: 720 },
-        audio: true
-      });
-      streamRef.current = stream;
-      if (videoPreviewRef.current) {
-        videoPreviewRef.current.srcObject = stream;
-        videoPreviewRef.current.play();
-      }
-      setIsCameraMode(true);
-      setTimeLeft(recordLimit);
-    } catch (err) { toast.error("Camera access denied."); }
-  };
-
-  useEffect(() => {
-    if (isCameraMode) startCamera();
-    return () => stopTracks();
-  }, [isCameraMode, facingMode]);
-
   /**
-   * 🎙️ PRO AUDIO MIXING (Mic 30% | Music 100%)
+   * 🎙️ RECORDING WITH AUDIO MIXING (Mic 30% | Music 100%)
    */
   const startRecording = async () => {
     if (!streamRef.current) return;
@@ -187,18 +185,14 @@ export default function CreatePage() {
         const micSource = ctx.createMediaStreamSource(streamRef.current);
         const destination = ctx.createMediaStreamDestination();
         
-        // Music at 100%
         const musicGain = ctx.createGain();
         musicGain.gain.value = 1.0; 
         
-        // Mic at 30% (As per user request)
         const micGain = ctx.createGain();
-        micGain.gain.value = 0.3; 
+        micGain.gain.value = 0.3; // Low mic volume for pro sound
 
         musicSource.connect(musicGain).connect(destination);
         micSource.connect(micGain).connect(destination);
-        
-        // Monitor (Hear what you record)
         musicGain.connect(ctx.destination);
 
         mixedStream = new MediaStream([
@@ -213,7 +207,7 @@ export default function CreatePage() {
 
     const recorder = new MediaRecorder(mixedStream, { 
       mimeType: 'video/webm;codecs=vp8,opus',
-      videoBitsPerSecond: 3500000 
+      videoBitsPerSecond: 4000000 
     });
 
     recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
@@ -224,7 +218,7 @@ export default function CreatePage() {
       setIsCameraMode(false);
       setIsRecording(false);
       audioRef.current?.pause();
-      stopTracks();
+      if (audioCtxRef.current) audioCtxRef.current.close();
     };
 
     recorder.start(100);
@@ -242,10 +236,13 @@ export default function CreatePage() {
     }, 1000);
   };
 
+  /**
+   * 📤 PUBLISH TO DATABASE & STORAGE
+   */
   const handlePublish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
-    const toastId = toast.loading('Publishing to Chiti...');
+    const toastId = toast.loading('Publishing...');
     
     try {
       const timestamp = Date.now();
@@ -260,7 +257,7 @@ export default function CreatePage() {
       }));
 
       const videoUrl = `${R2_CONFIG.publicDomain}/${fileName}`;
-      const finalTitle = caption.trim() || "Chiti Original Sound";
+      const finalTitle = caption.trim() || "Chiti Music";
 
       await Promise.all([
         supabase.from('posts').insert([{
@@ -278,25 +275,25 @@ export default function CreatePage() {
         }])
       ]);
 
-      toast.success('Successfully Posted!', { id: toastId });
-      setTimeout(() => window.location.href = '/', 1500);
+      toast.success('Posted!', { id: toastId });
+      window.location.href = '/';
     } catch (err: any) {
-      toast.error(`Upload failed: ${err.message}`, { id: toastId });
+      toast.error(err.message, { id: toastId });
       setIsUploading(false);
     }
   };
 
   /**
-   * 📺 MULTI-VIDEO RENDERER (For 4-Column Split)
+   * 📺 RENDER VIDEO WITH FILTERS & GRIDS
    */
-  const renderVideo = (url?: string, isPreview: boolean = false) => {
+  const renderVideoDisplay = (url?: string) => {
     const filter = FILTERS_DATA[selectedFilter];
-    const isGrid = filter?.isGrid;
-    const isLightning = filter?.vfxType === 'lightning';
+    const gridCount = filter.isGrid ? filter.gridCount : 1;
+    const isLightning = filter.vfxType === 'lightning';
 
-    const VideoTag = ({ isRef }: { isRef: boolean }) => (
+    const VideoElement = ({ isMain }: { isMain: boolean }) => (
       <video 
-        ref={isRef ? videoPreviewRef : null}
+        ref={isMain ? videoPreviewRef : null}
         src={url}
         className={`w-full h-full object-cover ${facingMode === 'user' && !url ? 'scale-x-[-1]' : ''}`}
         style={{ filter: filter.style }}
@@ -305,19 +302,17 @@ export default function CreatePage() {
     );
 
     return (
-      <div className={`relative w-full h-full overflow-hidden ${isGrid ? 'grid grid-cols-2 grid-rows-2 gap-0.5 bg-white/10' : ''}`}>
-        {isGrid ? (
-          [...Array(4)].map((_, i) => <div key={i} className="relative overflow-hidden"><VideoTag isRef={i === 0} /></div>)
-        ) : (
-          <VideoTag isRef={true} />
-        )}
-        
-        {/* ⚡ Lightning Overlay Animation */}
+      <div className={`relative w-full h-full overflow-hidden ${filter.isGrid ? `grid ${gridCount === 3 ? 'grid-cols-1 grid-rows-3' : 'grid-cols-2'}` : ''}`}>
+        {[...Array(gridCount)].map((_, i) => (
+          <div key={i} className="relative overflow-hidden border-[0.5px] border-white/10">
+            <VideoElement isMain={i === 0} />
+          </div>
+        ))}
         {isLightning && (
-          <div className="absolute inset-0 pointer-events-none z-10">
-            <div className="absolute inset-0 bg-blue-400/10 animate-pulse" />
-            <div className="absolute top-0 left-1/4 w-1 h-full bg-white/40 blur-md animate-[bounce_0.2s_infinite]" />
-            <div className="absolute top-0 right-1/4 w-1 h-full bg-white/40 blur-md animate-[bounce_0.3s_infinite]" />
+          <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+            <div className="absolute inset-0 bg-blue-500/10 animate-pulse" />
+            <div className="absolute top-0 left-[20%] w-1 h-full bg-white/50 blur-xl animate-bounce" />
+            <div className="absolute top-0 right-[20%] w-1 h-full bg-white/50 blur-xl animate-bounce" />
           </div>
         )}
       </div>
@@ -325,13 +320,13 @@ export default function CreatePage() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden font-sans">
+    <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden">
       
-      {/* Header */}
-      <div className="p-4 flex justify-between items-center z-[1001] bg-gradient-to-b from-black/80 to-transparent">
+      {/* Navigation */}
+      <div className="p-4 flex justify-between items-center z-[1001] bg-gradient-to-b from-black to-transparent">
         <div className="flex flex-col">
           <h1 className="text-2xl font-black italic text-blue-500 flex items-center gap-1">CHITI <Zap size={18} fill="currentColor"/></h1>
-          <p className="text-[8px] font-bold tracking-widest text-blue-300">STUDIO MODE</p>
+          <p className="text-[8px] font-bold tracking-widest text-blue-300">PROFESSIONAL STUDIO</p>
         </div>
         {(isCameraMode || previewUrl) && (
           <button onClick={() => window.location.reload()} className="p-3 bg-white/10 rounded-full"><X/></button>
@@ -340,133 +335,137 @@ export default function CreatePage() {
 
       {!user ? (
         <div className="flex-1 flex flex-col items-center justify-center p-8 bg-zinc-950">
-          <ShieldCheck size={40} className="text-blue-500 mb-6 animate-pulse" />
-          <h2 className="text-2xl font-black mb-6 uppercase">Login Required</h2>
-          <a href="/login" className="px-16 py-4 bg-blue-600 rounded-full font-black text-lg">SIGN IN</a>
+          <ShieldCheck size={40} className="text-blue-500 mb-6" />
+          <h2 className="text-2xl font-black mb-6">LOGIN REQUIRED</h2>
+          <a href="/login" className="px-12 py-4 bg-blue-600 rounded-full font-black">SIGN IN</a>
         </div>
       ) : !isCameraMode && !previewUrl ? (
-        /* Home Screen */
-        <div className="flex-1 flex flex-col items-center justify-center gap-14">
-          <button onClick={() => setIsCameraMode(true)} className="w-64 h-64 bg-blue-600 rounded-[70px] flex flex-col items-center justify-center shadow-2xl active:scale-90 transition-all">
-            <Camera size={80} className="text-white mb-2" />
-            <span className="text-xl font-black italic tracking-widest">SHOOT</span>
+        /* Start Menu */
+        <div className="flex-1 flex flex-col items-center justify-center gap-12">
+          <button onClick={() => setIsCameraMode(true)} className="w-60 h-60 bg-blue-600 rounded-[60px] flex flex-col items-center justify-center shadow-2xl active:scale-95 transition-all">
+            <Camera size={70} className="text-white mb-2" />
+            <span className="text-lg font-black tracking-widest">RECORD</span>
           </button>
-          <label className="w-72 p-6 bg-zinc-900/40 rounded-[35px] flex items-center justify-center gap-4 border border-white/5 cursor-pointer">
+          <label className="w-72 p-6 bg-zinc-900 rounded-[30px] flex items-center justify-center gap-4 border border-white/5 cursor-pointer active:scale-95 transition-all">
             <Upload size={24} className="text-blue-500"/>
-            <div className="flex flex-col">
-              <span className="font-black uppercase text-xs">Gallery</span>
-              <span className="text-[10px] text-gray-500 font-bold">Max 30s</span>
+            <div className="flex flex-col text-left">
+              <span className="font-black uppercase text-xs">From Gallery</span>
+              <span className="text-[10px] text-gray-500">Video max 30s</span>
             </div>
             <input type="file" hidden accept="video/*" onChange={handleGalleryVideo} />
           </label>
         </div>
       ) : isCameraMode ? (
-        /* Camera UI */
+        /* Camera Layout */
         <div className="relative flex-1 bg-black">
-          {renderVideo()}
-          
-          <div className="absolute right-4 top-1/4 flex flex-col gap-6 z-[1010]">
-            <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="p-4 bg-black/40 backdrop-blur-xl rounded-3xl border border-white/10"><RefreshCw/></button>
-            <button onClick={() => setShowFilters(true)} className={`p-4 bg-black/40 backdrop-blur-xl rounded-3xl border border-white/10 ${selectedFilter !== 'none' ? 'text-blue-400' : ''}`}><Sparkles/></button>
-            <button onClick={() => setShowMusic(true)} className={`p-4 bg-black/40 backdrop-blur-xl rounded-3xl border border-white/10 ${selectedMusic ? 'text-pink-400' : ''}`}><Music/></button>
+          {renderVideoDisplay()}
+          <div className="absolute right-4 top-1/4 flex flex-col gap-5 z-[1010]">
+            <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="p-4 bg-black/50 backdrop-blur-xl rounded-2xl border border-white/10"><RefreshCw size={24}/></button>
+            <button onClick={() => setShowFilters(true)} className="p-4 bg-black/50 backdrop-blur-xl rounded-2xl border border-white/10 text-blue-400"><Sparkles size={24}/></button>
+            <button onClick={() => setShowMusic(true)} className="p-4 bg-black/50 backdrop-blur-xl rounded-2xl border border-white/10 text-pink-500"><Music size={24}/></button>
           </div>
-
           <div className="absolute bottom-12 inset-x-0 flex flex-col items-center gap-6 z-[1010]">
             {!isRecording && (
-              <div className="flex bg-black/40 backdrop-blur-2xl p-1.5 rounded-full border border-white/10">
+              <div className="flex bg-black/50 backdrop-blur-2xl p-1 rounded-full border border-white/10">
                 {[15, 30].map(sec => (
-                  <button key={sec} onClick={() => {setRecordLimit(sec); setTimeLeft(sec);}} className={`px-8 py-2.5 rounded-full text-[10px] font-black ${recordLimit === sec ? 'bg-white text-black' : 'text-gray-500'}`}>{sec}S</button>
+                  <button key={sec} onClick={() => {setRecordLimit(sec); setTimeLeft(sec);}} className={`px-8 py-2 rounded-full text-[10px] font-black ${recordLimit === sec ? 'bg-white text-black' : 'text-gray-400'}`}>{sec}S</button>
                 ))}
               </div>
             )}
-            <button onClick={isRecording ? () => mediaRecorderRef.current?.stop() : startRecording} className={`w-24 h-24 rounded-full border-[8px] flex items-center justify-center ${isRecording ? 'border-red-500 scale-110' : 'border-white'}`}>
-              <div className={`${isRecording ? 'w-10 h-10 bg-red-500 rounded-lg animate-pulse' : 'w-16 h-16 bg-white rounded-full'}`} />
+            <button onClick={isRecording ? () => mediaRecorderRef.current?.stop() : startRecording} className={`w-20 h-20 rounded-full border-4 flex items-center justify-center ${isRecording ? 'border-red-500' : 'border-white'}`}>
+              <div className={`${isRecording ? 'w-8 h-8 bg-red-500 rounded-sm' : 'w-14 h-14 bg-white rounded-full'}`} />
             </button>
-            {isRecording && <div className="font-black text-red-500 bg-black/60 px-6 py-2 rounded-full text-xs">{timeLeft}s RECORDING</div>}
+            {isRecording && <div className="font-black text-red-500 text-xs bg-black/50 px-4 py-1 rounded-full">{timeLeft}s LEFT</div>}
           </div>
         </div>
       ) : (
-        /* Gallery Preview UI with Filter Support */
-        <div className="fixed inset-0 bg-zinc-950 flex flex-col z-[1300] animate-in slide-in-from-right">
+        /* Preview Layout */
+        <div className="fixed inset-0 bg-zinc-950 flex flex-col z-[1300]">
           {!isFinalStep ? (
             <div className="flex-1 flex flex-col relative">
-              {renderVideo(previewUrl, true)}
-              <div className="absolute top-0 inset-x-0 p-8 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent z-[1310]">
-                <button onClick={() => {setPreviewUrl(''); setSelectedFile(null);}} className="p-4 bg-black/40 rounded-full"><ArrowLeft/></button>
+              {renderVideoDisplay(previewUrl)}
+              <div className="absolute top-0 inset-x-0 p-6 flex justify-between items-center bg-gradient-to-b from-black to-transparent z-[1310]">
+                <button onClick={() => {setPreviewUrl(''); setSelectedFile(null);}} className="p-4 bg-black/50 rounded-full"><ArrowLeft/></button>
                 <div className="flex gap-4">
-                  <button onClick={() => setShowFilters(true)} className="p-4 bg-black/40 rounded-full text-blue-400"><Sparkles/></button>
-                  <button onClick={() => setIsFinalStep(true)} className="px-14 py-4 bg-blue-600 rounded-full font-black text-sm tracking-widest">NEXT</button>
+                  <button onClick={() => setShowFilters(true)} className="p-4 bg-black/50 rounded-full text-blue-400"><Sparkles/></button>
+                  <button onClick={() => setIsFinalStep(true)} className="px-10 py-4 bg-blue-600 rounded-full font-black text-sm tracking-widest">NEXT</button>
                 </div>
               </div>
             </div>
           ) : (
             <div className="flex-1 p-8 flex flex-col">
-              <div className="flex items-center gap-4 mb-14">
+              <div className="flex items-center gap-4 mb-10">
                 <button onClick={() => setIsFinalStep(false)} className="p-3 bg-white/5 rounded-full"><ArrowLeft/></button>
-                <h2 className="text-2xl font-black italic">FINAL POST</h2>
+                <h2 className="text-xl font-black">POST TO CHITI</h2>
               </div>
-              <div className="flex gap-8 mb-16">
-                <div className="w-40 h-60 bg-zinc-900 rounded-[40px] overflow-hidden border border-white/10 relative shadow-2xl">
-                   {renderVideo(previewUrl, true)}
+              <div className="flex gap-6 mb-12">
+                <div className="w-32 h-48 bg-zinc-900 rounded-3xl overflow-hidden border border-white/10">
+                   {renderVideoDisplay(previewUrl)}
                 </div>
-                <div className="flex-1 pt-4">
-                  <span className="text-[10px] font-black text-blue-500 uppercase mb-2 block">Caption</span>
-                  <textarea placeholder="Enter music title..." className="w-full h-44 bg-transparent border-b border-white/5 py-4 outline-none font-bold text-xl resize-none" value={caption} onChange={(e) => setCaption(e.target.value)} />
+                <div className="flex-1">
+                  <span className="text-[10px] font-black text-blue-500 uppercase">Caption</span>
+                  <textarea placeholder="Write something..." className="w-full h-32 bg-transparent border-b border-white/10 py-3 outline-none font-bold text-lg resize-none" value={caption} onChange={(e) => setCaption(e.target.value)} />
                 </div>
               </div>
-              <button onClick={handlePublish} disabled={isUploading} className="mt-auto w-full bg-blue-600 py-6 rounded-[45px] font-black text-2xl flex items-center justify-center gap-4 shadow-xl active:scale-95 transition-all">
-                {isUploading ? <Loader2 className="animate-spin" size={30}/> : <Send size={30}/>}
-                {isUploading ? 'UPLOADING...' : 'POST VIDEO'}
+              <button onClick={handlePublish} disabled={isUploading} className="mt-auto w-full bg-blue-600 py-5 rounded-[30px] font-black text-xl flex items-center justify-center gap-3">
+                {isUploading ? <Loader2 className="animate-spin" /> : <Send />}
+                {isUploading ? 'PUBLISHING...' : 'POST NOW'}
               </button>
             </div>
           )}
         </div>
       )}
 
-      {/* 🎨 Filters Overlay */}
+      {/* 🎨 Filters Drawer */}
       {showFilters && (
-        <div className="absolute bottom-0 inset-x-0 bg-zinc-950/95 backdrop-blur-3xl z-[1500] p-6 pb-14 rounded-t-[50px] border-t border-white/10 animate-in slide-in-from-bottom">
-          <div className="flex justify-between items-center mb-8">
-            <div className="flex items-center gap-2"><Sparkles size={18} className="text-blue-500"/><h3 className="font-black text-lg uppercase tracking-widest">Filters</h3></div>
+        <div className="absolute bottom-0 inset-x-0 bg-zinc-950/98 backdrop-blur-3xl z-[1500] p-6 pb-12 rounded-t-[40px] border-t border-white/10 animate-in slide-in-from-bottom">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="font-black text-lg uppercase tracking-tighter">Effects Store</h3>
             <button onClick={() => setShowFilters(false)} className="p-2 bg-white/5 rounded-full"><X/></button>
           </div>
-          <div className="flex gap-4 overflow-x-auto no-scrollbar pb-4">
+          <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
             {Object.keys(FILTERS_DATA).map(key => (
-              <button key={key} onClick={() => setSelectedFilter(key)} className="flex flex-col items-center gap-3">
-                <div className={`w-24 h-32 rounded-[25px] overflow-hidden border-2 transition-all ${selectedFilter === key ? 'border-blue-500 scale-110 shadow-[0_0_20px_rgba(59,130,246,0.5)]' : 'border-transparent opacity-50'}`}>
+              <button key={key} onClick={() => setSelectedFilter(key)} className="flex flex-col items-center gap-2">
+                <div className={`w-20 h-28 rounded-2xl overflow-hidden border-2 transition-all ${selectedFilter === key ? 'border-blue-500 scale-105' : 'border-transparent opacity-40'}`}>
                   <img src={FILTERS_DATA[key].thumb} className="w-full h-full object-cover" style={{ filter: FILTERS_DATA[key].style }} />
                 </div>
-                <span className="text-[9px] font-black uppercase text-zinc-500">{FILTERS_DATA[key].name}</span>
+                <span className="text-[8px] font-bold uppercase text-zinc-500">{FILTERS_DATA[key].name}</span>
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* 🔍 Music Overlay */}
+      {/* 🔍 Music Browser */}
       {showMusic && (
-        <div className="absolute inset-0 bg-zinc-950 z-[1600] p-6 pt-24 overflow-y-auto animate-in fade-in">
-          <div className="flex justify-between items-center mb-8">
-            <h2 className="text-4xl font-black italic">SOUNDS</h2>
-            <button onClick={() => setShowMusic(false)} className="p-4 bg-white/5 rounded-full"><X/></button>
+        <div className="absolute inset-0 bg-zinc-950 z-[1600] p-6 pt-20 overflow-y-auto animate-in fade-in">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-3xl font-black italic tracking-tighter">SELECT MUSIC</h2>
+            <button onClick={() => setShowMusic(false)} className="p-3 bg-white/5 rounded-full"><X/></button>
           </div>
-          <div className="relative mb-8">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500" size={20}/>
-            <input type="text" placeholder="Search sounds..." className="w-full bg-zinc-900 border border-white/5 rounded-[20px] py-5 pl-14 pr-6 outline-none focus:border-blue-500 font-bold" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+          <div className="relative mb-6">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18}/>
+            <input type="text" placeholder="Search Chiti Library..." className="w-full bg-zinc-900 border border-white/5 rounded-2xl py-4 pl-12 pr-4 outline-none font-bold" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
           </div>
-          <div className="space-y-4">
+          <div className="space-y-3">
             {filteredMusic.map(music => (
-              <div key={music.id} className={`p-5 rounded-[30px] flex items-center justify-between border ${selectedMusic?.id === music.id ? 'bg-blue-600/20 border-blue-500' : 'bg-zinc-900 border-white/5'}`}>
-                <div className="flex items-center gap-5 flex-1" onClick={() => {
-                    if(playingMusicId === music.id) { audioRef.current?.pause(); setPlayingMusicId(null); }
-                    else { audioRef.current!.src = music.audio_url; audioRef.current?.play(); setPlayingMusicId(music.id); }
+              <div key={music.id} className={`p-4 rounded-[25px] flex items-center justify-between border ${selectedMusic?.id === music.id ? 'bg-blue-600/10 border-blue-500' : 'bg-zinc-900 border-white/5'}`}>
+                <div className="flex items-center gap-4 flex-1" onClick={() => {
+                    if(playingMusicId === music.id) { 
+                        audioRef.current?.pause(); 
+                        setPlayingMusicId(null); 
+                    } else { 
+                        audioRef.current!.src = music.audio_url; 
+                        audioRef.current?.play(); 
+                        setPlayingMusicId(music.id); 
+                    }
                 }}>
-                  <div className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center">
-                    {playingMusicId === music.id ? <Pause fill="white"/> : <Play fill="white" className="ml-1"/>}
+                  <div className="w-12 h-12 bg-blue-600 rounded-xl flex items-center justify-center">
+                    {playingMusicId === music.id ? <Pause size={20} fill="white"/> : <Play size={20} fill="white" className="ml-0.5"/>}
                   </div>
-                  <p className="font-black text-sm truncate w-40">{music.title}</p>
+                  <p className="font-bold text-sm truncate w-40">{music.title}</p>
                 </div>
-                <button onClick={() => {setSelectedMusic(music); setShowMusic(false); audioRef.current?.pause(); setPlayingMusicId(null);}} className="p-5 bg-white/5 rounded-2xl"><Check/></button>
+                <button onClick={() => {setSelectedMusic(music); setShowMusic(false); audioRef.current?.pause(); setPlayingMusicId(null);}} className="p-4 bg-white/5 rounded-xl"><Check/></button>
               </div>
             ))}
           </div>
