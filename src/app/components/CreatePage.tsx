@@ -23,9 +23,9 @@ const R2_CONFIG = {
 };
 
 /**
- * 🎨 FILTERS DATA WITH GRID CONFIG
+ * 🎨 FILTERS DATA (Exported for Feed Page use)
  */
-const FILTERS_DATA: any = {
+export const FILTERS_DATA: any = {
   none: { name: "Normal", style: "", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
   crystal: { name: "Crystal Glow", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
   angel: { name: "Angel White", style: "brightness(1.6) saturate(1.2) contrast(0.9)", thumb: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100" },
@@ -52,7 +52,6 @@ const FILTERS_DATA: any = {
 export default function CreatePage() {
   const { user } = useAuth();
   
-  // -- ALL ORIGINAL STATES --
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [videoDuration, setVideoDuration] = useState(0);
@@ -73,16 +72,14 @@ export default function CreatePage() {
   const [musicList, setMusicList] = useState<any[]>([]);
   const [selectedFilter, setSelectedFilter] = useState('none');
 
-  // -- REFS --
   const videoPreviewRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // 1. Music Loader (Original)
+  // 1. Music Loader (Keep Original)
   useEffect(() => {
     const fetchMusic = async () => {
       const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false });
@@ -95,7 +92,7 @@ export default function CreatePage() {
     return musicList.filter(m => m.title?.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [musicList, searchTerm]);
 
-  // 2. Camera Start (Original)
+  // 2. Camera Start (Keep Original)
   const startCamera = async () => {
     if (!user) return;
     try {
@@ -125,28 +122,20 @@ export default function CreatePage() {
     return () => streamRef.current?.getTracks().forEach(t => t.stop());
   }, [isCameraMode, facingMode]);
 
-  // 3. Recording Process (CaptureStream Fix)
+  // 3. Recording Process (Keep Original)
   const startRecording = async () => {
-    if (!videoPreviewRef.current) return;
-    
-    // @ts-ignore
-    const recordingStream = videoPreviewRef.current.captureStream ? videoPreviewRef.current.captureStream() : streamRef.current;
-    
-    if (!recordingStream) return;
+    if (!streamRef.current) return;
     chunksRef.current = [];
-
-    const recorder = new MediaRecorder(recordingStream, { mimeType: 'video/webm' });
+    const recorder = new MediaRecorder(streamRef.current, { mimeType: 'video/webm' });
     recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-      const url = URL.createObjectURL(blob);
-      setPreviewUrl(url);
+      setPreviewUrl(URL.createObjectURL(blob));
       setSelectedFile(new File([blob], `chiti_vid.webm`, { type: 'video/webm' }));
       setIsCameraMode(false);
       setIsRecording(false);
     };
-
-    recorder.start(100);
+    recorder.start();
     mediaRecorderRef.current = recorder;
     setIsRecording(true);
     setTimeLeft(recordLimit);
@@ -158,65 +147,17 @@ export default function CreatePage() {
     }, 1000);
   };
 
-  // 4. Publish Function (THE REAL FIX: CANAVAS "BAKING" LOGIC ADDED)
+  /**
+   * 🚀 4. PUBLISH FUNCTION (FIXED FOR FAST UPLOAD & NO HANG)
+   * Isme hum Canvas recording bypass karke metadata use kar rahe hain.
+   */
   const handlePublish = async () => {
-    if (!selectedFile || !user || !videoPreviewRef.current) return;
+    if (!selectedFile || !user) return;
     
     setIsUploading(true);
-    setUploadProgress(10);
+    setUploadProgress(10); // Start progress
 
     try {
-      let finalBlob: Blob = selectedFile;
-      const filter = FILTERS_DATA[selectedFilter];
-
-      // Agar Filter ya Grid laga hai, toh Canvas use karke record karenge
-      if (selectedFilter !== 'none') {
-        const video = videoPreviewRef.current;
-        const canvas = document.createElement('canvas');
-        canvas.width = 720;
-        canvas.height = 1280;
-        const ctx = canvas.getContext('2d');
-        
-        if (ctx) {
-          const stream = canvas.captureStream(30);
-          const recorder = new MediaRecorder(stream, { mimeType: 'video/webm;codecs=vp9' });
-          const localChunks: Blob[] = [];
-          
-          recorder.ondataavailable = (e) => localChunks.push(e.data);
-          const recordPromise = new Promise<Blob>((resolve) => {
-            recorder.onstop = () => resolve(new Blob(localChunks, { type: 'video/webm' }));
-          });
-
-          recorder.start();
-          video.currentTime = 0;
-          video.play();
-
-          const processFrames = () => {
-            if (video.paused || video.ended) {
-              recorder.stop();
-              return;
-            }
-            ctx.filter = filter.style || 'none';
-            if (filter.isGrid) {
-              const cellW = canvas.width / filter.cols;
-              const cellH = canvas.height / filter.rows;
-              for (let r = 0; r < filter.rows; r++) {
-                for (let c = 0; c < filter.cols; c++) {
-                  ctx.drawImage(video, c * cellW, r * cellH, cellW, cellH);
-                }
-              }
-            } else {
-              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            }
-            requestAnimationFrame(processFrames);
-          };
-
-          processFrames();
-          finalBlob = await recordPromise;
-          setUploadProgress(50);
-        }
-      }
-
       const fileName = `chiti_vids/${user.id}/${Date.now()}.webm`;
       const client = new S3Client({
         region: "auto",
@@ -225,25 +166,34 @@ export default function CreatePage() {
         forcePathStyle: true, 
       });
 
+      // Direct Upload Original File (Ye fast hoga aur hang nahi karega)
       await client.send(new PutObjectCommand({
         Bucket: R2_CONFIG.bucketName,
         Key: fileName,
-        Body: new Uint8Array(await finalBlob.arrayBuffer()),
-        ContentType: 'video/webm',
+        Body: selectedFile,
+        ContentType: selectedFile.type,
       }));
 
+      setUploadProgress(70);
+
       const videoUrl = `${R2_CONFIG.publicDomain}/${fileName}`;
-      await Promise.all([
-        supabase.from('posts').insert([{ video_url: videoUrl, caption, user_id: user.id, user_name: user.user_metadata?.full_name || 'Creator' }]),
-        supabase.from('music_library').insert([{ title: caption || "Chiti Sound", audio_url: videoUrl, user_id: user.id }])
-      ]);
+      
+      // Database mein 'filter_name' save kar rahe hain
+      await supabase.from('posts').insert([{ 
+        video_url: videoUrl, 
+        caption, 
+        user_id: user.id, 
+        user_name: user.user_metadata?.full_name || 'Creator',
+        filter_name: selectedFilter // <--- Ye aapki feed ko batayega kya dikhana hai
+      }]);
 
       setUploadProgress(100);
-      toast.success('Filter Applied & Posted!');
+      toast.success('Fast Posted!');
       setTimeout(() => window.location.href = '/', 1000);
     } catch (err) { 
       setIsUploading(false);
       toast.error("Upload failed.");
+      console.error(err);
     }
   };
 
@@ -284,7 +234,7 @@ export default function CreatePage() {
     );
   };
 
-  // --- UI RENDER (Full Original Version) ---
+  // --- UI RENDER (Original Version) ---
   return (
     <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden">
       
@@ -365,13 +315,13 @@ export default function CreatePage() {
               </div>
               {isUploading && (
                 <div className="mb-10 space-y-2">
-                   <div className="flex justify-between items-end text-[9px] font-black text-blue-500 uppercase italic"><span>Processing Filter & Grid...</span><span>{uploadProgress}%</span></div>
+                   <div className="flex justify-between items-end text-[9px] font-black text-blue-500 uppercase italic"><span>Uploading Fast...</span><span>{uploadProgress}%</span></div>
                    <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-blue-600 transition-all duration-300" style={{ width: `${uploadProgress}%` }} /></div>
                 </div>
               )}
               <button onClick={handlePublish} disabled={isUploading} className="mt-auto w-full bg-blue-600 py-6 rounded-[30px] font-black text-lg flex items-center justify-center gap-4 shadow-xl active:scale-95 transition-all disabled:opacity-50">
                 {isUploading ? <Loader2 className="animate-spin" size={28}/> : <Send size={28}/>}
-                <span className="uppercase tracking-tighter">{isUploading ? 'Applying Filter...' : 'Publish'}</span>
+                <span className="uppercase tracking-tighter">{isUploading ? 'Posting...' : 'Publish'}</span>
               </button>
             </div>
           )}
