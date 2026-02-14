@@ -82,7 +82,7 @@ export default function CreatePage() {
   const streamRef = useRef<MediaStream | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // 1. Load Music
+  // 1. Music Loader
   useEffect(() => {
     const fetchMusic = async () => {
       const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false });
@@ -95,7 +95,7 @@ export default function CreatePage() {
     return musicList.filter(m => m.title?.toLowerCase().includes(searchTerm.toLowerCase()));
   }, [musicList, searchTerm]);
 
-  // 2. Camera Logic
+  // 2. Camera Start
   const startCamera = async () => {
     if (!user) return;
     try {
@@ -125,7 +125,7 @@ export default function CreatePage() {
     return () => streamRef.current?.getTracks().forEach(t => t.stop());
   }, [isCameraMode, facingMode]);
 
-  // 3. Recording Logic
+  // 3. Recording Process
   const startRecording = async () => {
     if (!streamRef.current) return;
     chunksRef.current = [];
@@ -183,7 +183,7 @@ export default function CreatePage() {
     }, 1000);
   };
 
-  // 4. Publish Logic
+  // 4. Publish Function
   const handlePublish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
@@ -222,30 +222,39 @@ export default function CreatePage() {
   };
 
   /**
-   * 📺 STUDIO RENDERER
-   * FIXED: Selfie camera mirroring and Preview filter support.
+   * 📺 STUDIO RENDERER (GRID FIX & AUDIO FIX)
    */
   const renderStudioDisplay = (url?: string) => {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
-    
-    // Selfie mode check: Agar user camera use ho raha ho ya selfie recording ka preview ho
     const shouldMirror = facingMode === 'user';
 
+    // Grid CSS Configuration
+    let gridClass = "w-full h-full";
+    if (filter.isGrid) {
+      if (gridCount === 4) gridClass = "w-full h-full grid grid-cols-2 grid-rows-2";
+      if (gridCount === 6) gridClass = "w-full h-full grid grid-cols-2 grid-rows-3";
+      if (gridCount === 3) gridClass = "w-full h-full grid grid-cols-1 grid-rows-3";
+    }
+
     return (
-      <div className={`relative w-full h-full overflow-hidden ${filter.isGrid ? `grid ${gridCount === 3 ? 'grid-cols-1 grid-rows-3' : 'grid-cols-2'}` : ''}`}>
+      <div className={gridClass}>
         {[...Array(gridCount)].map((_, i) => (
-          <div key={i} className="relative overflow-hidden">
+          <div key={i} className="relative w-full h-full overflow-hidden border-[0.5px] border-black/10">
             <video 
               ref={i === 0 && !url ? videoPreviewRef : null}
               src={url}
               className={`w-full h-full object-cover ${shouldMirror ? 'scale-x-[-1]' : ''}`}
               style={{ filter: filter.style }}
-              autoPlay playsInline muted={!url} loop
+              autoPlay 
+              playsInline 
+              // IMPORTANT: Only the first video has sound to prevent "Double Audio"
+              muted={i !== 0 || !url} 
+              loop
             />
           </div>
         ))}
-        {filter.vfxType === 'lightning' && <div className="absolute inset-0 bg-blue-500/10 animate-pulse pointer-events-none" />}
+        {filter.vfxType === 'lightning' && <div className="absolute inset-0 bg-blue-500/10 animate-pulse pointer-events-none z-10" />}
       </div>
     );
   };
@@ -286,8 +295,8 @@ export default function CreatePage() {
           </label>
         </div>
       ) : isCameraMode ? (
-        /* RECORDING */
-        <div className="relative flex-1 bg-black">
+        /* CAMERA SCREEN */
+        <div className="relative flex-1 bg-black overflow-hidden">
           {renderStudioDisplay()}
           <div className="absolute right-4 top-1/4 flex flex-col gap-5 z-[1010]">
             <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="p-4 bg-black/40 backdrop-blur-xl rounded-2xl border border-white/10"><RefreshCw size={22}/></button>
@@ -309,11 +318,10 @@ export default function CreatePage() {
           </div>
         </div>
       ) : (
-        /* PREVIEW & PUBLISH */
+        /* PREVIEW SCREEN */
         <div className="fixed inset-0 bg-zinc-950 flex flex-col z-[1300] animate-in slide-in-from-right">
           {!isFinalStep ? (
-            <div className="flex-1 flex flex-col relative">
-              {/* FIXED: Filter applied to preview here */}
+            <div className="flex-1 flex flex-col relative overflow-hidden">
               {renderStudioDisplay(previewUrl)}
               
               <div className="absolute top-20 left-1/2 -translate-x-1/2 bg-black/50 px-4 py-1.5 rounded-full border border-white/10 z-[1320] flex items-center gap-2">
@@ -329,6 +337,7 @@ export default function CreatePage() {
               </div>
             </div>
           ) : (
+            /* FINAL STEP */
             <div className="flex-1 p-6 flex flex-col bg-black">
               <div className="flex items-center gap-4 mb-10 pt-4">
                 <button onClick={() => setIsFinalStep(false)} className="p-3 bg-white/5 rounded-full"><ArrowLeft size={24}/></button>
@@ -357,7 +366,7 @@ export default function CreatePage() {
         </div>
       )}
 
-      {/* FILTERS */}
+      {/* FILTERS DRAWER */}
       {showFilters && (
         <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[50px] z-[1500] border-t border-white/5 animate-in slide-in-from-bottom duration-500">
           <div className="flex justify-between items-center mb-6">
@@ -377,7 +386,7 @@ export default function CreatePage() {
         </div>
       )}
 
-      {/* MUSIC */}
+      {/* MUSIC DRAWER */}
       {showMusic && (
         <div className="absolute inset-0 bg-zinc-950 z-[1600] flex flex-col animate-in fade-in duration-300">
            <div className="w-full max-w-md mx-auto h-full flex flex-col p-6 pt-16">
