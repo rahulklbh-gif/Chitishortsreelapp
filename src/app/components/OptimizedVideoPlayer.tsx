@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Sparkles, Music, Zap } from 'lucide-react';
+// ✅ FIXED: Missing 'Check' icon add kiya
+import { Sparkles, Music, Zap, Check } from 'lucide-react';
 
 /**
- * 🎨 MASTER FILTERS DATA (Create Page se 100% Match)
- * Yahan styles ko CSS variables ya direct string mein rakha hai takki CPU par load na pade.
+ * 🎨 MASTER FILTERS DATA
  */
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "" },
@@ -52,15 +52,13 @@ export function OptimizedVideoPlayer({
   filterName = 'none'
 }: OptimizedVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const secondaryRefs = useRef<(HTMLVideoElement | null)[]>([]); // For Grid Sync
+  const secondaryRefs = useRef<(HTMLVideoElement | null)[]>([]);
   const hasCounted = useRef(false);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Filter Information
   const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
   const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
 
-  // Grid Layout logic
   let gridContainerClass = "w-full h-full";
   if (currentFilter.isGrid) {
     if (gridCount === 4) gridContainerClass = "w-full h-full grid grid-cols-2 grid-rows-2";
@@ -68,30 +66,29 @@ export function OptimizedVideoPlayer({
     if (gridCount === 3) gridContainerClass = "w-full h-full grid grid-cols-1 grid-rows-3";
   }
 
-  // --- 🚀 FAST PRELOAD ---
   useEffect(() => {
     if (videoRef.current) {
       videoRef.current.load();
     }
   }, [videoUrl]);
 
-  // --- VIEW COUNTER (RPC) ---
+  // --- VIEW COUNTER (Safe Version) ---
   useEffect(() => {
-    let timer: NodeJS.Timeout;
+    let timer: any; // Changed to any to prevent crash
     if (isActive && !hasCounted.current && videoId) {
       timer = setTimeout(async () => {
         try {
           const { error } = await supabase.rpc('increment_views', { post_id: videoId });
           if (!error) hasCounted.current = true;
         } catch (err) {
-          console.error("View count update failed", err);
+          console.error("View update failed", err);
         }
       }, 3000); 
     }
     return () => clearTimeout(timer);
   }, [isActive, videoId]);
 
-  // --- ⚡ ULTRA SYNC & PLAY/PAUSE CONTROL ---
+  // --- PLAY/PAUSE SYNC ---
   useEffect(() => {
     if (!videoRef.current) return;
     
@@ -99,39 +96,33 @@ export function OptimizedVideoPlayer({
       const playPromise = videoRef.current.play();
       if (playPromise !== undefined) {
         playPromise.then(() => {
-          // Master video chalne ke baad saare secondary videos sync karo
           secondaryRefs.current.forEach((v) => {
             if (v) {
               v.currentTime = videoRef.current!.currentTime;
               v.play().catch(() => {});
             }
           });
-        }).catch(() => console.log("Playback paused by system"));
+        }).catch(() => {});
       }
     } else {
       videoRef.current.pause();
       secondaryRefs.current.forEach((v) => v?.pause());
-      // Memory bachane ke liye reset
-      videoRef.current.currentTime = 0; 
-      secondaryRefs.current.forEach((v) => { if(v) v.currentTime = 0; });
     }
   }, [isActive]);
 
   return (
     <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
       
-      {/* Skeleton Loading State */}
       {!isLoaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-zinc-950 z-20">
           <div className="flex flex-col items-center gap-3">
-            <div className="w-12 h-12 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <Zap size={20} className="text-blue-900 animate-pulse"/>
+            <div className="w-10 h-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            <Zap size={18} className="text-blue-900 animate-pulse"/>
           </div>
         </div>
       )}
 
-      {/* --- GRID & CSS FILTER ENGINE --- */}
-      <div className={`${gridContainerClass} transition-all duration-700 ${isLoaded ? 'scale-100 opacity-100' : 'scale-110 opacity-0'}`}>
+      <div className={`${gridContainerClass} transition-all duration-700 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}>
         {[...Array(gridCount)].map((_, i) => (
           <div key={i} className="relative w-full h-full overflow-hidden border-[0.2px] border-white/5 bg-zinc-900">
             <video
@@ -142,51 +133,30 @@ export function OptimizedVideoPlayer({
               className="w-full h-full object-cover"
               src={videoUrl}
               loop
-              muted={!isActive || i !== 0} // Sound sirf 1st tile se aayega
+              muted={!isActive || i !== 0}
               playsInline
               autoPlay={isActive}
               preload="auto"
               style={{ filter: currentFilter.style }}
               onLoadedData={() => i === 0 && setIsLoaded(true)}
-              // Sync logic for stability
-              onTimeUpdate={(e) => {
-                if (i === 0 && isActive && gridCount > 1) {
-                  // Pehle video ke time ke sath baaki ko sync rakho har 2 second par
-                  if (Math.floor(e.currentTarget.currentTime) % 2 === 0) {
-                    secondaryRefs.current.forEach(v => {
-                      if (v && Math.abs(v.currentTime - e.currentTarget.currentTime) > 0.3) {
-                        v.currentTime = e.currentTarget.currentTime;
-                      }
-                    });
-                  }
-                }
-              }}
             />
           </div>
         ))}
 
-        {/* --- VFX OVERLAYS (No-Hang Animations) --- */}
+        {/* VFX Effects */}
         {isActive && currentFilter.vfxType === 'lightning' && (
-          <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden">
-             <div className="absolute inset-0 bg-blue-500/5 animate-[pulse_0.5s_infinite]" />
-             <div className="absolute inset-0 bg-white/10 animate-[flash_2s_infinite]" />
-          </div>
-        )}
-
-        {isActive && currentFilter.vfxType === 'pulse' && (
-          <div className="absolute inset-0 z-10 pointer-events-none bg-black/20 animate-[pulse_0.8s_infinite] mix-blend-overlay" />
+          <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
         )}
       </div>
       
-      {/* --- UI OVERLAY (Tiktok Style) --- */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 pb-28 bg-gradient-to-t from-black/90 via-black/20 to-transparent text-white pointer-events-none z-30">
+      {/* UI OVERLAY */}
+      <div className="absolute bottom-0 left-0 right-0 p-6 pb-28 bg-gradient-to-t from-black/90 via-transparent to-transparent text-white pointer-events-none z-30">
         
-        {/* User Info */}
         <div className="flex items-center gap-3 mb-3">
           <div className="relative pointer-events-auto">
             <img 
               src={avatarUrl || 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix'} 
-              className="w-12 h-12 rounded-full border-2 border-blue-500 shadow-2xl object-cover" 
+              className="w-12 h-12 rounded-full border-2 border-blue-500 object-cover" 
               alt="creator"
             />
             <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-0.5 border border-black">
@@ -194,47 +164,28 @@ export function OptimizedVideoPlayer({
             </div>
           </div>
           <div className="pointer-events-auto">
-            <h3 className="font-black text-base italic tracking-tight flex items-center gap-1 uppercase">
-              {username || 'chiti_creator'} 
+            <h3 className="font-black text-base italic flex items-center gap-1 uppercase">
+              {username || 'chiti_user'} 
               <Zap size={14} className="text-yellow-400" fill="currentColor"/>
             </h3>
-            <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Original Audio</p>
           </div>
         </div>
 
-        {/* Caption */}
-        <p className="text-sm mb-4 line-clamp-2 drop-shadow-md font-medium leading-relaxed max-w-[80%] pointer-events-auto">
-          {caption || "Check out this amazing video on CHITI! 🚀"}
+        <p className="text-sm mb-4 line-clamp-2 max-w-[85%] pointer-events-auto">
+          {caption}
         </p>
         
-        {/* Filter Badge */}
         {filterName !== 'none' && (
-          <div className="inline-flex items-center gap-2 bg-black/40 backdrop-blur-xl px-3 py-1.5 rounded-full border border-white/10 mb-2 pointer-events-auto animate-bounce">
+          <div className="inline-flex items-center gap-2 bg-black/40 backdrop-blur-xl px-3 py-1.5 rounded-full border border-white/10 pointer-events-auto">
              <Sparkles size={12} className="text-blue-400 fill-blue-400"/>
-             <span className="text-[10px] font-black uppercase italic tracking-tighter">{currentFilter.name} Effect</span>
+             <span className="text-[10px] font-black uppercase italic">{currentFilter.name}</span>
           </div>
         )}
-
-        {/* Music Marquee (Optional Visual) */}
-        <div className="flex items-center gap-2 opacity-60">
-           <Music size={12} className="animate-spin-slow" />
-           <marquee className="text-[10px] font-bold w-32 uppercase italic">Playing Original Sound - {username}</marquee>
-        </div>
       </div>
 
-      {/* VFX Animations CSS */}
       <style jsx>{`
-        @keyframes flash {
-          0%, 100% { opacity: 0; }
-          50% { opacity: 1; }
-        }
-        .animate-spin-slow {
-          animation: spin 3s linear infinite;
-        }
-        @keyframes spin {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
+        .animate-spin-slow { animation: spin 3s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
     </div>
   );
