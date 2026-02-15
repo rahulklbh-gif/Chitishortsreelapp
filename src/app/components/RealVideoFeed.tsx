@@ -23,6 +23,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
+  
+  // UNIQUE VIEW LOGIC: viewedVideos ab session-based memory rakhega
   const viewedVideos = useRef<Set<string>>(new Set());
   
   // Aapka original videoRefs logic
@@ -68,23 +70,32 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     };
   }, []);
 
-  // --- VIEW RECORDING ---
+  // --- VIEW RECORDING (FIXED: UNIQUE & 3s DELAY) ---
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
+      
       const currentVideoId = videos[activeIndex].id;
       const currentUserId = currentUser.id;
+
+      // Check: Agar is session mein pehle dekh liya toh count mat badhao
       if (viewedVideos.current.has(currentVideoId)) return;
+
       try {
+        // RPC call jo unique view handle karega
         await supabase.rpc('increment_views', { 
           post_id: currentVideoId, 
           viewer_id: currentUserId 
         });
+        
+        // Memory mein add karo taki dubara count na ho
         viewedVideos.current.add(currentVideoId);
       } catch (err) {
         console.error("View error:", err);
       }
     };
+
+    // Instagram jaisa delay: 3 second rukne par hi view count hoga
     const timer = setTimeout(recordView, 3000); 
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
@@ -189,22 +200,39 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { toast.error("Koshish nakam rahi"); }
   };
 
-  // --- SHARE LOGIC ---
+  // --- SHARE LOGIC (FIXED: REAL SHARE ONLY) ---
   const handleVideoShare = async (video: any) => {
     const shareUrl = `${window.location.origin}/?video=${video.id}`;
+    
     try {
-      setVideos(prev => prev.map(v => 
-        v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
-      ));
-      await supabase.rpc('increment_shares', { post_id: video.id });
       if (navigator.share) {
-        await navigator.share({ title: 'Chiti Shorts', url: shareUrl });
+        // Browser ka native share open hoga
+        await navigator.share({
+          title: 'Chiti Shorts',
+          text: `Check out this video by @${video.user_name}`,
+          url: shareUrl
+        });
+
+        // Agar user ne Share complete kiya tabhi yahan tak code aayega
+        await supabase.rpc('increment_shares', { post_id: video.id });
+        setVideos(prev => prev.map(v => 
+          v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
+        ));
+        toast.success("Shared!");
       } else {
+        // Desktop ke liye copy logic
         await navigator.clipboard.writeText(shareUrl);
         toast.success("Link copy ho gaya!");
+        
+        // Copy hone par count badhana padega kyunki native menu nahi hai
+        await supabase.rpc('increment_shares', { post_id: video.id });
+        setVideos(prev => prev.map(v => 
+          v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
+        ));
       }
     } catch (err) {
-      console.error("Share error:", err);
+      // User ne share cancel kar diya (No action needed)
+      console.log("Share action cancelled");
     }
   };
 
