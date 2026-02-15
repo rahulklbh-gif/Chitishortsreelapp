@@ -224,12 +224,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
         
-        /** 🚀 SUPER FAST INSTAGRAM LOGIC: 
-         * index <= activeIndex + 2: Iska matlab hai ki hum current video ke saath-saath
-         * agle 2 videos ko background mein pehle hi load (buffer) kar rahe hain.
-         * Taki jab aap scroll karein, toh video bina loading liye turant play ho jaye.
+        /** 🚀 INSTAGRAM-STYLE PREDICTIVE LOADING: 
+         * index <= activeIndex + 3: Hum agle 3 videos ko standby pe rakhte hain.
+         * Taki jab aap scroll karein, toh data pehle se buffer ho chuka ho.
         **/
-        const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 2;
+        const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 3;
 
         return (
           <div 
@@ -238,7 +237,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             onClick={togglePlayPause} 
           >
             
-            {/* ✅ Optimized rendering with Look-ahead buffering */}
+            {/* ✅ Predictive Standby Rendering */}
             {shouldRender ? (
               <OptimizedVideoPlayer
                 videoUrl={video.video_url}
@@ -251,7 +250,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               />
             ) : (
               <div className="w-full h-full bg-black flex items-center justify-center">
-                <Loader2 className="w-6 h-6 text-white/10 animate-spin" />
+                <Loader2 className="w-6 h-6 text-white/5 animate-spin" />
               </div>
             )}
 
