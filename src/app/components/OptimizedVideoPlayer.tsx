@@ -94,6 +94,8 @@ export function OptimizedVideoPlayer({
       const playPromise = videoRef.current.play();
       if (playPromise !== undefined) {
         playPromise.then(() => {
+          // Playback shuru hote hi isLoaded true kar dena chahiye agar pehle nahi hua
+          setIsLoaded(true);
           secondaryRefs.current.forEach((v) => {
             if (v) {
               v.currentTime = videoRef.current!.currentTime;
@@ -137,16 +139,19 @@ export function OptimizedVideoPlayer({
               playsInline
               autoPlay={isActive}
               
-              /** 🚀 FAST LOADING LOGIC ADDED BELOW **/
-              /** metadata loading se 30-40MB file ka pehla part turant load hota hai **/
-              preload="metadata"
-              /** onCanPlay se loading screen turant hat jayegi jab video ready ho **/
-              onCanPlay={() => {
+              /** 🚀 INSTAGRAM-STYLE SUPER FAST LOADING **/
+              /** auto browser ko allow karta hai resources smartly manage karne ke liye **/
+              preload="auto"
+              /** Fetch priority browser ko batata hai ki ye video sabse pehle download karna hai **/
+              // @ts-ignore
+              fetchpriority={isActive ? "high" : "low"}
+              /** onCanPlayThrough tab trigger hota hai jab browser ko lagta hai video bina ruke chal jayega **/
+              onCanPlayThrough={() => {
                 if (i === 0) setIsLoaded(true);
               }}
-              /** UI thread ko block hone se bachane ke liye asynchronous decoding **/
+              /** Asynchronous decoding UI thread ko freeze hone se bachata hai scrolling ke waqt **/
               decoding="async"
-              /** Data saver and smooth stream settings **/
+              /** Buffer optimization **/
               controlsList="nodownload"
               
               style={{ filter: currentFilter.style }}
@@ -166,7 +171,7 @@ export function OptimizedVideoPlayer({
              <Sparkles size={10} className="text-blue-400"/>
              <span className="text-[9px] font-bold uppercase tracking-widest text-white">{currentFilter.name}</span>
           </div>
-        )}
+      )}
       </div>
 
       <style jsx>{`
