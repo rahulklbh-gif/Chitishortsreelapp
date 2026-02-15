@@ -78,24 +78,19 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       const currentVideoId = videos[activeIndex].id;
       const currentUserId = currentUser.id;
 
-      // Check: Agar is session mein pehle dekh liya toh count mat badhao
       if (viewedVideos.current.has(currentVideoId)) return;
 
       try {
-        // RPC call jo unique view handle karega
         await supabase.rpc('increment_views', { 
           post_id: currentVideoId, 
           viewer_id: currentUserId 
         });
-        
-        // Memory mein add karo taki dubara count na ho
         viewedVideos.current.add(currentVideoId);
       } catch (err) {
         console.error("View error:", err);
       }
     };
 
-    // Instagram jaisa delay: 3 second rukne par hi view count hoga
     const timer = setTimeout(recordView, 3000); 
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
@@ -200,38 +195,33 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { toast.error("Koshish nakam rahi"); }
   };
 
-  // --- SHARE LOGIC (FIXED: REAL SHARE ONLY) ---
+  // --- SHARE LOGIC (FIXED) ---
   const handleVideoShare = async (video: any) => {
     const shareUrl = `${window.location.origin}/?video=${video.id}`;
     
     try {
       if (navigator.share) {
-        // Browser ka native share open hoga
         await navigator.share({
           title: 'Chiti Shorts',
           text: `Check out this video by @${video.user_name}`,
           url: shareUrl
         });
 
-        // Agar user ne Share complete kiya tabhi yahan tak code aayega
         await supabase.rpc('increment_shares', { post_id: video.id });
         setVideos(prev => prev.map(v => 
           v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
         ));
         toast.success("Shared!");
       } else {
-        // Desktop ke liye copy logic
         await navigator.clipboard.writeText(shareUrl);
         toast.success("Link copy ho gaya!");
         
-        // Copy hone par count badhana padega kyunki native menu nahi hai
         await supabase.rpc('increment_shares', { post_id: video.id });
         setVideos(prev => prev.map(v => 
           v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
         ));
       }
     } catch (err) {
-      // User ne share cancel kar diya (No action needed)
       console.log("Share action cancelled");
     }
   };
@@ -251,11 +241,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        
-        /** 🚀 INSTAGRAM-STYLE PREDICTIVE LOADING: 
-         * index <= activeIndex + 3: Hum agle 3 videos ko standby pe rakhte hain.
-         * Taki jab aap scroll karein, toh data pehle se buffer ho chuka ho.
-        **/
         const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 3;
 
         return (
@@ -265,7 +250,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             onClick={togglePlayPause} 
           >
             
-            {/* ✅ Predictive Standby Rendering */}
             {shouldRender ? (
               <OptimizedVideoPlayer
                 videoUrl={video.video_url}
@@ -282,7 +266,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
-            {/* Play/Pause Visual Feedback */}
             {showPlayIcon && (
               <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
                 <div className="bg-black/40 p-4 rounded-full animate-ping">
@@ -291,7 +274,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
-            {/* UI LAYER (FOLLOW, NAME, CAPTION) */}
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-transparent to-transparent text-white z-20 pointer-events-none">
               <div 
                 className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer"
@@ -320,7 +302,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             </div>
 
-            {/* ACTIONS LAYER */}
             <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
               <VideoActions 
                 videoId={video.id} 
@@ -337,4 +318,4 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       })}
     </div>
   );
-} 
+}
