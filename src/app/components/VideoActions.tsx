@@ -1,3 +1,5 @@
+"use client";
+
 import { Heart, MessageCircle, Share2 } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react'; 
 import { supabase } from '@/lib/supabase';
@@ -38,12 +40,13 @@ export function VideoActions({
     } catch (err) { console.error("Check like error:", err); }
   }, [user?.id, videoId]);
 
-  // Syncing initial props with local state
+  // 🔥 FIX: Syncing initial props with local state properly
   useEffect(() => {
     checkIfLiked();
-    setLikeCount(initialLikes || 0);
-    setCommentCount(initialComments || 0);
-    setShareCount(initialShares || 0);
+    // Jab database se fresh data aaye, toh state update karo
+    setLikeCount(initialLikes ?? 0);
+    setCommentCount(initialComments ?? 0);
+    setShareCount(initialShares ?? 0);
   }, [videoId, initialLikes, initialComments, initialShares, checkIfLiked]);
 
   // --- 1. HANDLE LIKE (Aapka Original Function) ---
@@ -121,13 +124,12 @@ export function VideoActions({
         await onShare();
       }
 
-      // Database mein count badhao
-      const { error } = await supabase.rpc('increment_shares', { post_id: videoId });
-      if (error) throw error;
+      // Note: Backend increment RealVideoFeed ke handleVideoShare mein pehle se ho raha hai.
+      // Isliye yahan dubara RPC call karne ki zarurat nahi hai warna count double badhega.
 
     } catch (err) {
       console.error("Share DB error:", err);
-      // Rollback if DB fails
+      // Rollback if fail
       setShareCount(prev => Math.max(0, prev - 1));
     }
   };
@@ -156,7 +158,7 @@ export function VideoActions({
           <MessageCircle className="w-9 h-9" strokeWidth={2.5} />
         </div>
         <span className="text-white text-[12px] font-black drop-shadow-md">
-          {commentCount > 0 ? commentCount : '0'}
+          {commentCount}
         </span>
       </button>
 
@@ -169,7 +171,7 @@ export function VideoActions({
           <Share2 className="w-9 h-9" strokeWidth={2.5} />
         </div>
         <span className="text-white text-[12px] font-black drop-shadow-md">
-          {shareCount > 0 ? shareCount : '0'}
+          {shareCount}
         </span>
       </button>
 
