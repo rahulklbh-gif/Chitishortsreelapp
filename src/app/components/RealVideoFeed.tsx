@@ -1,30 +1,35 @@
+"use client";
+
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom'; // useSearchParams add kiya
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { VideoActions } from './VideoActions';
+import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2, Music2, Play as PlayIcon, Pause } from 'lucide-react'; 
+import { Loader2, Music2 } from 'lucide-react'; 
 import { toast } from 'sonner'; 
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
   const { user: currentUser } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams(); // URL query params pakadne ke liye
+  const [searchParams] = useSearchParams();
+  
+  // -- STATES --
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-
-  const [isPlaying, setIsPlaying] = useState(true); 
-  const [showPlayIcon, setShowPlayIcon] = useState(false); 
-  
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
+  
+  // -- REFS --
   const containerRef = useRef<HTMLDivElement>(null);
   const viewedVideos = useRef<Set<string>>(new Set());
-  
-  const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
 
+  /**
+   * 1. PRECONNECT & OPTIMIZATION
+   * CDN aur resources ko pehle se connect karna takki speed fast rahe.
+   */
   useEffect(() => {
-    const domains = ['https://cdnjs.cloudflare.com'];
+    const domains = ['https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev'];
     domains.forEach(domain => {
       const link = document.createElement('link');
       link.rel = 'preconnect';
@@ -33,63 +38,16 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     });
   }, []);
 
-  // Is useEffect ko update kiya gaya hai takki fetch ke baad scroll ho sake
-  useEffect(() => {
-    fetchVideos();
-  }, []);
-
-  useEffect(() => {
-    if (currentUser) fetchFollows();
-  }, [currentUser]);
-
-  // --- REAL-TIME COMMENT COUNT UPDATE ---
-  useEffect(() => {
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'comments' },
-        (payload) => {
-          setVideos(prev => prev.map(v => 
-            v.id === payload.new.post_id 
-              ? { ...v, comments_count: (v.comments_count || 0) + 1 } 
-              : v
-          ));
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  useEffect(() => {
-    const recordView = async () => {
-      if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
-      const currentVideoId = videos[activeIndex].id;
-      const currentUserId = currentUser.id;
-      if (viewedVideos.current.has(currentVideoId)) return;
-      try {
-        await supabase.rpc('increment_views', { 
-          post_id: currentVideoId, 
-          viewer_id: currentUserId 
-        });
-        viewedVideos.current.add(currentVideoId);
-      } catch (err) {
-        console.error("View error:", err);
-      }
-    };
-    const timer = setTimeout(recordView, 3000); 
-    return () => clearTimeout(timer);
-  }, [activeIndex, videos, currentUser?.id]); 
-
-  // --- MODIFIED FETCH VIDEOS TO HANDLE SEARCH ID ---
+  /**
+   * 2. MAIN FETCH LOGIC (Filter Support ke saath)
+   * Isme hum URL se video ID uthate hain aur database se filter_name select karte hain.
+   */
   const fetchVideos = async () => {
     try {
       setLoading(true);
-      const videoIdFromUrl = searchParams.get('video'); // Check if link has ?video=ID
+      const videoIdFromUrl = searchParams.get('video');
 
+      // Sabhi posts fetch karna profiles ke saath
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -105,18 +63,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       if (error) throw error;
       
       if (data) {
-        let updatedVideos = data.map((video: any) => {
-          const freshName = video.profiles?.full_name || video.profiles?.username || video.user_name || 'user';
-          const freshAvatar = video.profiles?.avatar_url || video.user_avatar;
+        let updatedVideos = data.map((video: any) => ({
+          ...video,
+          user_name: video.profiles?.full_name || video.profiles?.username || 'chiti_user',
+          user_avatar: video.profiles?.avatar_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png',
+        }));
 
-          return {
-            ...video,
-            user_name: freshName,
-            user_avatar: freshAvatar
-          };
-        });
-
-        // AGAR URL ME VIDEO ID HAI: Toh us video ko dhund kar array ke start mein le aao
+        // Agar URL mein specific video ID hai (?video=...), toh use top par rakho
         if (videoIdFromUrl) {
           const targetIndex = updatedVideos.findIndex(v => v.id === videoIdFromUrl);
           if (targetIndex !== -1) {
@@ -129,15 +82,22 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       }
     } catch (error) { 
       console.error('Error fetching videos:', error); 
+      toast.error("Video load nahi ho payi");
     } finally { 
       setLoading(false); 
     }
   };
 
+  useEffect(() => { fetchVideos(); }, [searchParams]);
+
+  /**
+   * 3. FOLLOW LOGIC
+   * User ne kisse follow kiya hai wo state mein load karna.
+   */
   const fetchFollows = async () => {
     if (!currentUser) return;
     try {
-      const { data, error } = await supabase
+      const { data } = await supabase
        .from('follows')
        .select('following_id')
        .eq('follower_id', currentUser.id);
@@ -145,94 +105,94 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { console.error(err); }
   };
 
-  useEffect(() => {
-    Object.values(videoRefs.current).forEach((videoEl, idx) => {
-      if (videoEl) {
-        const videoId = Object.keys(videoRefs.current)[idx];
-        if (videos[activeIndex]?.id === videoId) {
-          if (isPlaying) videoEl.play().catch(() => {});
-          else videoEl.pause();
-        } else {
-          videoEl.pause();
-          videoEl.currentTime = 0; 
-        }
-      }
-    });
-  }, [activeIndex, isPlaying, videos]);
+  useEffect(() => { if (currentUser) fetchFollows(); }, [currentUser]);
 
+  /**
+   * 4. REAL-TIME UPDATES
+   * Jab koi like ya comment kare, toh list turant update ho jaye.
+   */
+  useEffect(() => {
+    const channel = supabase
+      .channel('realtime-feed')
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'posts' },
+        (payload) => {
+          setVideos(prev => prev.map(v => 
+            v.id === payload.new.id ? { ...v, ...payload.new } : v
+          ));
+        }
+      )
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, []);
+
+  /**
+   * 5. VIEW COUNT LOGIC
+   * 3 second video dekhne par view count badhana.
+   */
+  useEffect(() => {
+    const recordView = async () => {
+      if (!videos[activeIndex] || !currentUser) return;
+      const vid = videos[activeIndex].id;
+      if (viewedVideos.current.has(vid)) return;
+      
+      try {
+        await supabase.rpc('increment_views', { post_id: vid, viewer_id: currentUser.id });
+        viewedVideos.current.add(vid);
+      } catch (e) { console.log("View error", e); }
+    };
+    const timer = setTimeout(recordView, 3000);
+    return () => clearTimeout(timer);
+  }, [activeIndex, videos, currentUser]);
+
+  /**
+   * 6. NAVIGATION & HANDLERS
+   */
   const handleScroll = () => {
     if (!containerRef.current) return;
     const { scrollTop, clientHeight } = containerRef.current;
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
-      setIsPlaying(true); 
     }
-  };
-
-  const togglePlayPause = () => {
-    const currentVideo = videoRefs.current[videos[activeIndex]?.id];
-    if (currentVideo) {
-      if (isPlaying) {
-        currentVideo.pause();
-      } else {
-        currentVideo.play().catch(() => {});
-      }
-    }
-    setIsPlaying(!isPlaying);
-    setShowPlayIcon(true);
-    setTimeout(() => setShowPlayIcon(false), 500); 
   };
 
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
     e.stopPropagation();
-    if (!currentUser) { toast.error("Pehle login karein!"); return; }
+    if (!currentUser) return toast.error("Please login first");
     if (currentUser.id === targetUserId) return;
-    const isCurrentlyFollowing = followedUsers.has(targetUserId);
+
+    const isFollowing = followedUsers.has(targetUserId);
     try {
-      if (isCurrentlyFollowing) {
+      if (isFollowing) {
+        setFollowedUsers(prev => { const n = new Set(prev); n.delete(targetUserId); return n; });
         await supabase.from('follows').delete().eq('follower_id', currentUser.id).eq('following_id', targetUserId);
-        await supabase.rpc('decrement_followers', { user_id: targetUserId });
-        await supabase.rpc('decrement_following', { user_id: currentUser.id });
-        setFollowedUsers(prev => { const next = new Set(prev); next.delete(targetUserId); return next; });
       } else {
-        await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: targetUserId }]);
-        await supabase.rpc('increment_followers', { user_id: targetUserId });
-        await supabase.rpc('increment_following', { user_id: currentUser.id });
         setFollowedUsers(prev => new Set(prev).add(targetUserId));
-        toast.success("Following!");
+        await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: targetUserId }]);
+        toast.success("Following");
       }
-    } catch (err) { toast.error("Koshish nakam rahi"); }
+    } catch (err) { toast.error("Error updating follow"); }
   };
 
   const handleVideoShare = async (video: any) => {
-    // Ye line ensure karti hai ki share link ?video=id wala format use kare
     const shareUrl = `${window.location.origin}/?video=${video.id}`;
-    
     try {
-      setVideos(prev => prev.map(v => 
-        v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
-      ));
-
       await supabase.rpc('increment_shares', { post_id: video.id });
-      
       if (navigator.share) {
-        await navigator.share({ title: 'Chiti Shorts', url: shareUrl });
+        await navigator.share({ title: 'CHITI', url: shareUrl });
       } else {
         await navigator.clipboard.writeText(shareUrl);
-        toast.success("Link copy ho gaya!");
+        toast.success("Link copied!");
       }
-    } catch (err) {
-      console.error("Share error:", err);
-      setVideos(prev => prev.map(v => 
-        v.id === video.id ? { ...v, shares_count: Math.max(0, (v.shares_count || 0) - 1) } : v
-      ));
-    }
+    } catch (err) { console.error(err); }
   };
 
   if (loading) return (
     <div className="fixed inset-0 flex items-center justify-center bg-black">
-      <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+      <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
     </div>
   );
 
@@ -245,86 +205,23 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        const isNear = index >= activeIndex - 1 && index <= activeIndex + 1;
 
         return (
-          <div 
-            key={video.id} 
-            className="relative h-screen w-full snap-start snap-always overflow-hidden bg-black flex items-center justify-center"
-            onClick={togglePlayPause} 
-          >
-            {video.thumbnail_url && (
-              <div 
-                className="absolute inset-0 bg-cover bg-center blur-3xl opacity-30 scale-110"
-                style={{ backgroundImage: `url(${video.thumbnail_url})` }}
-              />
-            )}
+          <div key={video.id} className="relative h-screen w-full snap-start snap-always bg-black">
+            
+            {/* 🎨 FILTER & VIDEO PLAYER ENGINE */}
+            <OptimizedVideoPlayer
+              videoUrl={video.video_url}
+              videoId={video.id}
+              isActive={isActive}
+              username={video.user_name}
+              avatarUrl={video.user_avatar}
+              caption={video.caption}
+              filterName={video.filter_name || 'none'}
+            />
 
-            <div className="relative w-full h-full flex items-center justify-center bg-black z-10">
-              {isActive && !videoRefs.current[video.id] && (
-                <img 
-                   src={video.thumbnail_url}
-                   className="absolute inset-0 w-full h-full object-cover z-0"
-                   alt="loading..."
-                />
-              )}
-
-              {isNear && (
-                <video
-                  ref={(el) => (videoRefs.current[video.id] = el)}
-                  src={video.video_url} 
-                  poster={video.thumbnail_url}
-                  className={`w-full h-full object-cover relative z-10 ${isActive ? 'opacity-100' : 'opacity-0'}`}
-                  style={{ height: '100vh', width: '100%' }}
-                  loop
-                  playsInline
-                  muted={!isActive} 
-                  preload="auto"
-                />
-              )}
-            </div>
-
-            {showPlayIcon && (
-              <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
-                <div className="bg-black/40 p-4 rounded-full animate-ping backdrop-blur-sm">
-                  {!isPlaying ? (
-                    <Pause size={40} fill="white" className="text-white" />
-                  ) : (
-                    <PlayIcon size={40} fill="white" className="text-white ml-1" />
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-transparent to-transparent text-white z-20 pointer-events-none">
-              <div 
-                className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (video.user_id) navigate(`/profile/${video.user_id}`);
-                }}
-              >
-                <img 
-                  src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
-                  className="w-11 h-11 rounded-full border-2 border-white object-cover" 
-                  alt="avatar"
-                />
-                <span className="font-black text-lg shadow-black drop-shadow-lg">@{video.user_name}</span>
-                <button 
-                  onClick={(e) => handleFollowToggle(e, video.user_id)} 
-                  className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black ${followedUsers.has(video.user_id) ? 'bg-gray-700/80' : 'bg-blue-600'}`}
-                >
-                  {followedUsers.has(video.user_id) ? 'Following' : 'Follow'}
-                </button>
-              </div>
-              <p className="text-sm mb-4 line-clamp-2 pr-20 drop-shadow-md pointer-events-auto">{video.caption}</p>
-              <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md">
-                <Music2 size={14} />
-                <span className="truncate">Original Audio - {video.user_name}</span>
-              </div>
-            </div>
-
-            <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
+            {/* ⚡ RIGHT SIDE ACTIONS (Likes, Comments, Share) */}
+            <div className="absolute right-3 bottom-24 z-50">
               <VideoActions 
                 videoId={video.id} 
                 initialLikes={video.likes_count || 0}
@@ -335,9 +232,54 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 onShare={() => handleVideoShare(video)} 
               />
             </div>
+
+            {/* 👤 FOLLOW BUTTON OVERLAY */}
+            <div className="absolute bottom-36 left-4 z-50 pointer-events-none">
+                <button 
+                  onClick={(e) => handleFollowToggle(e, video.user_id)}
+                  className={`pointer-events-auto px-5 py-1.5 rounded-full text-[10px] font-black italic uppercase transition-all shadow-xl ${
+                    followedUsers.has(video.user_id) 
+                    ? 'bg-zinc-900/80 text-zinc-400 border border-white/10' 
+                    : 'bg-blue-600 text-white animate-pulse'
+                  }`}
+                >
+                  {followedUsers.has(video.user_id) ? 'Following' : 'Follow +'}
+                </button>
+            </div>
+
+            {/* 🎵 MUSIC MARQUEE OVERLAY */}
+            <div className="absolute bottom-20 left-4 z-40 flex items-center gap-2 pointer-events-none opacity-80">
+                <div className="bg-black/20 backdrop-blur-md p-2 rounded-full border border-white/5">
+                    <Music2 size={12} className="text-blue-400 animate-spin-slow" />
+                </div>
+                <div className="overflow-hidden w-32">
+                    <p className="text-[10px] font-black italic whitespace-nowrap animate-marquee uppercase tracking-widest">
+                        Original Sound - {video.user_name}
+                    </p>
+                </div>
+            </div>
+
           </div>
         );
       })}
+      
+      {/* 🟢 CSS ANIMATIONS */}
+      <style jsx>{`
+        @keyframes marquee {
+          0% { transform: translateX(100%); }
+          100% { transform: translateX(-100%); }
+        }
+        .animate-marquee {
+          animation: marquee 8s linear infinite;
+        }
+        .animate-spin-slow {
+          animation: spin 4s linear infinite;
+        }
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 } 
