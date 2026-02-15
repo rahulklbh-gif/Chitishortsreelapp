@@ -65,7 +65,7 @@ export function OptimizedVideoPlayer({
 
   useEffect(() => {
     if (videoRef.current) {
-      // ✅ load() call se browser ko signal milta hai ki video fetch karna shuru kare
+      // ✅ Force Load for instant streaming
       videoRef.current.load();
     }
   }, [videoUrl]);
@@ -94,7 +94,7 @@ export function OptimizedVideoPlayer({
       const playPromise = videoRef.current.play();
       if (playPromise !== undefined) {
         playPromise.then(() => {
-          // Playback shuru hote hi isLoaded true kar dena chahiye agar pehle nahi hua
+          // ⚡ Video start hote hi loader hatao
           setIsLoaded(true);
           secondaryRefs.current.forEach((v) => {
             if (v) {
@@ -139,19 +139,13 @@ export function OptimizedVideoPlayer({
               playsInline
               autoPlay={isActive}
               
-              /** 🚀 INSTAGRAM-STYLE SUPER FAST LOADING **/
-              /** auto browser ko allow karta hai resources smartly manage karne ke liye **/
+              /** 🔥 SUPER FAST LOADING ATTRIBUTES **/
               preload="auto"
-              /** Fetch priority browser ko batata hai ki ye video sabse pehle download karna hai **/
               // @ts-ignore
               fetchpriority={isActive ? "high" : "low"}
-              /** onCanPlayThrough tab trigger hota hai jab browser ko lagta hai video bina ruke chal jayega **/
-              onCanPlayThrough={() => {
-                if (i === 0) setIsLoaded(true);
-              }}
-              /** Asynchronous decoding UI thread ko freeze hone se bachata hai scrolling ke waqt **/
+              onLoadedMetadata={() => { if(i === 0) setIsLoaded(true); }}
+              onCanPlay={() => { if(i === 0) setIsLoaded(true); }}
               decoding="async"
-              /** Buffer optimization **/
               controlsList="nodownload"
               
               style={{ filter: currentFilter.style }}
@@ -171,7 +165,7 @@ export function OptimizedVideoPlayer({
              <Sparkles size={10} className="text-blue-400"/>
              <span className="text-[9px] font-bold uppercase tracking-widest text-white">{currentFilter.name}</span>
           </div>
-      )}
+        )}
       </div>
 
       <style jsx>{`
