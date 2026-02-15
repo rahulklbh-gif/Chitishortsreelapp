@@ -224,11 +224,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
         
-        /** 🚀 FAST SCROLL LOGIC: 
-         * isNear hamesha 3 videos ko memory mein rakhta hai (Ek upar, ek active, ek niche).
-         * Isse heavy videos (30-40MB) app ko crash nahi karenge aur memory free rahegi.
+        /** 🚀 SUPER FAST INSTAGRAM LOGIC: 
+         * index <= activeIndex + 2: Iska matlab hai ki hum current video ke saath-saath
+         * agle 2 videos ko background mein pehle hi load (buffer) kar rahe hain.
+         * Taki jab aap scroll karein, toh video bina loading liye turant play ho jaye.
         **/
-        const isNear = index >= activeIndex - 1 && index <= activeIndex + 1;
+        const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 2;
 
         return (
           <div 
@@ -237,8 +238,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             onClick={togglePlayPause} 
           >
             
-            {/* ✅ Sirf "Near" videos ko render karein memory bachane ke liye */}
-            {isNear ? (
+            {/* ✅ Optimized rendering with Look-ahead buffering */}
+            {shouldRender ? (
               <OptimizedVideoPlayer
                 videoUrl={video.video_url}
                 videoId={video.id}
@@ -249,9 +250,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 filterName={video.filter_name || 'none'}
               />
             ) : (
-              /* Jab video screen ke paas na ho toh placeholder dikhayein takki memory khali rahe */
-              <div className="w-full h-full bg-zinc-950 flex items-center justify-center">
-                <div className="w-8 h-8 border-2 border-white/10 border-t-white/30 rounded-full animate-spin" />
+              <div className="w-full h-full bg-black flex items-center justify-center">
+                <Loader2 className="w-6 h-6 text-white/10 animate-spin" />
               </div>
             )}
 
