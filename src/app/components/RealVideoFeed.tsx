@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { VideoActions } from './VideoActions';
-import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; // Filter Engine
+// Filter engine ko import kiya
+import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Music2, Play as PlayIcon, Pause } from 'lucide-react'; 
@@ -17,15 +18,16 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  // Play/Pause State
   const [isPlaying, setIsPlaying] = useState(true); 
   const [showPlayIcon, setShowPlayIcon] = useState(false); 
   
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewedVideos = useRef<Set<string>>(new Set());
+  
+  // Aapka original videoRefs logic
+  const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
 
-  // 1. Preconnect Optimization
   useEffect(() => {
     const domains = ['https://cdnjs.cloudflare.com'];
     domains.forEach(domain => {
@@ -36,16 +38,15 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     });
   }, []);
 
-  // 2. Initial Fetch
   useEffect(() => {
     fetchVideos();
-  }, [searchParams]); // URL change par refresh
+  }, [searchParams]);
 
   useEffect(() => {
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // 3. Real-time Updates (Comments Count)
+  // --- REAL-TIME COMMENT COUNT UPDATE ---
   useEffect(() => {
     const channel = supabase
       .channel('schema-db-changes')
@@ -62,19 +63,22 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       )
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
-  // 4. View Recording Logic (3 Seconds)
+  // --- VIEW RECORDING ---
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
       const currentVideoId = videos[activeIndex].id;
+      const currentUserId = currentUser.id;
       if (viewedVideos.current.has(currentVideoId)) return;
       try {
         await supabase.rpc('increment_views', { 
           post_id: currentVideoId, 
-          viewer_id: currentUser.id 
+          viewer_id: currentUserId 
         });
         viewedVideos.current.add(currentVideoId);
       } catch (err) {
@@ -85,7 +89,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
-  // 5. Main Fetch Logic with Deep Linking
+  // --- FETCH VIDEOS (URL ID Support ke saath) ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
@@ -106,11 +110,16 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       if (error) throw error;
       
       if (data) {
-        let updatedVideos = data.map((video: any) => ({
+        let updatedVideos = data.map((video: any) => {
+          const freshName = video.profiles?.full_name || video.profiles?.username || video.user_name || 'user';
+          const freshAvatar = video.profiles?.avatar_url || video.user_avatar;
+
+          return {
             ...video,
-            user_name: video.profiles?.full_name || video.profiles?.username || 'user',
-            user_avatar: video.profiles?.avatar_url
-        }));
+            user_name: freshName,
+            user_avatar: freshAvatar
+          };
+        });
 
         if (videoIdFromUrl) {
           const targetIndex = updatedVideos.findIndex(v => v.id === videoIdFromUrl);
@@ -119,6 +128,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             updatedVideos = [targetVideo, ...updatedVideos];
           }
         }
+
         setVideos(updatedVideos);
       }
     } catch (error) { 
@@ -139,7 +149,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { console.error(err); }
   };
 
-  // 6. Navigation & Scroll Handlers
+  // --- SCROLL HANDLER ---
   const handleScroll = () => {
     if (!containerRef.current) return;
     const { scrollTop, clientHeight } = containerRef.current;
@@ -150,13 +160,16 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     }
   };
 
+  // --- PLAY/PAUSE LOGIC ---
   const togglePlayPause = () => {
+    // Note: OptimizedVideoPlayer isActive prop se play/pause handle karta hai, 
+    // par hum state toggle kar rahe hain.
     setIsPlaying(!isPlaying);
     setShowPlayIcon(true);
     setTimeout(() => setShowPlayIcon(false), 500); 
   };
 
-  // 7. Social Handlers (Follow & Share)
+  // --- FOLLOW LOGIC ---
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
     e.stopPropagation();
     if (!currentUser) { toast.error("Pehle login karein!"); return; }
@@ -164,16 +177,21 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     const isCurrentlyFollowing = followedUsers.has(targetUserId);
     try {
       if (isCurrentlyFollowing) {
-        setFollowedUsers(prev => { const next = new Set(prev); next.delete(targetUserId); return next; });
         await supabase.from('follows').delete().eq('follower_id', currentUser.id).eq('following_id', targetUserId);
+        await supabase.rpc('decrement_followers', { user_id: targetUserId });
+        await supabase.rpc('decrement_following', { user_id: currentUser.id });
+        setFollowedUsers(prev => { const next = new Set(prev); next.delete(targetUserId); return next; });
       } else {
-        setFollowedUsers(prev => new Set(prev).add(targetUserId));
         await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: targetUserId }]);
+        await supabase.rpc('increment_followers', { user_id: targetUserId });
+        await supabase.rpc('increment_following', { user_id: currentUser.id });
+        setFollowedUsers(prev => new Set(prev).add(targetUserId));
         toast.success("Following!");
       }
     } catch (err) { toast.error("Koshish nakam rahi"); }
   };
 
+  // --- SHARE LOGIC ---
   const handleVideoShare = async (video: any) => {
     const shareUrl = `${window.location.origin}/?video=${video.id}`;
     try {
@@ -187,7 +205,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         await navigator.clipboard.writeText(shareUrl);
         toast.success("Link copy ho gaya!");
       }
-    } catch (err) { console.error("Share error:", err); }
+    } catch (err) {
+      console.error("Share error:", err);
+    }
   };
 
   if (loading) return (
@@ -212,19 +232,20 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always bg-black"
             onClick={togglePlayPause} 
           >
-            {/* 🎨 FILTER ENGINE (Optimized Video Player) */}
-            {/* Saara Video Render aur Filters yahan se handle honge */}
+            
+            {/* 🎨 FILTER ENGINE (Optimized Player) */}
+            {/* Isne purane <video> tag ko replace kiya hai takki filters chalein */}
             <OptimizedVideoPlayer
               videoUrl={video.video_url}
               videoId={video.id}
-              isActive={isActive && isPlaying} // Yahan isPlaying sync kiya
+              isActive={isActive && isPlaying}
               username={video.user_name}
               avatarUrl={video.user_avatar}
               caption={video.caption}
               filterName={video.filter_name || 'none'}
             />
 
-            {/* Play/Pause Visual Indicator */}
+            {/* Play/Pause Visual Feedback */}
             {showPlayIcon && (
               <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
                 <div className="bg-black/40 p-4 rounded-full animate-ping">
@@ -233,23 +254,38 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
-            {/* 👤 SEPARATE FOLLOW BUTTON LAYER */}
-            {/* Ise Player ke upar rakha hai takki user click kar sake */}
-            <div className="absolute bottom-36 left-4 z-[60] pointer-events-none">
+            {/* UI LAYER (FOLLOW, NAME, CAPTION) */}
+            {/* Maine ye layer bilkul original rakhi hai jaisi aapne bhejhi thi */}
+            <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-transparent to-transparent text-white z-20 pointer-events-none">
+              <div 
+                className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (video.user_id) navigate(`/profile/${video.user_id}`);
+                }}
+              >
+                <img 
+                  src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
+                  className="w-11 h-11 rounded-full border-2 border-white object-cover" 
+                  alt="avatar"
+                />
+                <span className="font-black text-lg shadow-black drop-shadow-lg">@{video.user_name}</span>
                 <button 
-                  onClick={(e) => handleFollowToggle(e, video.user_id)}
-                  className={`pointer-events-auto px-5 py-1.5 rounded-full text-[10px] font-black uppercase transition-all shadow-xl ${
-                    followedUsers.has(video.user_id) 
-                    ? 'bg-zinc-900/80 text-zinc-400 border border-white/10' 
-                    : 'bg-blue-600 text-white'
-                  }`}
+                  onClick={(e) => handleFollowToggle(e, video.user_id)} 
+                  className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black ${followedUsers.has(video.user_id) ? 'bg-gray-700/80' : 'bg-blue-600'}`}
                 >
-                  {followedUsers.has(video.user_id) ? 'Following' : 'Follow +'}
+                  {followedUsers.has(video.user_id) ? 'Following' : 'Follow'}
                 </button>
+              </div>
+              <p className="text-sm mb-4 line-clamp-2 pr-20 drop-shadow-md pointer-events-auto">{video.caption}</p>
+              <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md">
+                <Music2 size={14} />
+                <span className="truncate">Original Audio - {video.user_name}</span>
+              </div>
             </div>
 
-            {/* ⚡ RIGHT SIDE ACTIONS */}
-            <div className="absolute right-3 bottom-24 z-50" onClick={(e) => e.stopPropagation()}>
+            {/* ACTIONS LAYER */}
+            <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
               <VideoActions 
                 videoId={video.id} 
                 initialLikes={video.likes_count || 0}
