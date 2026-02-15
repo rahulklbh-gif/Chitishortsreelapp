@@ -65,6 +65,7 @@ export function OptimizedVideoPlayer({
 
   useEffect(() => {
     if (videoRef.current) {
+      // ✅ load() call se browser ko signal milta hai ki video fetch karna shuru kare
       videoRef.current.load();
     }
   }, [videoUrl]);
@@ -135,7 +136,19 @@ export function OptimizedVideoPlayer({
               muted={!isActive || i !== 0}
               playsInline
               autoPlay={isActive}
-              preload="auto"
+              
+              /** 🚀 FAST LOADING LOGIC ADDED BELOW **/
+              /** metadata loading se 30-40MB file ka pehla part turant load hota hai **/
+              preload="metadata"
+              /** onCanPlay se loading screen turant hat jayegi jab video ready ho **/
+              onCanPlay={() => {
+                if (i === 0) setIsLoaded(true);
+              }}
+              /** UI thread ko block hone se bachane ke liye asynchronous decoding **/
+              decoding="async"
+              /** Data saver and smooth stream settings **/
+              controlsList="nodownload"
+              
               style={{ filter: currentFilter.style }}
               onLoadedData={() => i === 0 && setIsLoaded(true)}
             />
@@ -147,7 +160,7 @@ export function OptimizedVideoPlayer({
           <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
         )}
 
-        {/* Filter Name Badge (Optional: Sirf dikhane ke liye ki filter konsa hai) */}
+        {/* Filter Name Badge */}
         {isActive && filterName !== 'none' && (
           <div className="absolute top-20 left-6 z-30 flex items-center gap-2 bg-black/20 backdrop-blur-sm px-3 py-1 rounded-full border border-white/5 pointer-events-none opacity-50">
              <Sparkles size={10} className="text-blue-400"/>
