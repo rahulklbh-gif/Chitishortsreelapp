@@ -162,8 +162,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
   // --- PLAY/PAUSE LOGIC ---
   const togglePlayPause = () => {
-    // Note: OptimizedVideoPlayer isActive prop se play/pause handle karta hai, 
-    // par hum state toggle kar rahe hain.
     setIsPlaying(!isPlaying);
     setShowPlayIcon(true);
     setTimeout(() => setShowPlayIcon(false), 500); 
@@ -225,6 +223,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
+        
+        /** 🚀 FAST SCROLL LOGIC: 
+         * isNear hamesha 3 videos ko memory mein rakhta hai (Ek upar, ek active, ek niche).
+         * Isse heavy videos (30-40MB) app ko crash nahi karenge aur memory free rahegi.
+        **/
+        const isNear = index >= activeIndex - 1 && index <= activeIndex + 1;
 
         return (
           <div 
@@ -233,17 +237,23 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             onClick={togglePlayPause} 
           >
             
-            {/* 🎨 FILTER ENGINE (Optimized Player) */}
-            {/* Isne purane <video> tag ko replace kiya hai takki filters chalein */}
-            <OptimizedVideoPlayer
-              videoUrl={video.video_url}
-              videoId={video.id}
-              isActive={isActive && isPlaying}
-              username={video.user_name}
-              avatarUrl={video.user_avatar}
-              caption={video.caption}
-              filterName={video.filter_name || 'none'}
-            />
+            {/* ✅ Sirf "Near" videos ko render karein memory bachane ke liye */}
+            {isNear ? (
+              <OptimizedVideoPlayer
+                videoUrl={video.video_url}
+                videoId={video.id}
+                isActive={isActive && isPlaying}
+                username={video.user_name}
+                avatarUrl={video.user_avatar}
+                caption={video.caption}
+                filterName={video.filter_name || 'none'}
+              />
+            ) : (
+              /* Jab video screen ke paas na ho toh placeholder dikhayein takki memory khali rahe */
+              <div className="w-full h-full bg-zinc-950 flex items-center justify-center">
+                <div className="w-8 h-8 border-2 border-white/10 border-t-white/30 rounded-full animate-spin" />
+              </div>
+            )}
 
             {/* Play/Pause Visual Feedback */}
             {showPlayIcon && (
@@ -255,7 +265,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             )}
 
             {/* UI LAYER (FOLLOW, NAME, CAPTION) */}
-            {/* Maine ye layer bilkul original rakhi hai jaisi aapne bhejhi thi */}
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-transparent to-transparent text-white z-20 pointer-events-none">
               <div 
                 className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer"
