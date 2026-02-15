@@ -324,9 +324,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
               <VideoActions 
                 videoId={video.id} 
-                initialLikes={video.likes_count || 0}
-                initialComments={video.comments_count || 0}
-                initialShares={video.shares_count || 0}
+                // ✅ Database columns sync (Fixed for 0 likes issue)
+                initialLikes={video.likes_count ?? 0}
+                initialComments={video.comments_count ?? 0}
+                initialShares={video.shares_count ?? 0}
                 videoOwnerId={video.user_id} 
                 onComment={() => onComment(video.id, video.user_id)} 
                 onShare={() => handleVideoShare(video)} 
@@ -337,4 +338,4 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       })}
     </div>
   );
-} 
+}
