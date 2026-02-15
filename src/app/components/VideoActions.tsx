@@ -129,7 +129,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             ...video,
             user_name: freshName,
             user_avatar: freshAvatar,
-            // Yahan ensure kar rahe hain ki agar likes_count khali ho toh 0 rahe
+            // Refresh issue fix: likes_count ko explicitly yahan set kiya
             likes_count: video.likes_count ?? 0,
             comments_count: video.comments_count ?? 0,
             shares_count: video.shares_count ?? 0
@@ -328,9 +328,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
               <VideoActions 
                 videoId={video.id} 
-                initialLikes={video.likes_count}
-                initialComments={video.comments_count}
-                initialShares={video.shares_count}
+                // Yahan maine ensure kiya hai ki video.likes_count pass ho
+                initialLikes={video.likes_count || 0}
+                initialComments={video.comments_count || 0}
+                initialShares={video.shares_count || 0}
                 videoOwnerId={video.user_id} 
                 onComment={() => onComment(video.id, video.user_id)} 
                 onShare={() => handleVideoShare(video)} 
