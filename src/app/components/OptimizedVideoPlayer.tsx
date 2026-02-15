@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-// ✅ FIXED: Missing 'Check' icon add kiya
-import { Sparkles, Music, Zap, Check } from 'lucide-react';
+// Sparkles aur Zap filters/loading ke liye zaruri hain isliye rehne diye hain
+import { Sparkles, Zap } from 'lucide-react';
 
 /**
  * 🎨 MASTER FILTERS DATA
@@ -46,9 +46,6 @@ export function OptimizedVideoPlayer({
   videoUrl,
   videoId,
   isActive,
-  username,
-  avatarUrl,
-  caption,
   filterName = 'none'
 }: OptimizedVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -72,9 +69,9 @@ export function OptimizedVideoPlayer({
     }
   }, [videoUrl]);
 
-  // --- VIEW COUNTER (Safe Version) ---
+  // --- VIEW COUNTER ---
   useEffect(() => {
-    let timer: any; // Changed to any to prevent crash
+    let timer: any; 
     if (isActive && !hasCounted.current && videoId) {
       timer = setTimeout(async () => {
         try {
@@ -113,6 +110,7 @@ export function OptimizedVideoPlayer({
   return (
     <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
       
+      {/* Loading State */}
       {!isLoaded && (
         <div className="absolute inset-0 flex items-center justify-center bg-zinc-950 z-20">
           <div className="flex flex-col items-center gap-3">
@@ -122,6 +120,7 @@ export function OptimizedVideoPlayer({
         </div>
       )}
 
+      {/* Video Grid Layer */}
       <div className={`${gridContainerClass} transition-all duration-700 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}>
         {[...Array(gridCount)].map((_, i) => (
           <div key={i} className="relative w-full h-full overflow-hidden border-[0.2px] border-white/5 bg-zinc-900">
@@ -143,48 +142,21 @@ export function OptimizedVideoPlayer({
           </div>
         ))}
 
-        {/* VFX Effects */}
+        {/* VFX Overlay Effects */}
         {isActive && currentFilter.vfxType === 'lightning' && (
           <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
         )}
-      </div>
-      
-      {/* UI OVERLAY */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 pb-28 bg-gradient-to-t from-black/90 via-transparent to-transparent text-white pointer-events-none z-30">
-        
-        <div className="flex items-center gap-3 mb-3">
-          <div className="relative pointer-events-auto">
-            <img 
-              src={avatarUrl || 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix'} 
-              className="w-12 h-12 rounded-full border-2 border-blue-500 object-cover" 
-              alt="creator"
-            />
-            <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-0.5 border border-black">
-               <Check size={10} className="text-white" strokeWidth={4}/>
-            </div>
-          </div>
-          <div className="pointer-events-auto">
-            <h3 className="font-black text-base italic flex items-center gap-1 uppercase">
-              {username || 'chiti_user'} 
-              <Zap size={14} className="text-yellow-400" fill="currentColor"/>
-            </h3>
-          </div>
-        </div>
 
-        <p className="text-sm mb-4 line-clamp-2 max-w-[85%] pointer-events-auto">
-          {caption}
-        </p>
-        
-        {filterName !== 'none' && (
-          <div className="inline-flex items-center gap-2 bg-black/40 backdrop-blur-xl px-3 py-1.5 rounded-full border border-white/10 pointer-events-auto">
-             <Sparkles size={12} className="text-blue-400 fill-blue-400"/>
-             <span className="text-[10px] font-black uppercase italic">{currentFilter.name}</span>
+        {/* Filter Name Badge (Optional: Sirf dikhane ke liye ki filter konsa hai) */}
+        {isActive && filterName !== 'none' && (
+          <div className="absolute top-20 left-6 z-30 flex items-center gap-2 bg-black/20 backdrop-blur-sm px-3 py-1 rounded-full border border-white/5 pointer-events-none opacity-50">
+             <Sparkles size={10} className="text-blue-400"/>
+             <span className="text-[9px] font-bold uppercase tracking-widest text-white">{currentFilter.name}</span>
           </div>
         )}
       </div>
 
       <style jsx>{`
-        .animate-spin-slow { animation: spin 3s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
     </div>
