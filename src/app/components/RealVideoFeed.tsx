@@ -106,6 +106,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
 
+      // 🛑 Yahan ensure kiya gaya hai ki 'likes_count' select ho raha hai
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -128,7 +129,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           return {
             ...video,
             user_name: freshName,
-            user_avatar: freshAvatar
+            user_avatar: freshAvatar,
+            // Fallback agar database se null aaye toh 0 dikhaye
+            likes_count: video.likes_count || 0,
+            comments_count: video.comments_count || 0,
+            shares_count: video.shares_count || 0
           };
         });
 
@@ -324,10 +329,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
               <VideoActions 
                 videoId={video.id} 
-                // ✅ Database columns sync (Fixed for 0 likes issue)
-                initialLikes={video.likes_count ?? 0}
-                initialComments={video.comments_count ?? 0}
-                initialShares={video.shares_count ?? 0}
+                // ✅ TABLE COLUMNS FIX: Seedha 'likes_count' pass ho raha hai
+                initialLikes={video.likes_count || 0}
+                initialComments={video.comments_count || 0}
+                initialShares={video.shares_count || 0}
                 videoOwnerId={video.user_id} 
                 onComment={() => onComment(video.id, video.user_id)} 
                 onShare={() => handleVideoShare(video)} 
