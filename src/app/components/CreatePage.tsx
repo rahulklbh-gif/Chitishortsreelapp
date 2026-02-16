@@ -2,7 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.5.8 (Optimized: No Lag Recording & Fixed Preview Flow)
+ * VERSION: 4.5.7 (Fixed: Preview Mirroring & Load Stability)
  * VAADA: No functions removed, Code remains full length.
  */
 
@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { compressVideoTo480p } from '@/lib/videoCompression';
 
+// --- Cloudflare R2 Config ---
 const R2_CONFIG = {
   endpoint: "https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com",
   accessKeyId: "bace896e3eba07cdbcb983394bd20da1", 
@@ -101,23 +102,17 @@ export default function CreatePage() {
     };
     loadMusic();
     return () => {
-      stopCamera();
       if (audioCtxRef.current) audioCtxRef.current.close();
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
   }, []);
 
-  const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-  };
-
+  // Reliability Fix: Ensure preview video plays immediately
   useEffect(() => {
     if (previewUrl && previewVideoRef.current) {
         previewVideoRef.current.load();
-        previewVideoRef.current.play().catch(e => console.log("Preview play blocked", e));
+        previewVideoRef.current.play().catch(e => console.log("Auto-preview play blocked", e));
     }
   }, [previewUrl]);
 
@@ -137,62 +132,79 @@ export default function CreatePage() {
             audioRef.current.load();
             const playPromise = audioRef.current.play();
             if (playPromise !== undefined) {
-                playPromise.then(() => setAudioPlayId(id))
-                .catch(() => toast.error("Interacted required for audio"));
+                playPromise.then(() => {
+                    setAudioPlayId(id);
+                }).catch(error => {
+                    console.error("Playback failed:", error);
+                    toast.error("Click anywhere on screen first to enable audio");
+                });
             }
         }
-    } catch (err) { console.error(err); }
+    } catch (err) {
+        console.error(err);
+    }
   };
 
   const initCamera = useCallback(async () => {
     try {
-      stopCamera();
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } },
+        video: { facingMode: { ideal: facing }, width: 1280, height: 720 },
         audio: true
       });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
     } catch (e) {
-      toast.error("Camera access denied!");
+      toast.error("Camera error!");
       setIsCameraMode(false);
     }
   }, [facing]);
 
   useEffect(() => {
     if (isCameraMode && !previewUrl) initCamera();
-    else if (previewUrl) stopCamera();
   }, [isCameraMode, initCamera, previewUrl]);
+
+  const getMixedStream = () => {
+    if (!streamRef.current || !audioRef.current) return streamRef.current;
+    const AC = window.AudioContext || (window as any).webkitAudioContext;
+    audioCtxRef.current = new AC();
+    const dest = audioCtxRef.current.createMediaStreamDestination();
+    const micSource = audioCtxRef.current.createMediaStreamSource(streamRef.current);
+    const micGain = audioCtxRef.current.createGain();
+    micGain.gain.value = 0.2; 
+    const musicSource = audioCtxRef.current.createMediaElementSource(audioRef.current);
+    const musicGain = audioCtxRef.current.createGain();
+    musicGain.gain.value = 1.0; 
+    micSource.connect(micGain);
+    micGain.connect(dest);
+    musicSource.connect(musicGain);
+    musicGain.connect(dest);
+    musicGain.connect(audioCtxRef.current.destination);
+    return new MediaStream([streamRef.current.getVideoTracks()[0], dest.stream.getAudioTracks()[0]]);
+  };
 
   const startRec = () => {
     if (!streamRef.current) return;
     chunksRef.current = [];
-    
-    // Recording with high performance: directly use stream
-    const recorder = new MediaRecorder(streamRef.current, { 
-      mimeType: 'video/webm;codecs=vp8,opus' 
-    });
+    const mixed = activeMusic ? getMixedStream() : streamRef.current;
+    const recorder = new MediaRecorder(mixed, { mimeType: 'video/webm' });
 
     recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
       const url = URL.createObjectURL(blob);
       setPreviewUrl(url);
-      setSelectedFile(new File([blob], 'chiti_record.webm'));
+      setSelectedFile(new File([blob], 'chiti.webm'));
       setIsRecording(false);
       setTimer(0);
-      stopCamera(); // Important: Stop camera after recording
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
     };
 
-    if (activeMusic && audioRef.current) {
-      audioRef.current.currentTime = 0;
-      audioRef.current.play();
-    }
-    
+    if (activeMusic && audioRef.current) audioRef.current.play();
     recorder.start();
     recorderRef.current = recorder;
     setIsRecording(true);
+    setTimer(0);
 
     countdownRef.current = setInterval(() => {
       setTimer(prev => {
@@ -209,13 +221,15 @@ export default function CreatePage() {
     if (recorderRef.current && recorderRef.current.state !== "inactive") {
       recorderRef.current.stop();
     }
-    if (countdownRef.current) clearInterval(countdownRef.current);
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+    }
   };
 
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
-    setStatusText("Processing Chiti...");
+    setStatusText("Chiti is processing...");
     try {
       const optimized = await compressVideoTo480p(selectedFile, (p) => {
         setUploadProgress(10 + Math.floor(p.progress * 60));
@@ -250,15 +264,13 @@ export default function CreatePage() {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
-    // Mirror logic: Mirror only for LIVE front camera. 
-    // Preview and environment camera should not be mirrored.
-    const isMirrored = isLive && facing === 'user';
-
+    // Mirroring Fix: Apply scaleX(-1) ONLY when live & using front camera. 
+    // PREVIEW (isLive = false) will always be scaleX(1) to show original recording.
     const videoStyle = {
       filter: filter.style,
-      transform: isMirrored ? 'scaleX(-1)' : 'scaleX(1)',
+      transform: (isLive && facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
       objectFit: 'cover' as const,
-      willChange: 'filter, transform' // Performance optimization for recording
+      transition: 'filter 0.4s ease'
     };
 
     return (
@@ -268,7 +280,7 @@ export default function CreatePage() {
             {isLive ? (
               <video ref={i === 0 ? videoRef : null} autoPlay playsInline muted className="w-full h-full" style={videoStyle} />
             ) : (
-              <video ref={i === 0 ? previewVideoRef : null} src={previewUrl} autoPlay loop playsInline className="w-full h-full" style={videoStyle} />
+              <video ref={i === 0 ? previewVideoRef : null} src={previewUrl} autoPlay loop playsInline muted={i !== 0} className="w-full h-full" style={videoStyle} />
             )}
           </div>
         ))}
@@ -308,9 +320,18 @@ export default function CreatePage() {
               <input type="file" hidden accept="video/*" onChange={async (e) => {
                 const f = e.target.files?.[0];
                 if(f) {
-                    setSelectedFile(f); 
-                    setPreviewUrl(URL.createObjectURL(f));
-                    stopCamera();
+                  const tempVid = document.createElement('video');
+                  tempVid.preload = 'metadata';
+                  tempVid.onloadedmetadata = () => {
+                    window.URL.revokeObjectURL(tempVid.src);
+                    if (tempVid.duration > 31) {
+                        toast.error("Video limit is 30 seconds only!");
+                    } else {
+                        setSelectedFile(f); 
+                        setPreviewUrl(URL.createObjectURL(f));
+                    }
+                  };
+                  tempVid.src = URL.createObjectURL(f);
                 }
               }}/>
             </label>
@@ -320,6 +341,7 @@ export default function CreatePage() {
               <div className="flex-1 w-full relative overflow-hidden">
                 {renderContent(!previewUrl)}
                 
+                {/* Visual Recording Indicator (Progress Bar) */}
                 {isRecording && (
                   <div className="absolute top-20 inset-x-6 h-1.5 bg-white/20 rounded-full overflow-hidden z-[220]">
                     <div 
@@ -413,8 +435,8 @@ export default function CreatePage() {
       {showMusic && (
         <div className="absolute inset-0 bg-[#000000] z-[400] p-6 pt-12 flex flex-col">
             <div className="flex justify-between items-center mb-6">
-                <h2 className="text-4xl font-black italic text-pink-500 uppercase tracking-tighter">Library</h2>
-                <button onClick={() => {setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
+               <h2 className="text-4xl font-black italic text-pink-500 uppercase tracking-tighter">Library</h2>
+               <button onClick={() => {setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
             </div>
             <div className="relative mb-6">
               <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-500" size={22}/>
@@ -446,4 +468,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-} 
+}
