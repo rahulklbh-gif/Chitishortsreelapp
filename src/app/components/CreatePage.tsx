@@ -2,7 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.5.2 (Fixed: Grid Aspect Ratio & Strict Audio Control)
+ * VERSION: 4.5.3 (Fixed: Exact Music Library UI from Screenshot)
  * VAADA: No functions removed, Code remains full length.
  */
 
@@ -229,8 +229,6 @@ export default function CreatePage() {
 
   /**
    * UNIVERSAL CONTENT RENDERER
-   * FIX 1: Grid items now use h-full to fill the container without gaps at bottom.
-   * FIX 2: Strict muted={true} on all grid clones to stop audio doubling.
    */
   const renderContent = (isLive: boolean) => {
     const filter = FILTERS_DATA[selectedFilter];
@@ -251,7 +249,7 @@ export default function CreatePage() {
               <video 
                 ref={i === 0 ? videoRef : null} 
                 autoPlay playsInline 
-                muted={true} // Camera feedback should always be muted to prevent loop
+                muted={true} 
                 className="w-full h-full" style={videoStyle} 
               />
             ) : (
@@ -259,7 +257,7 @@ export default function CreatePage() {
                 ref={i === 0 ? previewVideoRef : null} 
                 src={previewUrl} 
                 autoPlay loop playsInline 
-                muted={i !== 0} // Only first video plays audio
+                muted={i !== 0} 
                 className="w-full h-full" style={videoStyle} 
               />
             )}
@@ -316,11 +314,8 @@ export default function CreatePage() {
           </div>
         ) : !isFinalStep ? (
           <div className="flex-1 relative overflow-hidden flex flex-col">
-             {/* Content Area - Fixed height to avoid cutting bottom buttons */}
              <div className="flex-1 w-full relative overflow-hidden">
                 {renderContent(!previewUrl)}
-                
-                {/* Sidebar Tools */}
                 <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8 z-[210]">
                    {!previewUrl && (
                        <button onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-2">
@@ -335,7 +330,6 @@ export default function CreatePage() {
                 </div>
              </div>
 
-             {/* Bottom Controls - Stable positioning */}
              <div className="shrink-0 w-full p-6 pb-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black to-transparent z-[210]">
                 {!previewUrl ? (
                   <>
@@ -426,39 +420,64 @@ export default function CreatePage() {
         </div>
       )}
 
-      {/* MUSIC PICKER */}
+      {/* MUSIC PICKER - UPDATED TO MATCH SCREENSHOT */}
       {showMusic && (
-        <div className="absolute inset-0 bg-zinc-950 z-[400] p-8 pt-20 animate-in slide-in-from-right duration-300 flex flex-col">
-           <div className="flex justify-between items-center mb-10">
-              <h2 className="text-4xl font-black italic text-pink-500 uppercase">Library</h2>
-              <button onClick={() => {setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="p-3 bg-white/5 rounded-full"><X size={24}/></button>
+        <div className="absolute inset-0 bg-[#000000] z-[400] p-6 pt-12 animate-in slide-in-from-right duration-300 flex flex-col">
+           <div className="flex justify-between items-center mb-6">
+              <h2 className="text-4xl font-black italic text-pink-500 uppercase tracking-tighter">Library</h2>
+              <button onClick={() => {setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
            </div>
-           <div className="relative mb-8">
-             <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-600" size={20}/>
-             <input value={query} onChange={e => setQuery(e.target.value)} className="w-full bg-zinc-900 rounded-[25px] py-5 pl-14 pr-6 font-bold outline-none border border-white/5 focus:border-pink-500/30" placeholder="Search sounds..."/>
+           
+           <div className="relative mb-6">
+             <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-500" size={22}/>
+             <input 
+               value={query} 
+               onChange={e => setQuery(e.target.value)} 
+               className="w-full bg-[#1A1A1A] rounded-full py-5 pl-16 pr-6 font-bold text-lg outline-none border border-white/5" 
+               placeholder="Search sounds..."
+             />
            </div>
-           <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar pb-20">
+
+           <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-10">
              {filteredMusic.map(m => (
-               <div key={m.id} className={`p-5 rounded-[30px] flex items-center justify-between border transition-all ${activeMusic?.id === m.id ? 'bg-pink-600/10 border-pink-500/40' : 'bg-zinc-900/40 border-white/5'}`}>
-                 <div className="flex items-center gap-4 flex-1" onClick={() => {
-                   if(audioRef.current) {
-                     if(audioPlayId === m.id) { audioRef.current.pause(); setAudioPlayId(null); }
-                     else { 
-                        audioRef.current.src = m.audio_url; 
-                        audioRef.current.play(); 
-                        setAudioPlayId(m.id); 
+               <div key={m.id} className="flex items-center justify-between group">
+                 <div 
+                   className="flex items-center gap-5 flex-1 cursor-pointer" 
+                   onClick={() => {
+                     if(audioRef.current) {
+                       if(audioPlayId === m.id) { 
+                         audioRef.current.pause(); 
+                         setAudioPlayId(null); 
+                       } else { 
+                         audioRef.current.src = m.audio_url; 
+                         audioRef.current.play(); 
+                         setAudioPlayId(m.id); 
+                       }
                      }
-                   }
-                 }}>
-                   <div className="w-14 h-14 bg-black rounded-2xl flex items-center justify-center relative">
-                     {audioPlayId === m.id ? <Pause size={20}/> : <Play size={20}/>}
+                   }}
+                 >
+                   {/* Play/Pause Button Box */}
+                   <div className="w-16 h-16 bg-[#262626] rounded-2xl flex items-center justify-center">
+                     {audioPlayId === m.id ? (
+                        <Pause size={24} className="text-red-500 fill-red-500"/> 
+                     ) : (
+                        <Play size={24} className="text-white fill-white"/>
+                     )}
                    </div>
-                   <div className="flex flex-col">
-                     <span className="font-black text-sm uppercase tracking-tighter truncate max-w-[150px]">{m.title}</span>
-                     <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{m.artist}</span>
+                   
+                   <div className="flex flex-col gap-1">
+                     <span className="font-bold text-lg text-white leading-tight">{m.title}</span>
+                     {m.artist && <span className="text-sm text-zinc-500 font-medium">{m.artist}</span>}
                    </div>
                  </div>
-                 <button onClick={() => {setActiveMusic(m); setShowMusic(false);}} className={`p-4 rounded-2xl transition-all ${activeMusic?.id === m.id ? 'bg-pink-600 text-white shadow-lg shadow-pink-600/30' : 'bg-zinc-800 text-zinc-500'}`}><Check size={20}/></button>
+
+                 {/* "USE" Button exactly like screenshot */}
+                 <button 
+                   onClick={() => {setActiveMusic(m); setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} 
+                   className="bg-[#ED0101] text-white text-[11px] font-black uppercase px-6 py-2.5 rounded-full tracking-widest active:scale-90 transition-transform"
+                 >
+                   Use
+                 </button>
                </div>
              ))}
            </div>
