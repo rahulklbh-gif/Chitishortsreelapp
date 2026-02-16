@@ -9,8 +9,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { compressVideoTo480p, getVideoFileSizeInfo } from '@/lib/videoCompression'; 
+import { compressVideoTo480p } from '@/lib/videoCompression'; 
 
+// --- Configuration ---
 const R2_CONFIG = {
   endpoint: "https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com",
   accessKeyId: "bace896e3eba07cdbcb983394bd20da1", 
@@ -29,6 +30,7 @@ const s3Client = new S3Client({
   forcePathStyle: true,
 });
 
+// --- Saare 20 Filters Data (No Cutting) ---
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
   crystal: { name: "Crystal Glow", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
@@ -55,6 +57,7 @@ const FILTERS_DATA: any = {
 export default function CreatePage() {
   const { user } = useAuth();
   
+  // --- States ---
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [caption, setCaption] = useState('');
@@ -75,6 +78,7 @@ export default function CreatePage() {
   const [playingMusicId, setPlayingMusicId] = useState<string | null>(null);
   const [compressionStatus, setCompressionStatus] = useState(""); 
 
+  // --- Refs ---
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -83,9 +87,9 @@ export default function CreatePage() {
   const timerRef = useRef<any>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
+  // --- Music Library Fetch ---
   useEffect(() => {
     const fetchMusic = async () => {
-      // Logic: Limit initial fetch for performance
       const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false }).limit(100);
       if (data) setMusicList(data);
     };
@@ -96,6 +100,7 @@ export default function CreatePage() {
     return musicList.filter(m => m.title?.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [musicList, searchQuery]);
 
+  // --- Camera Logic ---
   const startCamera = useCallback(async () => {
     try {
       if (streamRef.current) {
@@ -110,7 +115,7 @@ export default function CreatePage() {
         videoRef.current.srcObject = stream;
       }
     } catch (e) {
-      toast.error("Camera access denied");
+      toast.error("Camera access denied. Please allow camera and mic.");
     }
   }, [facingMode]);
 
@@ -123,6 +128,7 @@ export default function CreatePage() {
     };
   }, [isCameraMode, startCamera, previewUrl]);
 
+  // --- Gallery Upload Handler ---
   const handleGallerySelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -130,7 +136,7 @@ export default function CreatePage() {
     video.src = URL.createObjectURL(f);
     video.onloadedmetadata = () => {
       if (video.duration > 31) {
-        toast.error("Max 30 seconds!");
+        toast.error("Max duration is 30 seconds!");
         return;
       }
       setSelectedFile(f);
@@ -139,13 +145,14 @@ export default function CreatePage() {
     };
   };
 
+  // --- Audio Mixing (Mic 20%) & Recording ---
   const startRecording = async () => {
     if (!streamRef.current) return;
     chunksRef.current = [];
     
-    let combinedStream = streamRef.current;
+    let finalRecordingStream = streamRef.current;
 
-    // AUDIO MIXING LOGIC: MIC 20%
+    // Mic at 20% + Music at 100%
     if (selectedMusic && audioRef.current) {
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
       audioCtxRef.current = new AudioContext();
@@ -153,7 +160,7 @@ export default function CreatePage() {
       
       const micSource = audioCtxRef.current.createMediaStreamSource(streamRef.current);
       const micGain = audioCtxRef.current.createGain();
-      micGain.gain.value = 0.2; // Mic volume at 20%
+      micGain.gain.value = 0.2; // 20% Volume for Mic
       
       const musicSource = audioCtxRef.current.createMediaElementSource(audioRef.current);
       
@@ -164,13 +171,13 @@ export default function CreatePage() {
 
       const videoTrack = streamRef.current.getVideoTracks()[0];
       const mixedAudioTrack = dest.stream.getAudioTracks()[0];
-      combinedStream = new MediaStream([videoTrack, mixedAudioTrack]);
+      finalRecordingStream = new MediaStream([videoTrack, mixedAudioTrack]);
       
       audioRef.current.currentTime = 0;
       audioRef.current.play();
     }
 
-    const recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp8,opus' });
+    const recorder = new MediaRecorder(finalRecordingStream, { mimeType: 'video/webm' });
     
     recorder.ondataavailable = (e) => {
       if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -180,11 +187,11 @@ export default function CreatePage() {
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
       const url = URL.createObjectURL(blob);
       
-      // FIX: Clear srcObject to allow previewUrl (src) to play the music/video
+      // Black preview fix: Clear live stream ref
       if (videoRef.current) videoRef.current.srcObject = null;
       
-      setSelectedFile(new File([blob], "recorded.webm", { type: 'video/webm' }));
       setPreviewUrl(url);
+      setSelectedFile(new File([blob], "recorded_short.webm", { type: 'video/webm' }));
       setIsCameraMode(false); 
       setIsRecording(false);
       if (audioRef.current) audioRef.current.pause();
@@ -214,6 +221,7 @@ export default function CreatePage() {
     setIsRecording(false);
   };
 
+  // --- Music Playback Logic ---
   const toggleMusic = (music: any) => {
     if (!audioRef.current) return;
     if (playingMusicId === music.id) {
@@ -222,24 +230,26 @@ export default function CreatePage() {
     } else {
       audioRef.current.src = music.audio_url;
       audioRef.current.crossOrigin = "anonymous"; 
+      audioRef.current.load();
       audioRef.current.play().then(() => setPlayingMusicId(music.id))
-      .catch(() => toast.error("Music error."));
+      .catch(() => toast.error("Error playing audio."));
     }
   };
 
+  // --- Final Publish Handler (R2 + Supabase) ---
   const handlePublish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
-    setUploadProgress(10);
-    setCompressionStatus("Optimizing...");
+    setUploadProgress(5);
+    setCompressionStatus("Optimizing Video...");
 
     try {
       const compressedBlob = await compressVideoTo480p(selectedFile, (p) => {
-        setUploadProgress(20 + Math.floor(p.progress * 50));
+        setUploadProgress(10 + Math.floor(p.progress * 70));
         setCompressionStatus(p.message);
       });
 
-      const fileName = `chiti_vids/${user.id}/${Date.now()}.mp4`;
+      const fileName = `shorts/${user.id}/${Date.now()}.mp4`;
       const body = new Uint8Array(await compressedBlob.arrayBuffer());
 
       await s3Client.send(new PutObjectCommand({
@@ -262,17 +272,16 @@ export default function CreatePage() {
       }]);
 
       if (dbError) throw dbError;
-
       setUploadProgress(100);
-      toast.success("Short Published!");
+      toast.success("Short Published Successfully!");
       setTimeout(() => window.location.href = '/', 1000);
-
     } catch (err: any) {
       toast.error(`Upload failed: ${err.message}`);
       setIsUploading(false);
     }
   };
 
+  // --- Grid & Filter Display Logic ---
   const renderDisplay = (url?: string) => {
     const f = FILTERS_DATA[selectedFilter];
     const grids = f.isGrid ? f.gridCount : 1;
@@ -300,28 +309,42 @@ export default function CreatePage() {
     );
   };
 
+  // --- UI Layout ---
   return (
     <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden font-sans">
-      <div className="p-4 flex justify-between items-center z-50">
-        <h1 className="text-xl font-black italic text-blue-600">CHITI <Zap size={18} className="inline" fill="currentColor"/></h1>
-        {(isCameraMode || previewUrl) && (
-          <button onClick={() => window.location.reload()} className="p-2 bg-white/10 rounded-full"><X size={20}/></button>
-        )}
-      </div>
+      
+      {/* Header */}
+      {!isFinalStep && (
+        <div className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-50 bg-gradient-to-b from-black/70 to-transparent">
+          <button onClick={() => window.location.href = '/'} className="p-2"><X size={28}/></button>
+          <button onClick={() => setShowMusic(true)} className="flex items-center gap-2 bg-black/40 px-5 py-2.5 rounded-full backdrop-blur-xl border border-white/10">
+            <Music size={16} className="text-pink-500"/>
+            <span className="text-xs font-black truncate max-w-[120px]">
+              {selectedMusic ? selectedMusic.title : "Add Sound"}
+            </span>
+          </button>
+          <div className="w-10"/>
+        </div>
+      )}
 
+      {/* Main Content Area */}
       {!user ? (
         <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
-          <ShieldCheck size={50} className="text-blue-500 mb-4"/>
-          <a href="/login" className="bg-blue-600 px-12 py-4 rounded-full font-black uppercase shadow-lg shadow-blue-600/30">Login</a>
+          <ShieldCheck size={60} className="text-blue-500 mb-6"/>
+          <h2 className="text-2xl font-black mb-6 uppercase italic">Join the community</h2>
+          <a href="/login" className="bg-blue-600 px-14 py-4 rounded-full font-black uppercase tracking-tighter shadow-xl shadow-blue-600/30">Login to Create</a>
         </div>
       ) : !isCameraMode && !previewUrl ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-14">
-          <button onClick={() => setIsCameraMode(true)} className="w-44 h-44 bg-blue-600 rounded-[50px] flex items-center justify-center shadow-2xl active:scale-90 transition-all">
-            <Camera size={60}/>
+        <div className="flex-1 flex flex-col items-center justify-center gap-16">
+          <button onClick={() => setIsCameraMode(true)} className="group relative">
+            <div className="absolute inset-0 bg-blue-600 blur-3xl opacity-30 group-hover:opacity-50 transition-all"/>
+            <div className="w-48 h-48 bg-blue-600 rounded-[60px] flex items-center justify-center relative shadow-2xl active:scale-90 transition-all">
+              <Camera size={64} strokeWidth={2.5}/>
+            </div>
           </button>
-          <label className="flex items-center gap-4 bg-zinc-900 px-12 py-5 rounded-full border border-white/10 cursor-pointer hover:bg-zinc-800 transition-all">
-            <Upload size={22} className="text-blue-500"/>
-            <span className="text-xs font-black uppercase italic tracking-widest">Upload Gallery</span>
+          <label className="flex items-center gap-4 bg-zinc-900 px-14 py-6 rounded-[30px] border border-white/5 cursor-pointer hover:bg-zinc-800 active:scale-95 transition-all">
+            <Upload size={24} className="text-blue-500"/>
+            <span className="text-sm font-black uppercase italic tracking-widest">Gallery Upload</span>
             <input type="file" hidden accept="video/*" onChange={handleGallerySelect}/>
           </label>
         </div>
@@ -330,106 +353,155 @@ export default function CreatePage() {
           {!isFinalStep ? (
             <>
               {renderDisplay(previewUrl)}
-              <div className="absolute right-4 top-24 flex flex-col gap-5">
-                <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="p-4 bg-black/40 rounded-2xl backdrop-blur-md"><RefreshCw/></button>
-                <button onClick={() => setShowFilters(true)} className="p-4 bg-black/40 rounded-2xl backdrop-blur-md text-blue-400"><Sparkles/></button>
-                <button onClick={() => setShowMusic(true)} className="p-4 bg-black/40 rounded-2xl backdrop-blur-md text-pink-500"><Music/></button>
+              
+              {/* Sidebar Tools */}
+              <div className="absolute right-4 top-24 flex flex-col gap-6">
+                <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-1.5">
+                  <div className="p-3.5 bg-black/40 rounded-2xl backdrop-blur-md border border-white/5"><RefreshCw size={24}/></div>
+                  <span className="text-[10px] font-bold uppercase tracking-tighter">Flip</span>
+                </button>
+                <button onClick={() => setShowFilters(true)} className="flex flex-col items-center gap-1.5">
+                  <div className="p-3.5 bg-black/40 rounded-2xl backdrop-blur-md border border-white/5 text-blue-400"><Sparkles size={24}/></div>
+                  <span className="text-[10px] font-bold uppercase tracking-tighter">Filters</span>
+                </button>
               </div>
 
-              <div className="absolute bottom-10 inset-x-0 flex flex-col items-center gap-6">
+              {/* Bottom Capture Area */}
+              <div className="absolute bottom-12 inset-x-0 flex flex-col items-center gap-8">
                 {!previewUrl ? (
                   <>
-                    <div className="flex bg-black/60 p-1.5 rounded-full border border-white/10">
+                    <div className="flex bg-black/40 p-1.5 rounded-full border border-white/10 backdrop-blur-md">
                         {[15, 30].map(s => (
-                          <button key={s} onClick={() => setRecordLimit(s)} className={`px-8 py-2 rounded-full text-[11px] font-black transition-all ${recordLimit === s ? 'bg-white text-black' : 'text-zinc-500'}`}>{s}S</button>
+                          <button key={s} onClick={() => setRecordLimit(s)} className={`px-8 py-2.5 rounded-full text-[11px] font-black transition-all ${recordLimit === s ? 'bg-white text-black' : 'text-zinc-400'}`}>{s}S</button>
                         ))}
                     </div>
-                    <button onClick={isRecording ? stopRecording : startRecording} className={`w-24 h-24 rounded-full border-[6px] ${isRecording ? 'border-red-600/30' : 'border-white/20'} flex items-center justify-center`}>
-                      <div className={`transition-all duration-300 ${isRecording ? 'w-10 h-10 bg-red-600 rounded-lg animate-pulse' : 'w-16 h-16 bg-white rounded-full'}`} />
-                    </button>
-                    {isRecording && <div className="bg-red-600 px-4 py-1 rounded-full text-[10px] font-black animate-pulse">RECORDING {timeLeft}s</div>}
+                    <div className="relative flex items-center justify-center">
+                       <button onClick={isRecording ? stopRecording : startRecording} className={`w-24 h-24 rounded-full border-[6px] transition-all duration-300 ${isRecording ? 'border-red-600/30' : 'border-white/30'} flex items-center justify-center`}>
+                        <div className={`transition-all duration-300 ${isRecording ? 'w-10 h-10 bg-red-600 rounded-lg animate-pulse' : 'w-16 h-16 bg-white rounded-full'}`} />
+                      </button>
+                      {isRecording && <div className="absolute -top-10 text-red-500 font-black text-sm tracking-widest uppercase">{timeLeft}s remaining</div>}
+                    </div>
                   </>
                 ) : (
-                  <button onClick={() => setIsFinalStep(true)} className="bg-blue-600 px-20 py-5 rounded-full font-black uppercase tracking-[0.2em] shadow-xl shadow-blue-600/40">Next Step</button>
+                  <div className="flex gap-4 w-full px-8 max-w-md">
+                    <button onClick={() => { setPreviewUrl(''); startCamera(); }} className="flex-1 py-5 bg-zinc-900 rounded-[25px] font-black uppercase tracking-widest text-sm border border-white/5">Discard</button>
+                    <button onClick={() => setIsFinalStep(true)} className="flex-1 py-5 bg-red-600 rounded-[25px] font-black uppercase tracking-widest text-sm shadow-xl shadow-red-600/30">Next</button>
+                  </div>
                 )}
               </div>
             </>
           ) : (
-            <div className="p-6 h-full bg-black flex flex-col">
-              <div className="flex gap-5 mb-10 pt-4 items-start">
-                <div className="w-28 h-44 bg-zinc-900 rounded-3xl overflow-hidden shadow-2xl">{renderDisplay(previewUrl)}</div>
+            /* Post Details Screen */
+            <div className="h-full bg-zinc-950 flex flex-col p-6 animate-in slide-in-from-right duration-300">
+              <div className="flex items-center gap-4 mb-10 pt-4">
+                <button onClick={() => setIsFinalStep(false)} className="p-2"><ArrowLeft size={28}/></button>
+                <h2 className="text-xl font-black uppercase italic">Create Post</h2>
+              </div>
+
+              <div className="flex gap-6 mb-12 items-start">
+                <div className="w-32 h-48 bg-zinc-900 rounded-[24px] overflow-hidden shadow-2xl border border-white/5 relative">
+                  {renderDisplay(previewUrl)}
+                  <div className="absolute inset-0 bg-black/30 pointer-events-none"/>
+                </div>
                 <div className="flex-1 pt-2">
-                   <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Enter video caption..." className="w-full bg-transparent p-2 outline-none font-bold italic text-lg border-b border-white/10 resize-none h-32" />
+                   <textarea 
+                    value={caption} 
+                    onChange={e => setCaption(e.target.value)} 
+                    placeholder="Describe your video..." 
+                    className="w-full bg-transparent p-0 outline-none font-bold text-lg border-none resize-none h-40 placeholder:text-zinc-600" 
+                   />
                 </div>
               </div>
 
+              {/* Upload Progress Bar */}
               {isUploading && (
-                <div className="mb-8 space-y-4 px-2">
-                  <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                <div className="mb-10 space-y-4 px-2">
+                  <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
                     <span className="text-blue-500 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> {compressionStatus}</span>
-                    <span className="text-zinc-500">{uploadProgress}%</span>
+                    <span className="text-zinc-400">{uploadProgress}%</span>
                   </div>
                   <div className="w-full h-1.5 bg-zinc-900 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 transition-all duration-500 shadow-[0_0_15px_rgba(37,99,235,0.6)]" style={{width: `${uploadProgress}%`}}/>
+                    <div className="h-full bg-blue-600 transition-all duration-500 shadow-[0_0_20px_rgba(37,99,235,0.4)]" style={{width: `${uploadProgress}%`}}/>
                   </div>
                 </div>
               )}
 
-              <button onClick={handlePublish} disabled={isUploading} className="mt-auto bg-blue-600 py-6 rounded-[35px] font-black text-xl flex items-center justify-center gap-4 active:scale-95 disabled:opacity-50">
+              <button 
+                onClick={handlePublish} 
+                disabled={isUploading} 
+                className="mt-auto bg-red-600 py-6 rounded-[30px] font-black text-xl flex items-center justify-center gap-4 active:scale-95 disabled:opacity-50 transition-all shadow-2xl shadow-red-600/20"
+              >
                 {isUploading ? <Loader2 className="animate-spin" /> : <Send size={24}/>} 
-                {isUploading ? "UPLOADING..." : "POST NOW"}
+                {isUploading ? "PUBLISHING..." : "POST NOW"}
               </button>
             </div>
           )}
         </div>
       )}
 
-      {/* FILTER DRAWER */}
+      {/* --- Filter Selector Drawer --- */}
       {showFilters && (
-        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[45px] z-[1000] border-t border-white/5">
+        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[1002] border-t border-white/10 shadow-[0_-20px_50px_rgba(0,0,0,0.8)] animate-in slide-in-from-bottom duration-300">
           <div className="flex justify-between items-center mb-8 px-2">
-            <span className="text-[11px] font-black text-zinc-500 uppercase tracking-widest">Filters</span>
-            <button onClick={() => setShowFilters(false)} className="p-2 bg-white/5 rounded-full"><X size={16}/></button>
+            <span className="text-xs font-black text-zinc-500 uppercase tracking-[0.2em]">Live Filters</span>
+            <button onClick={() => setShowFilters(false)} className="p-2 bg-white/5 rounded-full"><X size={18}/></button>
           </div>
           <div className="flex gap-5 overflow-x-auto no-scrollbar pb-6 px-2">
             {Object.keys(FILTERS_DATA).map(key => (
-              <button key={key} onClick={() => setSelectedFilter(key)} className="flex flex-col items-center gap-3 min-w-[70px]">
-                <div className={`w-16 h-20 rounded-2xl border-2 transition-all ${selectedFilter === key ? 'border-blue-500 scale-110' : 'border-transparent opacity-40'}`}>
+              <button key={key} onClick={() => setSelectedFilter(key)} className="flex flex-col items-center gap-3 min-w-[75px]">
+                <div className={`w-16 h-20 rounded-2xl border-2 transition-all duration-200 ${selectedFilter === key ? 'border-red-600 scale-110 shadow-lg shadow-red-600/20' : 'border-transparent opacity-40'}`}>
                   <img src={FILTERS_DATA[key].thumb} className="w-full h-full object-cover rounded-xl" style={{ filter: FILTERS_DATA[key].style }} />
                 </div>
-                <span className={`text-[9px] font-black uppercase ${selectedFilter === key ? 'text-blue-500' : 'text-zinc-600'}`}>{FILTERS_DATA[key].name}</span>
+                <span className={`text-[10px] font-black uppercase tracking-tighter ${selectedFilter === key ? 'text-red-500' : 'text-zinc-600'}`}>{FILTERS_DATA[key].name}</span>
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* MUSIC DRAWER */}
+      {/* --- Music Selector Screen --- */}
       {showMusic && (
-        <div className="absolute inset-0 bg-zinc-950 z-[1100] p-6 pt-16 flex flex-col">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-3xl font-black italic text-blue-600 uppercase">Music</h2>
-            <button onClick={() => { setShowMusic(false); audioRef.current?.pause(); setPlayingMusicId(null); }} className="p-2 bg-white/5 rounded-full"><X/></button>
+        <div className="absolute inset-0 bg-zinc-950 z-[1100] p-6 pt-16 flex flex-col animate-in fade-in duration-300">
+          <div className="flex justify-between items-center mb-8">
+            <h2 className="text-3xl font-black italic text-pink-600 uppercase tracking-tighter">Add Sound</h2>
+            <button onClick={() => { setShowMusic(false); audioRef.current?.pause(); setPlayingMusicId(null); }} className="p-3 bg-white/5 rounded-full border border-white/5"><X/></button>
           </div>
-          <div className="relative mb-8">
-            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500" size={18}/>
-            <input type="text" placeholder="Search sounds..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-3xl py-4 pl-14 pr-6 font-bold outline-none" />
+          <div className="relative mb-8 group">
+            <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-600 group-focus-within:text-pink-500 transition-colors" size={20}/>
+            <input 
+              type="text" 
+              placeholder="Search sounds or artists..." 
+              value={searchQuery} 
+              onChange={(e) => setSearchQuery(e.target.value)} 
+              className="w-full bg-zinc-900 border border-white/5 rounded-[25px] py-5 pl-16 pr-6 font-bold outline-none focus:border-pink-500/50 transition-all placeholder:text-zinc-600" 
+            />
           </div>
-          <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-20">
+          <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-24">
             {filteredMusic.map(m => (
-              <div key={m.id} className={`p-5 rounded-[35px] flex items-center justify-between border ${selectedMusic?.id === m.id ? 'bg-blue-600/10 border-blue-500' : 'bg-zinc-900 border-white/5'}`}>
+              <div key={m.id} className={`p-5 rounded-[30px] flex items-center justify-between border transition-all ${selectedMusic?.id === m.id ? 'bg-pink-600/10 border-pink-500' : 'bg-zinc-900/50 border-white/5'}`}>
                 <div className="flex items-center gap-5 flex-1 cursor-pointer" onClick={() => toggleMusic(m)}>
-                   <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center">
-                    {playingMusicId === m.id ? <Pause size={24}/> : <Play size={24} className="ml-1"/>}
+                   <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center relative overflow-hidden">
+                    {playingMusicId === m.id ? <Pause size={24} className="z-10"/> : <Play size={24} className="ml-1 z-10"/>}
+                    {playingMusicId === m.id && <div className="absolute inset-0 bg-pink-600/20 animate-pulse"/>}
                   </div>
-                  <span className="font-black text-sm uppercase truncate max-w-[150px]">{m.title}</span>
+                  <div className="flex flex-col">
+                    <span className="font-black text-sm uppercase tracking-tighter truncate max-w-[160px]">{m.title}</span>
+                    <span className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Trending Sound</span>
+                  </div>
                 </div>
-                <button onClick={() => { setSelectedMusic(m); setShowMusic(false); }} className={`p-4 rounded-2xl ${selectedMusic?.id === m.id ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}><Check size={20} strokeWidth={3}/></button>
+                <button 
+                  onClick={() => { setSelectedMusic(m); setShowMusic(false); }} 
+                  className={`p-4 rounded-2xl transition-all ${selectedMusic?.id === m.id ? 'bg-pink-600 text-white' : 'bg-zinc-800 text-zinc-400 active:scale-90 hover:bg-zinc-700'}`}
+                >
+                  <Check size={20} strokeWidth={4}/>
+                </button>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {/* Hidden Global Audio Engine */}
       <audio ref={audioRef} hidden crossOrigin="anonymous" preload="auto" />
     </div>
   );
