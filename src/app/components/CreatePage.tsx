@@ -2,9 +2,8 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.5.0 (Universal Filter Engine & Fast Music)
+ * VERSION: 4.5.1 (Fixed: Grid Audio & Button Overflow)
  * VAADA: No functions removed, Code remains full length.
- * FIXES: Mirroring, Fast Audio, Filter on Gallery & Camera Preview.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -29,7 +28,7 @@ const R2_CONFIG = {
   publicDomain: "https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev"
 };
 
-// --- Professional Filters Data (20 Filters) ---
+// --- Professional Filters Data ---
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "none", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
   crystal: { name: "Crystal", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
@@ -66,7 +65,6 @@ const s3Client = new S3Client({
 export default function CreatePage() {
   const { user } = useAuth();
   
-  // -- States --
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [caption, setCaption] = useState('');
@@ -89,7 +87,6 @@ export default function CreatePage() {
   const [isFinalStep, setIsFinalStep] = useState(false);
   const [audioPlayId, setAudioPlayId] = useState<string | null>(null);
 
-  // -- Refs --
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -99,7 +96,6 @@ export default function CreatePage() {
   const countdownRef = useRef<any>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // -- Pre-load & Initial Fetch --
   useEffect(() => {
     const loadMusic = async () => {
       const { data } = await supabase.from('music_library').select('*');
@@ -109,7 +105,7 @@ export default function CreatePage() {
     return () => {
       if (audioCtxRef.current) audioCtxRef.current.close();
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-      clearInterval(countdownRef.current);
+      if (countdownRef.current) clearInterval(countdownRef.current);
     };
   }, []);
 
@@ -117,7 +113,6 @@ export default function CreatePage() {
     return musicList.filter(m => m.title?.toLowerCase().includes(query.toLowerCase()));
   }, [musicList, query]);
 
-  // --- Camera Core ---
   const initCamera = useCallback(async () => {
     try {
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
@@ -137,7 +132,6 @@ export default function CreatePage() {
     if (isCameraMode && !previewUrl) initCamera();
   }, [isCameraMode, initCamera, previewUrl]);
 
-  // --- FAST MUSIC ENGINE ---
   useEffect(() => {
     if (activeMusic && audioRef.current) {
         audioRef.current.src = activeMusic.audio_url;
@@ -146,7 +140,6 @@ export default function CreatePage() {
     }
   }, [activeMusic]);
 
-  // --- Audio Mixing (20% Mic) ---
   const getMixedStream = () => {
     if (!streamRef.current || !audioRef.current) return streamRef.current;
     const AC = window.AudioContext || (window as any).webkitAudioContext;
@@ -170,7 +163,6 @@ export default function CreatePage() {
     return new MediaStream([streamRef.current.getVideoTracks()[0], dest.stream.getAudioTracks()[0]]);
   };
 
-  // --- Recording Actions ---
   const startRec = () => {
     if (!streamRef.current) return;
     chunksRef.current = [];
@@ -198,10 +190,9 @@ export default function CreatePage() {
 
   const stopRec = () => {
     if (recorderRef.current) recorderRef.current.stop();
-    clearInterval(countdownRef.current);
+    if (countdownRef.current) clearInterval(countdownRef.current);
   };
 
-  // --- Publish Logic ---
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
@@ -238,7 +229,7 @@ export default function CreatePage() {
 
   /**
    * UNIVERSAL CONTENT RENDERER
-   * Logic for Camera & Gallery Preview with 20 filters support.
+   * FIX: muted={i !== 0} added to prevent double audio in grid mode.
    */
   const renderContent = (isLive: boolean) => {
     const filter = FILTERS_DATA[selectedFilter];
@@ -265,7 +256,7 @@ export default function CreatePage() {
               <video 
                 ref={i === 0 ? previewVideoRef : null} 
                 src={previewUrl} 
-                autoPlay loop playsInline 
+                autoPlay loop playsInline muted={i !== 0} 
                 className="w-full h-full" style={videoStyle} 
               />
             )}
@@ -302,9 +293,9 @@ export default function CreatePage() {
       )}
 
       {/* VIEWPORT AREA */}
-      <main className="flex-1 relative bg-zinc-950 flex flex-col items-center justify-center">
+      <main className="flex-1 relative bg-zinc-950 flex flex-col overflow-hidden">
         {!isCameraMode && !previewUrl ? (
-          <div className="flex flex-col items-center gap-12">
+          <div className="flex-1 flex flex-col items-center justify-center gap-12">
             <div className="relative group">
                <div className="absolute -inset-10 bg-blue-600/20 blur-3xl rounded-full animate-pulse"/>
                <button onClick={() => setIsCameraMode(true)} className="w-40 h-40 bg-blue-600 rounded-[50px] flex items-center justify-center relative shadow-2xl active:scale-95 transition-all">
@@ -321,31 +312,28 @@ export default function CreatePage() {
             </label>
           </div>
         ) : !isFinalStep ? (
-          <div className="h-full w-full relative">
-             {renderContent(!previewUrl)}
-
-             {/* Sidebar Tools - Visible on both Live and Preview */}
-             <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8 z-[210]">
-                {!previewUrl && (
-                    <button onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-2">
-                        <div className="p-4 bg-black/40 rounded-2xl border border-white/10 backdrop-blur-md"><RefreshCw size={24}/></div>
-                        <span className="text-[9px] font-bold uppercase tracking-tighter">Flip</span>
-                    </button>
-                )}
-                <button onClick={() => setShowFilters(true)} className="flex flex-col items-center gap-2">
-                    <div className="p-4 bg-black/40 rounded-2xl border border-white/10 text-cyan-400 backdrop-blur-md"><Sparkles size={24}/></div>
-                    <span className="text-[9px] font-bold uppercase tracking-tighter">Filters</span>
-                </button>
-                {!previewUrl && (
-                    <button className="flex flex-col items-center gap-2">
-                        <div className="p-4 bg-black/40 rounded-2xl border border-white/10 text-yellow-400 backdrop-blur-md"><Zap size={24}/></div>
-                        <span className="text-[9px] font-bold uppercase tracking-tighter">Flash</span>
-                    </button>
-                )}
+          <div className="flex-1 relative overflow-hidden flex flex-col">
+             {/* Content Area - Fixed height to avoid cutting bottom buttons */}
+             <div className="flex-1 w-full relative overflow-hidden">
+                {renderContent(!previewUrl)}
+                
+                {/* Sidebar Tools */}
+                <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8 z-[210]">
+                   {!previewUrl && (
+                       <button onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-2">
+                           <div className="p-4 bg-black/40 rounded-2xl border border-white/10 backdrop-blur-md"><RefreshCw size={24}/></div>
+                           <span className="text-[9px] font-bold uppercase tracking-tighter">Flip</span>
+                       </button>
+                   )}
+                   <button onClick={() => setShowFilters(true)} className="flex flex-col items-center gap-2">
+                       <div className="p-4 bg-black/40 rounded-2xl border border-white/10 text-cyan-400 backdrop-blur-md"><Sparkles size={24}/></div>
+                       <span className="text-[9px] font-bold uppercase tracking-tighter">Filters</span>
+                   </button>
+                </div>
              </div>
 
-             {/* Bottom Controls */}
-             <div className="absolute bottom-0 inset-x-0 p-10 pb-16 flex flex-col items-center gap-8 bg-gradient-to-t from-black/80 to-transparent z-[210]">
+             {/* Bottom Controls - Stable positioning */}
+             <div className="shrink-0 w-full p-6 pb-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black to-transparent z-[210]">
                 {!previewUrl ? (
                   <>
                     <div className="flex bg-black/50 p-1.5 rounded-full border border-white/10 backdrop-blur-xl">
@@ -353,16 +341,16 @@ export default function CreatePage() {
                         <button key={d} onClick={() => setDurationLimit(d)} className={`px-7 py-2 rounded-full text-[10px] font-black transition-all ${durationLimit === d ? 'bg-white text-black' : 'text-zinc-500'}`}>{d}s</button>
                       ))}
                     </div>
-                    <button onClick={isRecording ? stopRec : startRec} className="w-24 h-24 rounded-full border-4 border-white/30 flex items-center justify-center">
-                        <div className={`transition-all ${isRecording ? 'w-10 h-10 bg-red-600 rounded-lg animate-pulse' : 'w-16 h-16 bg-red-600 rounded-full'}`}/>
+                    <button onClick={isRecording ? stopRec : startRec} className="w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center">
+                        <div className={`transition-all ${isRecording ? 'w-8 h-8 bg-red-600 rounded-lg animate-pulse' : 'w-14 h-14 bg-red-600 rounded-full'}`}/>
                     </button>
                   </>
                 ) : (
                   <div className="flex gap-4 w-full max-w-sm">
-                    <button onClick={() => {setPreviewUrl(''); initCamera(); setIsCameraMode(true);}} className="flex-1 py-5 bg-zinc-900 rounded-3xl font-black uppercase tracking-widest text-[11px] border border-white/10 flex items-center justify-center gap-2">
+                    <button onClick={() => {setPreviewUrl(''); initCamera(); setIsCameraMode(true);}} className="flex-1 py-4 bg-zinc-900 rounded-2xl font-black uppercase tracking-widest text-[10px] border border-white/10 flex items-center justify-center gap-2">
                         <Trash2 size={16}/> Discard
                     </button>
-                    <button onClick={() => setIsFinalStep(true)} className="flex-1 py-5 bg-red-600 rounded-3xl font-black uppercase tracking-widest text-[11px] shadow-xl shadow-red-600/30">Next</button>
+                    <button onClick={() => setIsFinalStep(true)} className="flex-1 py-4 bg-red-600 rounded-2xl font-black uppercase tracking-widest text-[10px] shadow-xl shadow-red-600/30">Next</button>
                   </div>
                 )}
              </div>
@@ -376,7 +364,7 @@ export default function CreatePage() {
              </div>
 
              <div className="flex gap-6 mb-10">
-                <div className="w-32 h-48 bg-zinc-900 rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative">
+                <div className="w-32 h-48 bg-zinc-900 rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative shrink-0">
                   {renderContent(false)}
                 </div>
                 <textarea 
@@ -412,7 +400,7 @@ export default function CreatePage() {
         )}
       </main>
 
-      {/* FILTERS DRAWER (Universal for Camera, Record Preview & Gallery) */}
+      {/* FILTERS DRAWER */}
       {showFilters && (
         <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[300] border-t border-white/10 shadow-[0_-20px_50px_rgba(0,0,0,0.8)] animate-in slide-in-from-bottom duration-300">
            <div className="flex justify-between items-center mb-8">
