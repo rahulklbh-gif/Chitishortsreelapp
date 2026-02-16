@@ -21,6 +21,17 @@ export default defineConfig(({ mode }) => {
         '@': path.resolve(__dirname, './src'),
       },
     },
+    // ✅ ADDED: FFmpeg ko browser permission dene ke liye headers
+    server: {
+      headers: {
+        "Cross-Origin-Opener-Policy": "same-origin",
+        "Cross-Origin-Embedder-Policy": "require-corp",
+      },
+    },
+    // ✅ ADDED: Build ke waqt FFmpeg ko properly handle karne ke liye
+    optimizeDeps: {
+      exclude: ['@ffmpeg/ffmpeg', '@ffmpeg/util'],
+    },
     define: {
       // Isse legacy compatibility bani rahegi
       'process.env': env
