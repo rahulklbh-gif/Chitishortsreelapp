@@ -9,8 +9,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-// FFmpeg utilities (Path strictly matched for Vercel)
-import { compressVideoTo480p, getVideoFileSizeInfo } from '@/lib/video-compression'; 
+// ✅ FIXED: Import path matches your screenshot (C capital, no dash)
+import { compressVideoTo480p, getVideoFileSizeInfo } from '@/lib/videoCompression'; 
 
 /**
  * 🛠️ STABLE CONFIGURATION
@@ -33,9 +33,6 @@ const s3Client = new S3Client({
   forcePathStyle: true,
 });
 
-/**
- * 🎨 ALL 20 FILTERS DATA
- */
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
   crystal: { name: "Crystal Glow", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
@@ -62,7 +59,6 @@ const FILTERS_DATA: any = {
 export default function CreatePage() {
   const { user } = useAuth();
   
-  // -- STATES --
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [caption, setCaption] = useState('');
@@ -83,7 +79,6 @@ export default function CreatePage() {
   const [playingMusicId, setPlayingMusicId] = useState<string | null>(null);
   const [compressionStatus, setCompressionStatus] = useState(""); // New: Status
 
-  // -- REFS --
   const videoRef = useRef<HTMLVideoElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -91,7 +86,7 @@ export default function CreatePage() {
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
 
-  // 1. Fetch Music Library
+  // 1. Fetch Music
   useEffect(() => {
     const fetchMusic = async () => {
       const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false });
@@ -105,7 +100,7 @@ export default function CreatePage() {
     m.title?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // 2. Camera Management (Optimized & Fixed Mirroring)
+  // 2. Camera Logic with Fixed Mirroring
   const startCamera = useCallback(async () => {
     try {
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
@@ -125,7 +120,7 @@ export default function CreatePage() {
 
   useEffect(() => { if (isCameraMode) startCamera(); }, [isCameraMode, startCamera]);
 
-  // 3. Gallery Upload with 30s Limit Logic
+  // 3. Gallery Upload with 30s Limit
   const handleGallerySelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     if (!f) return;
@@ -178,7 +173,6 @@ export default function CreatePage() {
     setIsRecording(false);
   };
 
-  // 5. Music Logic (Anti-Lag)
   const toggleMusic = (music: any) => {
     if (!audioRef.current) return;
     if (playingMusicId === music.id) {
@@ -186,7 +180,7 @@ export default function CreatePage() {
       setPlayingMusicId(null);
     } else {
       audioRef.current.src = music.audio_url;
-      audioRef.current.load(); // Forces buffering
+      audioRef.current.load();
       audioRef.current.play().catch(() => toast.error("Slow connection: Music loading..."));
       setPlayingMusicId(music.id);
     }
@@ -202,9 +196,8 @@ export default function CreatePage() {
     setCompressionStatus("Optimizing for high quality...");
 
     try {
-      // Step 1: 50-60% Compression (Using provided FFmpeg utility)
       const compressedBlob = await compressVideoTo480p(selectedFile, (p) => {
-        setUploadProgress(Math.floor(p.progress * 0.4)); // First 40% is compression
+        setUploadProgress(Math.floor(p.progress * 0.4)); 
         setCompressionStatus(p.message);
       });
 
@@ -215,7 +208,6 @@ export default function CreatePage() {
       setCompressionStatus("Uploading to cloud...");
       setUploadProgress(50);
 
-      // Step 2: Cloudflare R2 Upload
       await s3Client.send(new PutObjectCommand({
         Bucket: R2_CONFIG.bucketName,
         Key: fileName,
@@ -226,7 +218,6 @@ export default function CreatePage() {
       setUploadProgress(85);
       setCompressionStatus("Finalizing...");
 
-      // Step 3: Supabase Entry
       const { error: dbError } = await supabase.from('posts').insert([{
         video_url: `${R2_CONFIG.publicDomain}/${fileName}`,
         caption: caption || "",
@@ -239,12 +230,12 @@ export default function CreatePage() {
       if (dbError) throw dbError;
 
       setUploadProgress(100);
-      toast.success("Short Published Successfully!");
+      toast.success("Short Published!");
       setTimeout(() => window.location.href = '/', 1000);
 
     } catch (err: any) {
       console.error(err);
-      toast.error(`Error: ${err.message || "Something went wrong"}`);
+      toast.error(`Failed: ${err.message}`);
       setIsUploading(false);
     }
   };
@@ -258,10 +249,9 @@ export default function CreatePage() {
           <video 
             key={i} ref={i === 0 ? videoRef : null} src={url}
             autoPlay playsInline muted={i !== 0 || !url} loop
-            className="w-full h-full object-cover transition-all"
+            className={`w-full h-full object-cover transition-all`}
             style={{ 
               filter: f.style, 
-              // FIXED MIRRORING logic
               transform: facingMode === 'user' && !url ? 'scaleX(-1)' : 'scaleX(1)' 
             }}
           />
@@ -272,7 +262,6 @@ export default function CreatePage() {
 
   return (
     <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden font-sans">
-      {/* HEADER */}
       <div className="p-4 flex justify-between items-center z-50 bg-gradient-to-b from-black/80 to-transparent">
         <h1 className="text-xl font-black italic text-blue-600">CHITI <Zap size={18} className="inline" fill="currentColor"/></h1>
         {(isCameraMode || previewUrl) && <button onClick={() => window.location.reload()} className="p-2 bg-white/10 rounded-full"><X size={20}/></button>}
@@ -280,18 +269,18 @@ export default function CreatePage() {
 
       {!user ? (
         <div className="flex-1 flex flex-col items-center justify-center p-10 gap-4 text-center">
-          <ShieldCheck size={60} className="text-blue-500 mb-2"/>
+          <div className="w-24 h-24 bg-blue-600/20 rounded-full flex items-center justify-center mb-4"><ShieldCheck size={50} className="text-blue-500"/></div>
           <h2 className="text-2xl font-black">LOGIN REQUIRED</h2>
-          <p className="text-zinc-500 text-sm italic">Join our community to start sharing your world.</p>
-          <a href="/login" className="bg-blue-600 px-12 py-4 rounded-full font-black uppercase italic mt-4 shadow-xl">Login to Create</a>
+          <p className="text-zinc-500 text-sm italic">You need to be logged in to share your moments.</p>
+          <a href="/login" className="bg-blue-600 px-12 py-4 rounded-full font-black uppercase italic mt-4 shadow-xl shadow-blue-600/20">Login Now</a>
         </div>
       ) : !isCameraMode && !previewUrl ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-14">
           <div className="relative">
             <div className="absolute inset-0 bg-blue-600 blur-[80px] opacity-20"></div>
-            <button onClick={() => setIsCameraMode(true)} className="w-48 h-48 bg-blue-600 rounded-[60px] flex items-center justify-center shadow-2xl relative z-10 active:scale-95 transition-all"><Camera size={60}/></button>
+            <button onClick={() => setIsCameraMode(true)} className="w-44 h-44 bg-blue-600 rounded-[50px] flex items-center justify-center shadow-2xl relative z-10 active:scale-90 transition-transform"><Camera size={60}/></button>
           </div>
-          <label className="flex items-center gap-4 bg-zinc-900 px-10 py-5 rounded-full border border-white/10 cursor-pointer active:bg-zinc-800 transition-all">
+          <label className="flex items-center gap-4 bg-zinc-900 px-12 py-5 rounded-full border border-white/10 cursor-pointer active:bg-zinc-800 transition-colors">
             <Upload size={22} className="text-blue-500"/>
             <span className="text-xs font-black uppercase italic tracking-widest">Select from Gallery</span>
             <input type="file" hidden accept="video/*" onChange={handleGallerySelect}/>
@@ -302,50 +291,52 @@ export default function CreatePage() {
           {!isFinalStep ? (
             <>
               {renderDisplay(previewUrl)}
-              <div className="absolute right-4 top-24 flex flex-col gap-6">
-                <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="p-4 bg-black/40 rounded-2xl backdrop-blur-md border border-white/5"><RefreshCw size={24}/></button>
-                <button onClick={() => setShowFilters(true)} className="p-4 bg-black/40 rounded-2xl backdrop-blur-md border border-white/5 text-blue-400"><Sparkles size={24}/></button>
-                <button onClick={() => setShowMusic(true)} className="p-4 bg-black/40 rounded-2xl backdrop-blur-md border border-white/5 text-pink-500"><Music size={24}/></button>
+              <div className="absolute right-4 top-24 flex flex-col gap-5">
+                <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="p-4 bg-black/40 rounded-2xl backdrop-blur-xl border border-white/5"><RefreshCw size={24}/></button>
+                <button onClick={() => setShowFilters(true)} className="p-4 bg-black/40 rounded-2xl backdrop-blur-xl border border-white/5 text-blue-400"><Sparkles size={24}/></button>
+                <button onClick={() => setShowMusic(true)} className="p-4 bg-black/40 rounded-2xl backdrop-blur-xl border border-white/5 text-pink-500"><Music size={24}/></button>
               </div>
               <div className="absolute bottom-10 inset-x-0 flex flex-col items-center gap-6">
                 {isCameraMode ? (
                   <>
-                    <div className="flex bg-black/50 p-1 rounded-full border border-white/10 backdrop-blur-md">
-                        {[15, 30].map(s => <button key={s} onClick={() => setRecordLimit(s)} className={`px-8 py-2 rounded-full text-[10px] font-black transition-all ${recordLimit === s ? 'bg-white text-black' : 'text-zinc-500'}`}>{s}S</button>)}
+                    <div className="flex bg-black/60 p-1.5 rounded-full border border-white/10 backdrop-blur-md">
+                        {[15, 30].map(s => <button key={s} onClick={() => setRecordLimit(s)} className={`px-8 py-2 rounded-full text-[11px] font-black transition-all ${recordLimit === s ? 'bg-white text-black' : 'text-zinc-500 hover:text-white'}`}>{s}S</button>)}
                     </div>
-                    <button onClick={isRecording ? stopRecording : startRecording} className={`w-20 h-20 rounded-full border-4 ${isRecording ? 'border-red-600' : 'border-white'} flex items-center justify-center transition-all`}>
-                      <div className={`transition-all ${isRecording ? 'w-8 h-8 bg-red-600 rounded-sm animate-pulse' : 'w-14 h-14 bg-white rounded-full'}`} />
+                    <button onClick={isRecording ? stopRecording : startRecording} className={`w-24 h-24 rounded-full border-[6px] ${isRecording ? 'border-red-600/30' : 'border-white/20'} flex items-center justify-center transition-all`}>
+                      <div className={`transition-all duration-300 ${isRecording ? 'w-10 h-10 bg-red-600 rounded-lg animate-pulse' : 'w-16 h-16 bg-white rounded-full'}`} />
                     </button>
-                    {isRecording && <div className="bg-red-600 px-4 py-1 rounded-full text-[10px] font-black animate-pulse uppercase tracking-wider">Recording {timeLeft}S</div>}
+                    {isRecording && <div className="bg-red-600 px-4 py-1 rounded-full text-[10px] font-black animate-pulse uppercase">Recording {timeLeft}s</div>}
                   </>
                 ) : (
-                  <button onClick={() => setIsFinalStep(true)} className="bg-blue-600 px-16 py-4 rounded-full font-black uppercase italic tracking-widest shadow-2xl active:scale-95 transition-all">Next Step</button>
+                  <button onClick={() => setIsFinalStep(true)} className="bg-blue-600 px-20 py-5 rounded-full font-black uppercase italic tracking-[0.2em] shadow-2xl shadow-blue-600/40 active:scale-95 transition-all">Next Step</button>
                 )}
               </div>
             </>
           ) : (
             <div className="p-6 h-full bg-black flex flex-col">
-              <div className="flex gap-4 mb-10 pt-4 items-start">
-                <div className="w-24 h-40 bg-zinc-900 rounded-2xl overflow-hidden border border-white/10 shadow-2xl">
+              <div className="flex gap-5 mb-10 pt-4 items-start">
+                <div className="w-28 h-44 bg-zinc-900 rounded-3xl overflow-hidden border border-white/10 shadow-2xl shadow-blue-500/10">
                   {renderDisplay(previewUrl)}
                 </div>
-                <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Write caption..." className="flex-1 bg-transparent p-2 outline-none font-bold italic border-b border-white/10 resize-none h-32" />
+                <div className="flex-1 pt-2">
+                   <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Write something catchy..." className="w-full bg-transparent p-2 outline-none font-bold italic text-lg border-b border-white/10 resize-none h-32" />
+                </div>
               </div>
 
               {isUploading && (
-                <div className="mb-6 space-y-3">
-                  <div className="flex justify-between text-[10px] font-black text-blue-500 uppercase tracking-widest">
-                    <span className="flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> {compressionStatus}</span>
-                    <span>{uploadProgress}%</span>
+                <div className="mb-8 space-y-4 px-2">
+                  <div className="flex justify-between items-center text-[10px] font-black uppercase">
+                    <span className="text-blue-500 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> {compressionStatus}</span>
+                    <span className="text-zinc-500">{uploadProgress}%</span>
                   </div>
-                  <div className="w-full h-1 bg-zinc-900 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 transition-all duration-300" style={{width: `${uploadProgress}%`}}/>
+                  <div className="w-full h-1.5 bg-zinc-900 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-600 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(37,99,235,0.5)]" style={{width: `${uploadProgress}%`}}/>
                   </div>
                 </div>
               )}
 
-              <button onClick={handlePublish} disabled={isUploading} className="mt-auto bg-blue-600 py-6 rounded-[30px] font-black text-xl flex items-center justify-center gap-4 active:scale-95 transition-all disabled:opacity-50 shadow-xl">
-                {isUploading ? <Loader2 className="animate-spin" /> : <Send />} PUBLISH NOW
+              <button onClick={handlePublish} disabled={isUploading} className="mt-auto bg-blue-600 py-6 rounded-[35px] font-black text-xl flex items-center justify-center gap-4 active:scale-95 transition-all disabled:opacity-50 disabled:active:scale-100 shadow-xl shadow-blue-600/20">
+                {isUploading ? <Loader2 className="animate-spin" /> : <Send size={24}/>} {isUploading ? "PUBLISHING..." : "POST NOW"}
               </button>
             </div>
           )}
@@ -354,15 +345,19 @@ export default function CreatePage() {
 
       {/* FILTER DRAWER */}
       {showFilters && (
-        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[1000] border-t border-white/5 shadow-2xl">
-          <div className="flex justify-between items-center mb-6"><span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Select Effect</span><button onClick={() => setShowFilters(false)}><X size={18}/></button></div>
-          <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
+        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[45px] z-[1000] border-t border-white/5 shadow-[0_-20px_50px_rgba(0,0,0,0.8)]">
+          <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6 opacity-50"></div>
+          <div className="flex justify-between items-center mb-8 px-2">
+            <span className="text-[11px] font-black text-zinc-500 uppercase tracking-widest flex items-center gap-2"><Sparkles size={14}/> Effects Library</span>
+            <button onClick={() => setShowFilters(false)} className="p-2 bg-white/5 rounded-full"><X size={16}/></button>
+          </div>
+          <div className="flex gap-5 overflow-x-auto no-scrollbar pb-6 px-2">
             {Object.keys(FILTERS_DATA).map(key => (
-              <button key={key} onClick={() => setSelectedFilter(key)} className="flex flex-col items-center gap-3">
-                <div className={`w-14 h-18 rounded-xl border-2 transition-all ${selectedFilter === key ? 'border-blue-500 scale-110 shadow-lg shadow-blue-500/20' : 'border-transparent opacity-40 grayscale-[0.5]'}`}>
-                  <img src={FILTERS_DATA[key].thumb} className="w-full h-full object-cover rounded-lg" style={{ filter: FILTERS_DATA[key].style }} />
+              <button key={key} onClick={() => setSelectedFilter(key)} className="flex flex-col items-center gap-3 min-w-[70px]">
+                <div className={`w-16 h-20 rounded-2xl border-2 transition-all duration-300 overflow-hidden ${selectedFilter === key ? 'border-blue-500 scale-110 shadow-lg shadow-blue-500/20' : 'border-transparent opacity-40 grayscale-[0.5]'}`}>
+                  <img src={FILTERS_DATA[key].thumb} className="w-full h-full object-cover" style={{ filter: FILTERS_DATA[key].style }} />
                 </div>
-                <span className={`text-[8px] font-black uppercase ${selectedFilter === key ? 'text-blue-500' : 'text-zinc-600'}`}>{FILTERS_DATA[key].name}</span>
+                <span className={`text-[9px] font-black uppercase ${selectedFilter === key ? 'text-blue-500' : 'text-zinc-600'}`}>{FILTERS_DATA[key].name}</span>
               </button>
             ))}
           </div>
@@ -373,39 +368,43 @@ export default function CreatePage() {
       {showMusic && (
         <div className="absolute inset-0 bg-zinc-950 z-[1100] p-6 pt-16 flex flex-col animate-in slide-in-from-bottom duration-300">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-3xl font-black italic text-blue-600 uppercase tracking-tighter">Sounds</h2>
+            <h2 className="text-3xl font-black italic text-blue-600 uppercase tracking-tighter">Music Library</h2>
             <button onClick={() => { setShowMusic(false); audioRef.current?.pause(); setPlayingMusicId(null); }} className="p-2 bg-white/5 rounded-full"><X/></button>
           </div>
 
-          {/* New Search Bar */}
           <div className="relative mb-8">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18}/>
+            <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500" size={18}/>
             <input 
               type="text" 
-              placeholder="Search music..." 
+              placeholder="Search sounds, artists..." 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-zinc-900 border border-white/5 rounded-2xl py-4 pl-12 pr-4 font-bold outline-none focus:border-blue-500/50 transition-all"
+              className="w-full bg-zinc-900 border border-white/5 rounded-3xl py-4 pl-14 pr-6 font-bold outline-none focus:border-blue-500/50 transition-all text-sm"
             />
           </div>
 
-          <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar pb-20">
+          <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-20">
             {filteredMusic.map(m => (
-              <div key={m.id} className={`p-5 rounded-[30px] flex items-center justify-between border transition-all ${selectedMusic?.id === m.id ? 'bg-blue-600/10 border-blue-500' : 'bg-zinc-900 border-white/5'}`}>
-                <div className="flex items-center gap-4 flex-1 cursor-pointer" onClick={() => toggleMusic(m)}>
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${playingMusicId === m.id ? 'bg-blue-600 shadow-lg' : 'bg-white/5'}`}>
-                    {playingMusicId === m.id ? <Pause size={20} fill="white"/> : <Play size={20} fill="white"/>}
+              <div key={m.id} className={`p-5 rounded-[35px] flex items-center justify-between border transition-all ${selectedMusic?.id === m.id ? 'bg-blue-600/10 border-blue-500' : 'bg-zinc-900 border-white/5'}`}>
+                <div className="flex items-center gap-5 flex-1 cursor-pointer" onClick={() => toggleMusic(m)}>
+                  <div className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all ${playingMusicId === m.id ? 'bg-blue-600 shadow-lg shadow-blue-600/40 scale-110' : 'bg-white/5'}`}>
+                    {playingMusicId === m.id ? <Pause size={24} fill="white"/> : <Play size={24} fill="white" className="ml-1"/>}
                   </div>
                   <div className="flex flex-col">
-                    <span className="font-black text-sm uppercase truncate max-w-[150px] leading-tight">{m.title}</span>
-                    <span className="text-[9px] text-zinc-500 font-black uppercase italic">Original Mix</span>
+                    <span className="font-black text-sm uppercase truncate max-w-[180px] leading-none mb-1">{m.title}</span>
+                    <span className="text-[10px] text-zinc-500 uppercase font-black italic">Original Sound</span>
                   </div>
                 </div>
-                <button onClick={() => { setSelectedMusic(m); setShowMusic(false); }} className={`p-4 rounded-2xl transition-all ${selectedMusic?.id === m.id ? 'bg-blue-600' : 'bg-zinc-800'}`}><Check size={20}/></button>
+                <button 
+                  onClick={() => { setSelectedMusic(m); setShowMusic(false); }} 
+                  className={`p-4 rounded-2xl transition-all active:scale-90 ${selectedMusic?.id === m.id ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}
+                >
+                  <Check size={20} strokeWidth={3}/>
+                </button>
               </div>
             ))}
             {filteredMusic.length === 0 && (
-              <div className="text-center py-10 text-zinc-600 font-black italic uppercase">No music found</div>
+              <div className="text-center py-20 text-zinc-600 font-black italic uppercase">No sounds found</div>
             )}
           </div>
         </div>
@@ -413,4 +412,4 @@ export default function CreatePage() {
       <audio ref={audioRef} hidden />
     </div>
   );
-}
+} 
