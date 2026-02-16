@@ -82,18 +82,16 @@ export default function CreatePage() {
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
-  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
 
   useEffect(() => {
     const fetchMusic = async () => {
-      // FIX: Added limit(50) to prevent UI Lag if db has 1 lakh songs
-      const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false }).limit(50);
+      // Logic: Limit initial fetch for performance
+      const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false }).limit(100);
       if (data) setMusicList(data);
     };
     fetchMusic();
   }, []);
 
-  // FIX: useMemo to prevent re-filtering 1 lakh items on every render
   const filteredMusic = useMemo(() => {
     return musicList.filter(m => m.title?.toLowerCase().includes(searchQuery.toLowerCase()));
   }, [musicList, searchQuery]);
@@ -108,13 +106,13 @@ export default function CreatePage() {
         audio: true
       });
       streamRef.current = stream;
-      if (videoRef.current && !previewUrl) {
+      if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
     } catch (e) {
       toast.error("Camera access denied");
     }
-  }, [facingMode, previewUrl]);
+  }, [facingMode]);
 
   useEffect(() => {
     if (isCameraMode && !previewUrl) {
@@ -147,45 +145,29 @@ export default function CreatePage() {
     
     let combinedStream = streamRef.current;
 
-    // AUDIO MIXING & DUCKING LOGIC
+    // AUDIO MIXING LOGIC: MIC 20%
     if (selectedMusic && audioRef.current) {
-      // 1. Initialize AudioContext
       const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
       audioCtxRef.current = new AudioContext();
-      const ctx = audioCtxRef.current;
-      await ctx.resume();
-
-      const dest = ctx.createMediaStreamDestination();
+      const dest = audioCtxRef.current.createMediaStreamDestination();
       
-      // 2. Setup Microphone Path with Gain (Volume Control)
-      const micSource = ctx.createMediaStreamSource(streamRef.current);
-      const micGain = ctx.createGain();
-      micGain.gain.value = 0.2; // FIX: Set Mic volume to 20%
+      const micSource = audioCtxRef.current.createMediaStreamSource(streamRef.current);
+      const micGain = audioCtxRef.current.createGain();
+      micGain.gain.value = 0.2; // Mic volume at 20%
+      
+      const musicSource = audioCtxRef.current.createMediaElementSource(audioRef.current);
+      
       micSource.connect(micGain);
-      micGain.connect(dest); // Connect reduced mic to destination
+      micGain.connect(dest);
+      musicSource.connect(dest);
+      musicSource.connect(audioCtxRef.current.destination);
 
-      // 3. Setup Music Path (100% Volume)
-      // Prevent double creation error
-      if (!sourceNodeRef.current) {
-         try {
-           sourceNodeRef.current = ctx.createMediaElementSource(audioRef.current);
-         } catch(e) { /* Ignore if already connected */ }
-      }
-      
-      if(sourceNodeRef.current) {
-        sourceNodeRef.current.connect(dest); // To Recorder
-        sourceNodeRef.current.connect(ctx.destination); // To Speakers (so user hears it)
-      }
-
-      // 4. Combine Video Track + Mixed Audio Track
       const videoTrack = streamRef.current.getVideoTracks()[0];
       const mixedAudioTrack = dest.stream.getAudioTracks()[0];
-      
       combinedStream = new MediaStream([videoTrack, mixedAudioTrack]);
       
-      // 5. Play Audio from start
       audioRef.current.currentTime = 0;
-      audioRef.current.play().catch(e => console.error("Play error", e));
+      audioRef.current.play();
     }
 
     const recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp8,opus' });
@@ -197,20 +179,15 @@ export default function CreatePage() {
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
       const url = URL.createObjectURL(blob);
-      setPreviewUrl(url); // Sets the preview URL
+      
+      // FIX: Clear srcObject to allow previewUrl (src) to play the music/video
+      if (videoRef.current) videoRef.current.srcObject = null;
+      
       setSelectedFile(new File([blob], "recorded.webm", { type: 'video/webm' }));
+      setPreviewUrl(url);
       setIsCameraMode(false); 
       setIsRecording(false);
-      
-      if (audioRef.current) {
-         audioRef.current.pause();
-         audioRef.current.currentTime = 0;
-      }
-      // Close context to free memory
-      if(audioCtxRef.current) {
-         audioCtxRef.current.close();
-         sourceNodeRef.current = null;
-      }
+      if (audioRef.current) audioRef.current.pause();
     };
 
     recorder.start();
@@ -239,16 +216,14 @@ export default function CreatePage() {
 
   const toggleMusic = (music: any) => {
     if (!audioRef.current) return;
-    
     if (playingMusicId === music.id) {
       audioRef.current.pause();
       setPlayingMusicId(null);
     } else {
       audioRef.current.src = music.audio_url;
       audioRef.current.crossOrigin = "anonymous"; 
-      audioRef.current.load(); // FIX: Force load for faster buffering
       audioRef.current.play().then(() => setPlayingMusicId(music.id))
-      .catch(() => toast.error("Music buffer error. Try again."));
+      .catch(() => toast.error("Music error."));
     }
   };
 
@@ -256,7 +231,7 @@ export default function CreatePage() {
     if (!selectedFile || !user) return;
     setIsUploading(true);
     setUploadProgress(10);
-    setCompressionStatus("Mixing & Optimizing...");
+    setCompressionStatus("Optimizing...");
 
     try {
       const compressedBlob = await compressVideoTo480p(selectedFile, (p) => {
@@ -288,12 +263,6 @@ export default function CreatePage() {
 
       if (dbError) throw dbError;
 
-      await supabase.from('music_library').insert([{
-        title: caption.substring(0, 25) || "Original Sound",
-        audio_url: finalUrl,
-        user_id: user.id
-      }]);
-
       setUploadProgress(100);
       toast.success("Short Published!");
       setTimeout(() => window.location.href = '/', 1000);
@@ -310,18 +279,15 @@ export default function CreatePage() {
     const isLive = !url; 
 
     return (
-      // FIX: Changed h-full to h-[100dvh] for perfect mobile fit
-      <div className={`absolute inset-0 w-full h-[100dvh] ${f.isGrid ? `grid ${f.cols} ${f.rows} gap-0.5 bg-black` : ''}`}>
+      <div className={`h-full w-full ${f.isGrid ? `grid ${f.cols} ${f.rows} gap-0.5 bg-black` : ''}`}>
         {[...Array(grids)].map((_, i) => (
           <video 
             key={i} 
-            // FIX: Ref logic ensures preview loads correctly
             ref={i === 0 ? videoRef : null} 
-            src={url || undefined}
+            src={url}
             autoPlay 
             playsInline 
-            // FIX: Only first video plays audio to prevent echo
-            muted={isLive ? (i !== 0) : (i !== 0)} 
+            muted={isLive ? (i !== 0) : false} 
             loop
             className="w-full h-full object-cover"
             style={{ 
@@ -336,19 +302,16 @@ export default function CreatePage() {
 
   return (
     <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden font-sans">
-      <div className="p-4 flex justify-between items-center z-50 bg-gradient-to-b from-black/80 to-transparent">
+      <div className="p-4 flex justify-between items-center z-50">
         <h1 className="text-xl font-black italic text-blue-600">CHITI <Zap size={18} className="inline" fill="currentColor"/></h1>
         {(isCameraMode || previewUrl) && (
-          <button onClick={() => window.location.reload()} className="p-2 bg-white/10 rounded-full">
-            <X size={20}/>
-          </button>
+          <button onClick={() => window.location.reload()} className="p-2 bg-white/10 rounded-full"><X size={20}/></button>
         )}
       </div>
 
       {!user ? (
         <div className="flex-1 flex flex-col items-center justify-center p-10 text-center">
           <ShieldCheck size={50} className="text-blue-500 mb-4"/>
-          <h2 className="text-2xl font-black mb-6 uppercase tracking-tighter">Please Login</h2>
           <a href="/login" className="bg-blue-600 px-12 py-4 rounded-full font-black uppercase shadow-lg shadow-blue-600/30">Login</a>
         </div>
       ) : !isCameraMode && !previewUrl ? (
@@ -367,33 +330,24 @@ export default function CreatePage() {
           {!isFinalStep ? (
             <>
               {renderDisplay(previewUrl)}
-              
-              <div className="absolute right-4 top-24 flex flex-col gap-5 z-50">
-                <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="p-4 bg-black/40 rounded-2xl backdrop-blur-md">
-                  <RefreshCw size={24}/>
-                </button>
-                <button onClick={() => setShowFilters(true)} className="p-4 bg-black/40 rounded-2xl backdrop-blur-md text-blue-400">
-                  <Sparkles size={24}/>
-                </button>
-                <button onClick={() => setShowMusic(true)} className="p-4 bg-black/40 rounded-2xl backdrop-blur-md text-pink-500">
-                  <Music size={24}/>
-                </button>
+              <div className="absolute right-4 top-24 flex flex-col gap-5">
+                <button onClick={() => setFacingMode(f => f === 'user' ? 'environment' : 'user')} className="p-4 bg-black/40 rounded-2xl backdrop-blur-md"><RefreshCw/></button>
+                <button onClick={() => setShowFilters(true)} className="p-4 bg-black/40 rounded-2xl backdrop-blur-md text-blue-400"><Sparkles/></button>
+                <button onClick={() => setShowMusic(true)} className="p-4 bg-black/40 rounded-2xl backdrop-blur-md text-pink-500"><Music/></button>
               </div>
 
-              <div className="absolute bottom-10 inset-x-0 flex flex-col items-center gap-6 z-50">
+              <div className="absolute bottom-10 inset-x-0 flex flex-col items-center gap-6">
                 {!previewUrl ? (
                   <>
                     <div className="flex bg-black/60 p-1.5 rounded-full border border-white/10">
                         {[15, 30].map(s => (
-                          <button key={s} onClick={() => setRecordLimit(s)} className={`px-8 py-2 rounded-full text-[11px] font-black transition-all ${recordLimit === s ? 'bg-white text-black' : 'text-zinc-500'}`}>
-                            {s}S
-                          </button>
+                          <button key={s} onClick={() => setRecordLimit(s)} className={`px-8 py-2 rounded-full text-[11px] font-black transition-all ${recordLimit === s ? 'bg-white text-black' : 'text-zinc-500'}`}>{s}S</button>
                         ))}
                     </div>
                     <button onClick={isRecording ? stopRecording : startRecording} className={`w-24 h-24 rounded-full border-[6px] ${isRecording ? 'border-red-600/30' : 'border-white/20'} flex items-center justify-center`}>
                       <div className={`transition-all duration-300 ${isRecording ? 'w-10 h-10 bg-red-600 rounded-lg animate-pulse' : 'w-16 h-16 bg-white rounded-full'}`} />
                     </button>
-                    {isRecording && <div className="bg-red-600 px-4 py-1 rounded-full text-[10px] font-black animate-pulse uppercase tracking-widest">RECORDING {timeLeft}s</div>}
+                    {isRecording && <div className="bg-red-600 px-4 py-1 rounded-full text-[10px] font-black animate-pulse">RECORDING {timeLeft}s</div>}
                   </>
                 ) : (
                   <button onClick={() => setIsFinalStep(true)} className="bg-blue-600 px-20 py-5 rounded-full font-black uppercase tracking-[0.2em] shadow-xl shadow-blue-600/40">Next Step</button>
@@ -401,24 +355,17 @@ export default function CreatePage() {
               </div>
             </>
           ) : (
-            <div className="p-6 h-full bg-black flex flex-col z-50">
+            <div className="p-6 h-full bg-black flex flex-col">
               <div className="flex gap-5 mb-10 pt-4 items-start">
-                <div className="relative w-28 h-44 bg-zinc-900 rounded-3xl overflow-hidden shadow-2xl">
-                  {renderDisplay(previewUrl)}
-                </div>
+                <div className="w-28 h-44 bg-zinc-900 rounded-3xl overflow-hidden shadow-2xl">{renderDisplay(previewUrl)}</div>
                 <div className="flex-1 pt-2">
-                   <textarea 
-                    value={caption} 
-                    onChange={e => setCaption(e.target.value)} 
-                    placeholder="Enter video caption..." 
-                    className="w-full bg-transparent p-2 outline-none font-bold italic text-lg border-b border-white/10 resize-none h-32" 
-                   />
+                   <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Enter video caption..." className="w-full bg-transparent p-2 outline-none font-bold italic text-lg border-b border-white/10 resize-none h-32" />
                 </div>
               </div>
 
               {isUploading && (
                 <div className="mb-8 space-y-4 px-2">
-                  <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-tighter">
+                  <div className="flex justify-between items-center text-[10px] font-black uppercase">
                     <span className="text-blue-500 flex items-center gap-2"><Loader2 size={12} className="animate-spin"/> {compressionStatus}</span>
                     <span className="text-zinc-500">{uploadProgress}%</span>
                   </div>
@@ -428,11 +375,7 @@ export default function CreatePage() {
                 </div>
               )}
 
-              <button 
-                onClick={handlePublish} 
-                disabled={isUploading} 
-                className="mt-auto bg-blue-600 py-6 rounded-[35px] font-black text-xl flex items-center justify-center gap-4 active:scale-95 disabled:opacity-50 shadow-2xl shadow-blue-600/20"
-              >
+              <button onClick={handlePublish} disabled={isUploading} className="mt-auto bg-blue-600 py-6 rounded-[35px] font-black text-xl flex items-center justify-center gap-4 active:scale-95 disabled:opacity-50">
                 {isUploading ? <Loader2 className="animate-spin" /> : <Send size={24}/>} 
                 {isUploading ? "UPLOADING..." : "POST NOW"}
               </button>
@@ -443,10 +386,9 @@ export default function CreatePage() {
 
       {/* FILTER DRAWER */}
       {showFilters && (
-        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[45px] z-[1000] border-t border-white/5 shadow-[0_-20px_50px_rgba(0,0,0,0.9)] animate-in slide-in-from-bottom duration-300">
-          <div className="w-12 h-1.5 bg-zinc-800 rounded-full mx-auto mb-6 opacity-50"></div>
+        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[45px] z-[1000] border-t border-white/5">
           <div className="flex justify-between items-center mb-8 px-2">
-            <span className="text-[11px] font-black text-zinc-500 uppercase tracking-widest">Select Filter</span>
+            <span className="text-[11px] font-black text-zinc-500 uppercase tracking-widest">Filters</span>
             <button onClick={() => setShowFilters(false)} className="p-2 bg-white/5 rounded-full"><X size={16}/></button>
           </div>
           <div className="flex gap-5 overflow-x-auto no-scrollbar pb-6 px-2">
@@ -464,20 +406,14 @@ export default function CreatePage() {
 
       {/* MUSIC DRAWER */}
       {showMusic && (
-        <div className="absolute inset-0 bg-zinc-950 z-[1100] p-6 pt-16 flex flex-col animate-in slide-in-from-bottom duration-500">
+        <div className="absolute inset-0 bg-zinc-950 z-[1100] p-6 pt-16 flex flex-col">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-3xl font-black italic text-blue-600 uppercase">Music Library</h2>
+            <h2 className="text-3xl font-black italic text-blue-600 uppercase">Music</h2>
             <button onClick={() => { setShowMusic(false); audioRef.current?.pause(); setPlayingMusicId(null); }} className="p-2 bg-white/5 rounded-full"><X/></button>
           </div>
           <div className="relative mb-8">
             <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-500" size={18}/>
-            <input 
-              type="text" 
-              placeholder="Search sounds..." 
-              value={searchQuery} 
-              onChange={(e) => setSearchQuery(e.target.value)} 
-              className="w-full bg-zinc-900 border border-white/5 rounded-3xl py-4 pl-14 pr-6 font-bold outline-none focus:border-blue-500/50 transition-all" 
-            />
+            <input type="text" placeholder="Search sounds..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="w-full bg-zinc-900 border border-white/5 rounded-3xl py-4 pl-14 pr-6 font-bold outline-none" />
           </div>
           <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-20">
             {filteredMusic.map(m => (
@@ -486,24 +422,15 @@ export default function CreatePage() {
                    <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center">
                     {playingMusicId === m.id ? <Pause size={24}/> : <Play size={24} className="ml-1"/>}
                   </div>
-                  <div className="flex flex-col overflow-hidden">
-                    <span className="font-black text-sm uppercase truncate max-w-[150px]">{m.title}</span>
-                    <span className="text-[10px] text-zinc-500 font-black italic">Original Audio</span>
-                  </div>
+                  <span className="font-black text-sm uppercase truncate max-w-[150px]">{m.title}</span>
                 </div>
-                <button 
-                  onClick={() => { setSelectedMusic(m); setShowMusic(false); }} 
-                  className={`p-4 rounded-2xl ${selectedMusic?.id === m.id ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}
-                >
-                  <Check size={20} strokeWidth={3}/>
-                </button>
+                <button onClick={() => { setSelectedMusic(m); setShowMusic(false); }} className={`p-4 rounded-2xl ${selectedMusic?.id === m.id ? 'bg-blue-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}><Check size={20} strokeWidth={3}/></button>
               </div>
             ))}
           </div>
         </div>
       )}
-      {/* FIX: preload="auto" for faster playback */}
-      <audio ref={audioRef} hidden preload="auto" crossOrigin="anonymous" />
+      <audio ref={audioRef} hidden crossOrigin="anonymous" preload="auto" />
     </div>
   );
-}
+} 
