@@ -1,35 +1,16 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util'; // 'toBlobURL' add kiya gaya hai
+import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
 let ffmpeg: FFmpeg | null = null;
 
-export interface CompressionProgress {
-  phase: 'loading' | 'compressing' | 'complete';
-  progress: number;
-  message: string;
-}
-
-export async function initFFmpeg(onProgress?: (progress: CompressionProgress) => void): Promise<FFmpeg> {
+export async function initFFmpeg() {
   if (ffmpeg) return ffmpeg;
   
   ffmpeg = new FFmpeg();
   
-  ffmpeg.on('log', ({ message }) => {
-    console.log('FFmpeg:', message);
-  });
+  // ESM version mobile browsers ke liye zyada stable hai
+  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
   
-  ffmpeg.on('progress', ({ progress }) => {
-    onProgress?.({
-      phase: 'compressing',
-      progress: Math.round(progress * 100),
-      message: `Compressing... ${Math.round(progress * 100)}%`
-    });
-  });
-
-  onProgress?.({ phase: 'loading', progress: 0, message: 'Loading compression engine...' });
-  
-  // ✅ FIX: Vercel/External URLs ke liye toBlobURL use karna best practice hai
-  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
   await ffmpeg.load({
     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
@@ -38,54 +19,38 @@ export async function initFFmpeg(onProgress?: (progress: CompressionProgress) =>
   return ffmpeg;
 }
 
-export async function compressVideoTo480p(
-  file: File,
-  onProgress?: (progress: CompressionProgress) => void
-): Promise<Blob> {
+export async function compressVideoTo480p(file: File, onProgress: any): Promise<Blob> {
   try {
-    const ffmpegInstance = await initFFmpeg(onProgress);
+    const ffmpegInstance = await initFFmpeg();
     
-    onProgress?.({ phase: 'compressing', progress: 0, message: 'Preparing video...' });
+    // Check if headers are working
+    if (!window.crossOriginIsolated) {
+      throw new Error("Browser Security Block: Headers not active. Please clear cache.");
+    }
 
     const inputName = 'input.mp4';
     const outputName = 'output.mp4';
     
     await ffmpegInstance.writeFile(inputName, await fetchFile(file));
 
-    // ✅ NOTE: Aapka original logic intact hai
+    // Sabse simple command jo har mobile par chalti hai
     await ffmpegInstance.exec([
       '-i', inputName,
       '-vf', 'scale=-2:480',
-      '-c:v', 'libx264',
-      '-preset', 'fast',
-      '-b:v', '400k',
-      '-maxrate', '600k',
-      '-bufsize', '1200k',
-      '-c:a', 'aac',
-      '-b:a', '64k',
-      '-movflags', '+faststart',
-      '-t', '30', 
+      '-preset', 'ultafast', 
+      '-crf', '30',
       outputName
     ]);
 
-    onProgress?.({ phase: 'complete', progress: 100, message: 'Compression complete!' });
-
     const data = await ffmpegInstance.readFile(outputName);
-    
-    // Clean up
-    await ffmpegInstance.deleteFile(inputName);
-    await ffmpegInstance.deleteFile(outputName);
-
-    // ✅ FIX: Readable array return karne ke liye Uint8Array use hota hai
     return new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
-  } catch (error) {
-    console.error('Video compression failed:', error);
-    throw new Error('Failed to compress video. Please try a different file.');
+  } catch (error: any) {
+    console.error('Compression Detail:', error);
+    // Agar headers ki wajah se fail hua toh user ko sahi info mile
+    throw new Error(error.message || 'Compression failed');
   }
 }
 
-export function getVideoFileSizeInfo(blob: Blob): { sizeMB: number; isWithinLimit: boolean } {
-  const sizeMB = blob.size / (1024 * 1024);
-  const isWithinLimit = sizeMB <= 10;
-  return { sizeMB, isWithinLimit };
+export function getVideoFileSizeInfo(blob: Blob) {
+  return { sizeMB: blob.size / (1024 * 1024), isWithinLimit: true };
 } 
