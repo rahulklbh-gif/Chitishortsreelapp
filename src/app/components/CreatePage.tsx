@@ -2,7 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.5.1 (Fixed: Grid Audio & Button Overflow)
+ * VERSION: 4.5.2 (Fixed: Grid Aspect Ratio & Strict Audio Control)
  * VAADA: No functions removed, Code remains full length.
  */
 
@@ -229,7 +229,8 @@ export default function CreatePage() {
 
   /**
    * UNIVERSAL CONTENT RENDERER
-   * FIX: muted={i !== 0} added to prevent double audio in grid mode.
+   * FIX 1: Grid items now use h-full to fill the container without gaps at bottom.
+   * FIX 2: Strict muted={true} on all grid clones to stop audio doubling.
    */
   const renderContent = (isLive: boolean) => {
     const filter = FILTERS_DATA[selectedFilter];
@@ -243,20 +244,22 @@ export default function CreatePage() {
     };
 
     return (
-      <div className={`h-full w-full bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows} gap-0.5` : 'flex'}`}>
+      <div className={`h-full w-full bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : 'flex'}`}>
         {[...Array(gridCount)].map((_, i) => (
-          <div key={i} className="relative w-full h-full bg-zinc-900 overflow-hidden">
+          <div key={i} className="relative w-full h-full bg-zinc-900 overflow-hidden border-[0.5px] border-white/5">
             {isLive ? (
               <video 
                 ref={i === 0 ? videoRef : null} 
-                autoPlay playsInline muted={i !== 0} 
+                autoPlay playsInline 
+                muted={true} // Camera feedback should always be muted to prevent loop
                 className="w-full h-full" style={videoStyle} 
               />
             ) : (
               <video 
                 ref={i === 0 ? previewVideoRef : null} 
                 src={previewUrl} 
-                autoPlay loop playsInline muted={i !== 0} 
+                autoPlay loop playsInline 
+                muted={i !== 0} // Only first video plays audio
                 className="w-full h-full" style={videoStyle} 
               />
             )}
@@ -472,4 +475,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-} 
+}
