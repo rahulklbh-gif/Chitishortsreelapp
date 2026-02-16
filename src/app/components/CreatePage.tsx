@@ -2,7 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.5.4 (Fixed: Audio Playback Issue & Screenshot UI)
+ * VERSION: 4.5.5 (Fixed: 30s Hard Limit & Audio Playback)
  * VAADA: No functions removed, Code remains full length.
  */
 
@@ -112,21 +112,16 @@ export default function CreatePage() {
     return musicList.filter(m => m.title?.toLowerCase().includes(query.toLowerCase()));
   }, [musicList, query]);
 
-  // Audio Playback Fix Function
   const playAudio = async (url: string, id: string) => {
     if (!audioRef.current) return;
-
     try {
         if (audioPlayId === id) {
             audioRef.current.pause();
             setAudioPlayId(null);
         } else {
-            // Important: Reset and Load
             audioRef.current.pause();
             audioRef.current.src = url;
             audioRef.current.load();
-            
-            // Promise handling for browser autoplay policies
             const playPromise = audioRef.current.play();
             if (playPromise !== undefined) {
                 playPromise.then(() => {
@@ -166,21 +161,17 @@ export default function CreatePage() {
     const AC = window.AudioContext || (window as any).webkitAudioContext;
     audioCtxRef.current = new AC();
     const dest = audioCtxRef.current.createMediaStreamDestination();
-
     const micSource = audioCtxRef.current.createMediaStreamSource(streamRef.current);
     const micGain = audioCtxRef.current.createGain();
     micGain.gain.value = 0.2; 
-
     const musicSource = audioCtxRef.current.createMediaElementSource(audioRef.current);
     const musicGain = audioCtxRef.current.createGain();
     musicGain.gain.value = 1.0; 
-
     micSource.connect(micGain);
     micGain.connect(dest);
     musicSource.connect(musicGain);
     musicGain.connect(dest);
     musicGain.connect(audioCtxRef.current.destination);
-
     return new MediaStream([streamRef.current.getVideoTracks()[0], dest.stream.getAudioTracks()[0]]);
   };
 
@@ -205,7 +196,10 @@ export default function CreatePage() {
     setIsRecording(true);
     setTimer(durationLimit);
     countdownRef.current = setInterval(() => {
-      setTimer(t => { if (t <= 1) stopRec(); return t - 1; });
+      setTimer(t => { 
+        if (t <= 1) stopRec(); 
+        return t - 1; 
+      });
     }, 1000);
   };
 
@@ -251,14 +245,12 @@ export default function CreatePage() {
   const renderContent = (isLive: boolean) => {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
-    
     const videoStyle = {
       filter: filter.style,
       transform: (isLive && facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
       objectFit: 'cover' as const,
       transition: 'filter 0.4s ease'
     };
-
     return (
       <div className={`h-full w-full bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : 'flex'}`}>
         {[...Array(gridCount)].map((_, i) => (
@@ -276,8 +268,6 @@ export default function CreatePage() {
 
   return (
     <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden font-sans">
-      
-      {/* HEADER */}
       {!isFinalStep && (
         <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[200] bg-gradient-to-b from-black/60 to-transparent">
           <button onClick={() => {
@@ -286,21 +276,16 @@ export default function CreatePage() {
           }} className="p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10">
             <X size={24}/>
           </button>
-          
           <button onClick={() => setShowMusic(true)} className="flex items-center gap-3 bg-white/10 backdrop-blur-3xl px-6 py-2.5 rounded-full border border-white/20">
             <Music size={16} className="text-pink-500"/>
             <span className="text-[11px] font-black uppercase tracking-tighter truncate max-w-[120px]">
               {activeMusic ? activeMusic.title : "Add Sound"}
             </span>
           </button>
-
-          <button className="p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10">
-            <Settings size={22}/>
-          </button>
+          <button className="p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10"><Settings size={22}/></button>
         </header>
       )}
 
-      {/* MAIN VIEWPORT */}
       <main className="flex-1 relative bg-zinc-950 flex flex-col overflow-hidden">
         {!isCameraMode && !previewUrl ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-12">
@@ -310,9 +295,23 @@ export default function CreatePage() {
             <label className="flex items-center gap-4 bg-zinc-900 px-10 py-5 rounded-[25px] border border-white/5 cursor-pointer">
               <Upload size={20} className="text-blue-500"/>
               <span className="text-xs font-black uppercase tracking-widest">Gallery Upload</span>
-              <input type="file" hidden accept="video/*" onChange={(e) => {
+              <input type="file" hidden accept="video/*" onChange={async (e) => {
                 const f = e.target.files?.[0];
-                if(f) { setSelectedFile(f); setPreviewUrl(URL.createObjectURL(f)); }
+                if(f) {
+                  // Hard Limit Check for Gallery Uploads
+                  const tempVid = document.createElement('video');
+                  tempVid.preload = 'metadata';
+                  tempVid.onloadedmetadata = () => {
+                    window.URL.revokeObjectURL(tempVid.src);
+                    if (tempVid.duration > 31) {
+                        toast.error("Video limit is 30 seconds only!");
+                    } else {
+                        setSelectedFile(f); 
+                        setPreviewUrl(URL.createObjectURL(f));
+                    }
+                  };
+                  tempVid.src = URL.createObjectURL(f);
+                }
               }}/>
             </label>
           </div>
@@ -333,12 +332,11 @@ export default function CreatePage() {
                    </button>
                 </div>
              </div>
-
              <div className="shrink-0 w-full p-6 pb-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black to-transparent z-[210]">
                 {!previewUrl ? (
                   <>
                     <div className="flex bg-black/50 p-1.5 rounded-full border border-white/10 backdrop-blur-xl">
-                      {[15, 30, 60].map(d => (
+                      {[15, 30].map(d => (
                         <button key={d} onClick={() => setDurationLimit(d)} className={`px-7 py-2 rounded-full text-[10px] font-black transition-all ${durationLimit === d ? 'bg-white text-black' : 'text-zinc-500'}`}>{d}s</button>
                       ))}
                     </div>
@@ -355,7 +353,6 @@ export default function CreatePage() {
              </div>
           </div>
         ) : (
-          /* PUBLISH */
           <div className="h-full w-full bg-zinc-950 p-8 flex flex-col pt-16">
              <div className="flex items-center gap-6 mb-10">
                <button onClick={() => setIsFinalStep(false)} className="p-2"><ArrowLeft size={30}/></button>
@@ -374,7 +371,6 @@ export default function CreatePage() {
         )}
       </main>
 
-      {/* FILTERS */}
       {showFilters && (
         <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[300] border-t border-white/10">
            <div className="flex justify-between items-center mb-8">
@@ -394,19 +390,16 @@ export default function CreatePage() {
         </div>
       )}
 
-      {/* MUSIC PICKER - EXACT UI & AUDIO FIX */}
       {showMusic && (
         <div className="absolute inset-0 bg-[#000000] z-[400] p-6 pt-12 flex flex-col">
            <div className="flex justify-between items-center mb-6">
               <h2 className="text-4xl font-black italic text-pink-500 uppercase tracking-tighter">Library</h2>
               <button onClick={() => {setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
            </div>
-           
            <div className="relative mb-6">
              <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-500" size={22}/>
              <input value={query} onChange={e => setQuery(e.target.value)} className="w-full bg-[#1A1A1A] rounded-full py-5 pl-16 pr-6 font-bold text-lg outline-none border border-white/5" placeholder="Search sounds..." />
            </div>
-
            <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-10">
              {filteredMusic.map(m => (
                <div key={m.id} className="flex items-center justify-between">
@@ -419,7 +412,6 @@ export default function CreatePage() {
                      <span className="text-sm text-zinc-500">{m.artist || "Original Sound"}</span>
                    </div>
                  </div>
-
                  <button onClick={() => {setActiveMusic(m); setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="bg-[#ED0101] text-white text-[11px] font-black uppercase px-6 py-2.5 rounded-full tracking-widest active:scale-90">Use</button>
                </div>
              ))}
