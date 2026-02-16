@@ -2,9 +2,9 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.0.0 (Enhanced Preview & Filter Engine)
- * TOTAL LINES: 600+
- * FIXES: Mirroring on Preview, Filter application on Preview, Grid Layout Overflow.
+ * VERSION: 4.5.0 (Universal Filter Engine & Fast Music)
+ * VAADA: No functions removed, Code remains full length.
+ * FIXES: Mirroring, Fast Audio, Filter on Gallery & Camera Preview.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -12,7 +12,7 @@ import {
   Upload, Video, Sparkles, Loader2, Send, X, Camera, 
   RefreshCw, Music, Check, Play, Pause, Zap, ArrowLeft, 
   ShieldCheck, Search, Info, Settings, Scissors, HardDrive,
-  MonitorPlay, Mic, Volume2, Clapperboard, Layers
+  MonitorPlay, Mic, Volume2, Clapperboard, Layers, Trash2
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -29,7 +29,7 @@ const R2_CONFIG = {
   publicDomain: "https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev"
 };
 
-// --- Professional Filters Data ---
+// --- Professional Filters Data (20 Filters) ---
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "none", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
   crystal: { name: "Crystal", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
@@ -44,12 +44,15 @@ const FILTERS_DATA: any = {
   gold: { name: "Golden", style: "sepia(0.5) brightness(1.1) saturate(2)", thumb: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100" },
   cyber: { name: "Cyber", style: "hue-rotate(280deg) saturate(2) contrast(1.2)", thumb: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100" },
   vivid: { name: "Vivid", style: "saturate(3) contrast(1.2)", thumb: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=100" },
+  mono: { name: "Mono", style: "grayscale(1) brightness(1.2)", thumb: "https://images.unsplash.com/photo-1502823403499-6ccfcf4fb453?w=100" },
+  faded: { name: "Faded", style: "opacity(0.8) contrast(0.9)", thumb: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" },
+  sunset: { name: "Sunset", style: "hue-rotate(-20deg) saturate(1.4)", thumb: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100" },
+  ocean: { name: "Ocean", style: "hue-rotate(160deg) saturate(1.3)", thumb: "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=100" },
   quad: { name: "4-Grid", style: "none", isGrid: true, gridCount: 4, cols: "grid-cols-2", rows: "grid-rows-2", thumb: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=100" },
   sixer: { name: "6-Grid", style: "none", isGrid: true, gridCount: 6, cols: "grid-cols-2", rows: "grid-rows-3", thumb: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100" },
   triple: { name: "Stacked", style: "none", isGrid: true, gridCount: 3, cols: "grid-cols-1", rows: "grid-rows-3", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" }
 };
 
-// --- S3 Initialization ---
 const s3Client = new S3Client({
   region: "auto",
   endpoint: R2_CONFIG.endpoint,
@@ -63,7 +66,7 @@ const s3Client = new S3Client({
 export default function CreatePage() {
   const { user } = useAuth();
   
-  // -- State Logic --
+  // -- States --
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [caption, setCaption] = useState('');
@@ -96,7 +99,7 @@ export default function CreatePage() {
   const countdownRef = useRef<any>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
 
-  // -- Initial Fetch --
+  // -- Pre-load & Initial Fetch --
   useEffect(() => {
     const loadMusic = async () => {
       const { data } = await supabase.from('music_library').select('*');
@@ -106,6 +109,7 @@ export default function CreatePage() {
     return () => {
       if (audioCtxRef.current) audioCtxRef.current.close();
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      clearInterval(countdownRef.current);
     };
   }, []);
 
@@ -133,21 +137,29 @@ export default function CreatePage() {
     if (isCameraMode && !previewUrl) initCamera();
   }, [isCameraMode, initCamera, previewUrl]);
 
-  // --- Advanced Audio Mixing (20% Mic + 100% Music) ---
+  // --- FAST MUSIC ENGINE ---
+  useEffect(() => {
+    if (activeMusic && audioRef.current) {
+        audioRef.current.src = activeMusic.audio_url;
+        audioRef.current.preload = "auto";
+        audioRef.current.load();
+    }
+  }, [activeMusic]);
+
+  // --- Audio Mixing (20% Mic) ---
   const getMixedStream = () => {
     if (!streamRef.current || !audioRef.current) return streamRef.current;
-    
     const AC = window.AudioContext || (window as any).webkitAudioContext;
     audioCtxRef.current = new AC();
     const dest = audioCtxRef.current.createMediaStreamDestination();
 
     const micSource = audioCtxRef.current.createMediaStreamSource(streamRef.current);
     const micGain = audioCtxRef.current.createGain();
-    micGain.gain.value = 0.2; // 20% mic
+    micGain.gain.value = 0.2; 
 
     const musicSource = audioCtxRef.current.createMediaElementSource(audioRef.current);
     const musicGain = audioCtxRef.current.createGain();
-    musicGain.gain.value = 1.0; // 100% music
+    musicGain.gain.value = 1.0; 
 
     micSource.connect(micGain);
     micGain.connect(dest);
@@ -189,11 +201,11 @@ export default function CreatePage() {
     clearInterval(countdownRef.current);
   };
 
-  // --- Publish ---
+  // --- Publish Logic ---
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
-    setStatusText("Optimizing for Chiti...");
+    setStatusText("Chiti is processing...");
     try {
       const optimized = await compressVideoTo480p(selectedFile, (p) => {
         setUploadProgress(10 + Math.floor(p.progress * 60));
@@ -208,9 +220,9 @@ export default function CreatePage() {
         ContentType: 'video/mp4'
       }));
 
-      const url = `${R2_CONFIG.publicDomain}/${path}`;
       await supabase.from('posts').insert([{
-        video_url: url, caption, user_id: user.id,
+        video_url: `${R2_CONFIG.publicDomain}/${path}`, 
+        caption, user_id: user.id,
         user_name: user.user_metadata?.full_name || 'Creator',
         filter_name: selectedFilter,
         music_id: activeMusic?.id || null
@@ -225,22 +237,18 @@ export default function CreatePage() {
   };
 
   /**
-   * REFINED VISUAL RENDERER
-   * - Fixes Mirroring: scaleX(-1) for live front cam only.
-   * - Fixes Preview Filter: Style applied to previewVideoRef.
+   * UNIVERSAL CONTENT RENDERER
+   * Logic for Camera & Gallery Preview with 20 filters support.
    */
   const renderContent = (isLive: boolean) => {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
-    // Preview logic: If not live, use the previewUrl
     const videoStyle = {
       filter: filter.style,
-      // MIRROR LOGIC:
-      // Case 1: Live Feed + Front Camera = Mirror it (scaleX-1)
-      // Case 2: Preview / Uploaded = Don't mirror (scaleX 1)
       transform: (isLive && facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
-      objectFit: 'cover' as const
+      objectFit: 'cover' as const,
+      transition: 'filter 0.4s ease'
     };
 
     return (
@@ -268,12 +276,15 @@ export default function CreatePage() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden">
+    <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden font-sans">
       
-      {/* --- HEADER --- */}
+      {/* HEADER */}
       {!isFinalStep && (
-        <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[200]">
-          <button onClick={() => window.history.back()} className="p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10">
+        <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[200] bg-gradient-to-b from-black/60 to-transparent">
+          <button onClick={() => {
+            if(previewUrl) { setPreviewUrl(''); initCamera(); } 
+            else window.history.back();
+          }} className="p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10">
             <X size={24}/>
           </button>
           
@@ -290,7 +301,7 @@ export default function CreatePage() {
         </header>
       )}
 
-      {/* --- MAIN CAMERA / PREVIEW AREA --- */}
+      {/* VIEWPORT AREA */}
       <main className="flex-1 relative bg-zinc-950 flex flex-col items-center justify-center">
         {!isCameraMode && !previewUrl ? (
           <div className="flex flex-col items-center gap-12">
@@ -300,12 +311,12 @@ export default function CreatePage() {
                  <Camera size={50} className="text-white"/>
                </button>
             </div>
-            <label className="flex items-center gap-4 bg-zinc-900 px-10 py-5 rounded-[25px] border border-white/5 cursor-pointer">
+            <label className="flex items-center gap-4 bg-zinc-900 px-10 py-5 rounded-[25px] border border-white/5 cursor-pointer hover:bg-zinc-800 transition-colors">
               <Upload size={20} className="text-blue-500"/>
               <span className="text-xs font-black uppercase tracking-widest">Gallery Upload</span>
               <input type="file" hidden accept="video/*" onChange={(e) => {
                 const f = e.target.files?.[0];
-                if(f) { setSelectedFile(f); setPreviewUrl(URL.createObjectURL(f)); }
+                if(f) { setSelectedFile(f); setPreviewUrl(URL.createObjectURL(f)); setIsCameraMode(false); }
               }}/>
             </label>
           </div>
@@ -313,23 +324,25 @@ export default function CreatePage() {
           <div className="h-full w-full relative">
              {renderContent(!previewUrl)}
 
-             {/* Sidebar Tools */}
-             {!previewUrl && (
-               <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8 z-[210]">
-                  <button onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-2">
-                    <div className="p-4 bg-black/40 rounded-2xl border border-white/10"><RefreshCw size={24}/></div>
-                    <span className="text-[9px] font-bold uppercase tracking-tighter">Flip</span>
-                  </button>
-                  <button onClick={() => setShowFilters(true)} className="flex flex-col items-center gap-2">
-                    <div className="p-4 bg-black/40 rounded-2xl border border-white/10 text-cyan-400"><Sparkles size={24}/></div>
+             {/* Sidebar Tools - Visible on both Live and Preview */}
+             <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8 z-[210]">
+                {!previewUrl && (
+                    <button onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-2">
+                        <div className="p-4 bg-black/40 rounded-2xl border border-white/10 backdrop-blur-md"><RefreshCw size={24}/></div>
+                        <span className="text-[9px] font-bold uppercase tracking-tighter">Flip</span>
+                    </button>
+                )}
+                <button onClick={() => setShowFilters(true)} className="flex flex-col items-center gap-2">
+                    <div className="p-4 bg-black/40 rounded-2xl border border-white/10 text-cyan-400 backdrop-blur-md"><Sparkles size={24}/></div>
                     <span className="text-[9px] font-bold uppercase tracking-tighter">Filters</span>
-                  </button>
-                  <button className="flex flex-col items-center gap-2">
-                    <div className="p-4 bg-black/40 rounded-2xl border border-white/10 text-yellow-400"><Zap size={24}/></div>
-                    <span className="text-[9px] font-bold uppercase tracking-tighter">Flash</span>
-                  </button>
-               </div>
-             )}
+                </button>
+                {!previewUrl && (
+                    <button className="flex flex-col items-center gap-2">
+                        <div className="p-4 bg-black/40 rounded-2xl border border-white/10 text-yellow-400 backdrop-blur-md"><Zap size={24}/></div>
+                        <span className="text-[9px] font-bold uppercase tracking-tighter">Flash</span>
+                    </button>
+                )}
+             </div>
 
              {/* Bottom Controls */}
              <div className="absolute bottom-0 inset-x-0 p-10 pb-16 flex flex-col items-center gap-8 bg-gradient-to-t from-black/80 to-transparent z-[210]">
@@ -341,22 +354,24 @@ export default function CreatePage() {
                       ))}
                     </div>
                     <button onClick={isRecording ? stopRec : startRec} className="w-24 h-24 rounded-full border-4 border-white/30 flex items-center justify-center">
-                       <div className={`transition-all ${isRecording ? 'w-10 h-10 bg-red-600 rounded-lg animate-pulse' : 'w-16 h-16 bg-red-600 rounded-full'}`}/>
+                        <div className={`transition-all ${isRecording ? 'w-10 h-10 bg-red-600 rounded-lg animate-pulse' : 'w-16 h-16 bg-red-600 rounded-full'}`}/>
                     </button>
                   </>
                 ) : (
                   <div className="flex gap-4 w-full max-w-sm">
-                    <button onClick={() => {setPreviewUrl(''); initCamera();}} className="flex-1 py-5 bg-zinc-900 rounded-3xl font-black uppercase tracking-widest text-[11px] border border-white/10">Discard</button>
+                    <button onClick={() => {setPreviewUrl(''); initCamera(); setIsCameraMode(true);}} className="flex-1 py-5 bg-zinc-900 rounded-3xl font-black uppercase tracking-widest text-[11px] border border-white/10 flex items-center justify-center gap-2">
+                        <Trash2 size={16}/> Discard
+                    </button>
                     <button onClick={() => setIsFinalStep(true)} className="flex-1 py-5 bg-red-600 rounded-3xl font-black uppercase tracking-widest text-[11px] shadow-xl shadow-red-600/30">Next</button>
                   </div>
                 )}
              </div>
           </div>
         ) : (
-          /* --- PUBLISH SCREEN --- */
+          /* PUBLISH SCREEN */
           <div className="h-full w-full bg-zinc-950 p-8 flex flex-col pt-16 animate-in slide-in-from-right duration-300">
              <div className="flex items-center gap-6 mb-10">
-               <button onClick={() => setIsFinalStep(false)} className="p-2"><ArrowLeft size={30}/></button>
+               <button onClick={() => setIsFinalStep(false)} className="p-2 hover:bg-zinc-900 rounded-full transition-colors"><ArrowLeft size={30}/></button>
                <h2 className="text-2xl font-black italic uppercase">Publishing</h2>
              </div>
 
@@ -368,7 +383,7 @@ export default function CreatePage() {
                   value={caption} 
                   onChange={e => setCaption(e.target.value)}
                   placeholder="Caption your short..."
-                  className="flex-1 bg-transparent border-none outline-none font-bold text-lg h-40 resize-none pt-4"
+                  className="flex-1 bg-transparent border-none outline-none font-bold text-lg h-40 resize-none pt-4 placeholder:text-zinc-700"
                 />
              </div>
 
@@ -387,7 +402,7 @@ export default function CreatePage() {
              <div className="mt-auto space-y-4">
                 <div className="p-4 bg-zinc-900/50 rounded-2xl border border-white/5 flex items-center gap-3">
                    <ShieldCheck size={18} className="text-green-500"/>
-                   <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-tighter">Creator safety enabled. All videos are scanned for quality.</span>
+                   <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-tighter">Creator safety enabled. Quality scan in progress.</span>
                 </div>
                 <button onClick={publish} disabled={isUploading} className="w-full bg-red-600 py-6 rounded-[30px] font-black text-xl flex items-center justify-center gap-3 active:scale-95 disabled:opacity-50 shadow-2xl shadow-red-600/20">
                   {isUploading ? <Loader2 className="animate-spin"/> : <><Send size={24}/> POST SHORT</>}
@@ -397,27 +412,30 @@ export default function CreatePage() {
         )}
       </main>
 
-      {/* --- FILTERS DRAWER --- */}
+      {/* FILTERS DRAWER (Universal for Camera, Record Preview & Gallery) */}
       {showFilters && (
         <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[300] border-t border-white/10 shadow-[0_-20px_50px_rgba(0,0,0,0.8)] animate-in slide-in-from-bottom duration-300">
            <div className="flex justify-between items-center mb-8">
-             <h3 className="font-black italic uppercase text-lg">Visual Studio</h3>
+             <div className="flex flex-col">
+                <h3 className="font-black italic uppercase text-lg">Visual Studio</h3>
+                <span className="text-[10px] text-zinc-500 font-bold">20 PREMIUM FILTERS ACTIVE</span>
+             </div>
              <button onClick={() => setShowFilters(false)} className="p-2 bg-white/5 rounded-full"><X size={20}/></button>
            </div>
            <div className="flex gap-5 overflow-x-auto no-scrollbar pb-6 px-2">
              {Object.keys(FILTERS_DATA).map(key => (
                <button key={key} onClick={() => setSelectedFilter(key)} className="flex flex-col items-center gap-3 min-w-[75px] group">
-                 <div className={`w-16 h-24 rounded-[20px] border-4 transition-all ${selectedFilter === key ? 'border-red-600 scale-110 shadow-lg' : 'border-white/5 opacity-50'}`}>
+                 <div className={`w-16 h-24 rounded-[20px] border-4 transition-all duration-300 ${selectedFilter === key ? 'border-red-600 scale-110 shadow-lg shadow-red-600/20' : 'border-white/5 opacity-50 group-hover:opacity-100'}`}>
                    <img src={FILTERS_DATA[key].thumb} className="w-full h-full object-cover rounded-[15px]" style={{filter: FILTERS_DATA[key].style}} alt=""/>
                  </div>
-                 <span className={`text-[9px] font-black uppercase ${selectedFilter === key ? 'text-red-500' : 'text-zinc-500'}`}>{FILTERS_DATA[key].name}</span>
+                 <span className={`text-[9px] font-black uppercase tracking-tight ${selectedFilter === key ? 'text-red-500' : 'text-zinc-500'}`}>{FILTERS_DATA[key].name}</span>
                </button>
              ))}
            </div>
         </div>
       )}
 
-      {/* --- MUSIC PICKER --- */}
+      {/* MUSIC PICKER */}
       {showMusic && (
         <div className="absolute inset-0 bg-zinc-950 z-[400] p-8 pt-20 animate-in slide-in-from-right duration-300 flex flex-col">
            <div className="flex justify-between items-center mb-10">
@@ -426,7 +444,7 @@ export default function CreatePage() {
            </div>
            <div className="relative mb-8">
              <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-600" size={20}/>
-             <input value={query} onChange={e => setQuery(e.target.value)} className="w-full bg-zinc-900 rounded-[25px] py-5 pl-14 pr-6 font-bold outline-none border border-white/5 focus:border-pink-500/30" placeholder="Search music..."/>
+             <input value={query} onChange={e => setQuery(e.target.value)} className="w-full bg-zinc-900 rounded-[25px] py-5 pl-14 pr-6 font-bold outline-none border border-white/5 focus:border-pink-500/30" placeholder="Search sounds..."/>
            </div>
            <div className="flex-1 overflow-y-auto space-y-3 no-scrollbar pb-20">
              {filteredMusic.map(m => (
@@ -434,7 +452,11 @@ export default function CreatePage() {
                  <div className="flex items-center gap-4 flex-1" onClick={() => {
                    if(audioRef.current) {
                      if(audioPlayId === m.id) { audioRef.current.pause(); setAudioPlayId(null); }
-                     else { audioRef.current.src = m.audio_url; audioRef.current.play(); setAudioPlayId(m.id); }
+                     else { 
+                        audioRef.current.src = m.audio_url; 
+                        audioRef.current.play(); 
+                        setAudioPlayId(m.id); 
+                     }
                    }
                  }}>
                    <div className="w-14 h-14 bg-black rounded-2xl flex items-center justify-center relative">
@@ -445,19 +467,20 @@ export default function CreatePage() {
                      <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{m.artist}</span>
                    </div>
                  </div>
-                 <button onClick={() => {setActiveMusic(m); setShowMusic(false);}} className={`p-4 rounded-2xl transition-all ${activeMusic?.id === m.id ? 'bg-pink-600 text-white' : 'bg-zinc-800 text-zinc-500'}`}><Check size={20}/></button>
+                 <button onClick={() => {setActiveMusic(m); setShowMusic(false);}} className={`p-4 rounded-2xl transition-all ${activeMusic?.id === m.id ? 'bg-pink-600 text-white shadow-lg shadow-pink-600/30' : 'bg-zinc-800 text-zinc-500'}`}><Check size={20}/></button>
                </div>
              ))}
            </div>
         </div>
       )}
 
-      {/* --- HIDDEN AUDIO --- */}
+      {/* HIDDEN AUDIO ELEMENTS */}
       <audio ref={audioRef} hidden onEnded={() => setAudioPlayId(null)}/>
 
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        video { pointer-events: none; }
       `}</style>
     </div>
   );
