@@ -2,7 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.5.6 (Fixed: Auto-Preview after Timer & Visual Timing)
+ * VERSION: 4.5.7 (Fixed: Preview Mirroring & Load Stability)
  * VAADA: No functions removed, Code remains full length.
  */
 
@@ -107,6 +107,14 @@ export default function CreatePage() {
       if (countdownRef.current) clearInterval(countdownRef.current);
     };
   }, []);
+
+  // Reliability Fix: Ensure preview video plays immediately
+  useEffect(() => {
+    if (previewUrl && previewVideoRef.current) {
+        previewVideoRef.current.load();
+        previewVideoRef.current.play().catch(e => console.log("Auto-preview play blocked", e));
+    }
+  }, [previewUrl]);
 
   const filteredMusic = useMemo(() => {
     return musicList.filter(m => m.title?.toLowerCase().includes(query.toLowerCase()));
@@ -255,12 +263,16 @@ export default function CreatePage() {
   const renderContent = (isLive: boolean) => {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
+    
+    // Mirroring Fix: Apply scaleX(-1) ONLY when live & using front camera. 
+    // PREVIEW (isLive = false) will always be scaleX(1) to show original recording.
     const videoStyle = {
       filter: filter.style,
       transform: (isLive && facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
       objectFit: 'cover' as const,
       transition: 'filter 0.4s ease'
     };
+
     return (
       <div className={`h-full w-full bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : 'flex'}`}>
         {[...Array(gridCount)].map((_, i) => (
@@ -382,19 +394,19 @@ export default function CreatePage() {
           </div>
         ) : (
           <div className="h-full w-full bg-zinc-950 p-8 flex flex-col pt-16">
-             <div className="flex items-center gap-6 mb-10">
-               <button onClick={() => setIsFinalStep(false)} className="p-2"><ArrowLeft size={30}/></button>
-               <h2 className="text-2xl font-black italic uppercase">Publishing</h2>
-             </div>
-             <div className="flex gap-6 mb-10">
-                <div className="w-32 h-48 bg-zinc-900 rounded-3xl overflow-hidden border border-white/10 relative shrink-0">
-                  {renderContent(false)}
-                </div>
-                <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Caption your short..." className="flex-1 bg-transparent border-none outline-none font-bold text-lg h-40 resize-none pt-4" />
-             </div>
-             <button onClick={publish} disabled={isUploading} className="w-full bg-red-600 py-6 rounded-[30px] font-black text-xl flex items-center justify-center gap-3">
-               {isUploading ? <Loader2 className="animate-spin"/> : <><Send size={24}/> POST SHORT</>}
-             </button>
+              <div className="flex items-center gap-6 mb-10">
+                <button onClick={() => setIsFinalStep(false)} className="p-2"><ArrowLeft size={30}/></button>
+                <h2 className="text-2xl font-black italic uppercase">Publishing</h2>
+              </div>
+              <div className="flex gap-6 mb-10">
+                 <div className="w-32 h-48 bg-zinc-900 rounded-3xl overflow-hidden border border-white/10 relative shrink-0">
+                   {renderContent(false)}
+                 </div>
+                 <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Caption your short..." className="flex-1 bg-transparent border-none outline-none font-bold text-lg h-40 resize-none pt-4" />
+              </div>
+              <button onClick={publish} disabled={isUploading} className="w-full bg-red-600 py-6 rounded-[30px] font-black text-xl flex items-center justify-center gap-3">
+                {isUploading ? <Loader2 className="animate-spin"/> : <><Send size={24}/> POST SHORT</>}
+              </button>
           </div>
         )}
       </main>
@@ -402,50 +414,50 @@ export default function CreatePage() {
       {/* Filters Modal */}
       {showFilters && (
         <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[300] border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
-           <div className="flex justify-between items-center mb-8">
-             <h3 className="font-black italic uppercase text-lg">Visual Studio</h3>
-             <button onClick={() => setShowFilters(false)} className="p-2 bg-white/5 rounded-full"><X size={20}/></button>
-           </div>
-           <div className="flex gap-5 overflow-x-auto no-scrollbar pb-6 px-2">
-             {Object.keys(FILTERS_DATA).map(key => (
-               <button key={key} onClick={() => setSelectedFilter(key)} className="flex flex-col items-center gap-3 min-w-[75px]">
-                 <div className={`w-16 h-24 rounded-[20px] border-4 transition-all ${selectedFilter === key ? 'border-red-600 scale-110' : 'border-white/5 opacity-50'}`}>
-                   <img src={FILTERS_DATA[key].thumb} className="w-full h-full object-cover rounded-[15px]" style={{filter: FILTERS_DATA[key].style}} alt=""/>
-                 </div>
-                 <span className={`text-[9px] font-black uppercase tracking-tight ${selectedFilter === key ? 'text-red-500' : 'text-zinc-500'}`}>{FILTERS_DATA[key].name}</span>
-               </button>
-             ))}
-           </div>
+            <div className="flex justify-between items-center mb-8">
+              <h3 className="font-black italic uppercase text-lg">Visual Studio</h3>
+              <button onClick={() => setShowFilters(false)} className="p-2 bg-white/5 rounded-full"><X size={20}/></button>
+            </div>
+            <div className="flex gap-5 overflow-x-auto no-scrollbar pb-6 px-2">
+              {Object.keys(FILTERS_DATA).map(key => (
+                <button key={key} onClick={() => setSelectedFilter(key)} className="flex flex-col items-center gap-3 min-w-[75px]">
+                  <div className={`w-16 h-24 rounded-[20px] border-4 transition-all ${selectedFilter === key ? 'border-red-600 scale-110' : 'border-white/5 opacity-50'}`}>
+                    <img src={FILTERS_DATA[key].thumb} className="w-full h-full object-cover rounded-[15px]" style={{filter: FILTERS_DATA[key].style}} alt=""/>
+                  </div>
+                  <span className={`text-[9px] font-black uppercase tracking-tight ${selectedFilter === key ? 'text-red-500' : 'text-zinc-500'}`}>{FILTERS_DATA[key].name}</span>
+                </button>
+              ))}
+            </div>
         </div>
       )}
 
       {/* Music Library Modal */}
       {showMusic && (
         <div className="absolute inset-0 bg-[#000000] z-[400] p-6 pt-12 flex flex-col">
-           <div className="flex justify-between items-center mb-6">
-              <h2 className="text-4xl font-black italic text-pink-500 uppercase tracking-tighter">Library</h2>
-              <button onClick={() => {setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
-           </div>
-           <div className="relative mb-6">
-             <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-500" size={22}/>
-             <input value={query} onChange={e => setQuery(e.target.value)} className="w-full bg-[#1A1A1A] rounded-full py-5 pl-16 pr-6 font-bold text-lg outline-none border border-white/5" placeholder="Search sounds..." />
-           </div>
-           <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-10">
-             {filteredMusic.map(m => (
-               <div key={m.id} className="flex items-center justify-between">
-                 <div className="flex items-center gap-5 flex-1 cursor-pointer" onClick={() => playAudio(m.audio_url, m.id)}>
-                   <div className="w-16 h-16 bg-[#262626] rounded-2xl flex items-center justify-center transition-colors hover:bg-zinc-800">
-                     {audioPlayId === m.id ? <Pause size={24} className="text-red-500 fill-red-500"/> : <Play size={24} className="text-white fill-white"/>}
-                   </div>
-                   <div className="flex flex-col">
-                     <span className="font-bold text-lg text-white">{m.title}</span>
-                     <span className="text-sm text-zinc-500">{m.artist || "Original Sound"}</span>
-                   </div>
-                 </div>
-                 <button onClick={() => {setActiveMusic(m); setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="bg-[#ED0101] text-white text-[11px] font-black uppercase px-6 py-2.5 rounded-full tracking-widest active:scale-90">Use</button>
-               </div>
-             ))}
-           </div>
+            <div className="flex justify-between items-center mb-6">
+               <h2 className="text-4xl font-black italic text-pink-500 uppercase tracking-tighter">Library</h2>
+               <button onClick={() => {setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
+            </div>
+            <div className="relative mb-6">
+              <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-500" size={22}/>
+              <input value={query} onChange={e => setQuery(e.target.value)} className="w-full bg-[#1A1A1A] rounded-full py-5 pl-16 pr-6 font-bold text-lg outline-none border border-white/5" placeholder="Search sounds..." />
+            </div>
+            <div className="flex-1 overflow-y-auto space-y-4 no-scrollbar pb-10">
+              {filteredMusic.map(m => (
+                <div key={m.id} className="flex items-center justify-between">
+                  <div className="flex items-center gap-5 flex-1 cursor-pointer" onClick={() => playAudio(m.audio_url, m.id)}>
+                    <div className="w-16 h-16 bg-[#262626] rounded-2xl flex items-center justify-center transition-colors hover:bg-zinc-800">
+                      {audioPlayId === m.id ? <Pause size={24} className="text-red-500 fill-red-500"/> : <Play size={24} className="text-white fill-white"/>}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-lg text-white">{m.title}</span>
+                      <span className="text-sm text-zinc-500">{m.artist || "Original Sound"}</span>
+                    </div>
+                  </div>
+                  <button onClick={() => {setActiveMusic(m); setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="bg-[#ED0101] text-white text-[11px] font-black uppercase px-6 py-2.5 rounded-full tracking-widest active:scale-90">Use</button>
+                </div>
+              ))}
+            </div>
         </div>
       )}
 
