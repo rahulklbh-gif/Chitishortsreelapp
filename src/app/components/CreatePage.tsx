@@ -2,7 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.5.5 (Fixed: 30s Hard Limit & Audio Playback)
+ * VERSION: 4.5.6 (Fixed: Auto-Preview after Timer & Visual Timing)
  * VAADA: No functions removed, Code remains full length.
  */
 
@@ -74,7 +74,7 @@ export default function CreatePage() {
   const [isCameraMode, setIsCameraMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [durationLimit, setDurationLimit] = useState(15);
-  const [timer, setTimer] = useState(15);
+  const [timer, setTimer] = useState(0);
   const [facing, setFacing] = useState<'user' | 'environment'>('user');
   
   const [selectedFilter, setSelectedFilter] = useState('none');
@@ -184,9 +184,11 @@ export default function CreatePage() {
     recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-      setPreviewUrl(URL.createObjectURL(blob));
+      const url = URL.createObjectURL(blob);
+      setPreviewUrl(url);
       setSelectedFile(new File([blob], 'chiti.webm'));
       setIsRecording(false);
+      setTimer(0);
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
     };
 
@@ -194,18 +196,26 @@ export default function CreatePage() {
     recorder.start();
     recorderRef.current = recorder;
     setIsRecording(true);
-    setTimer(durationLimit);
+    setTimer(0);
+
     countdownRef.current = setInterval(() => {
-      setTimer(t => { 
-        if (t <= 1) stopRec(); 
-        return t - 1; 
+      setTimer(prev => {
+        if (prev >= durationLimit - 1) {
+          stopRec();
+          return durationLimit;
+        }
+        return prev + 1;
       });
     }, 1000);
   };
 
   const stopRec = () => {
-    if (recorderRef.current) recorderRef.current.stop();
-    if (countdownRef.current) clearInterval(countdownRef.current);
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+    }
   };
 
   const publish = async () => {
@@ -298,7 +308,6 @@ export default function CreatePage() {
               <input type="file" hidden accept="video/*" onChange={async (e) => {
                 const f = e.target.files?.[0];
                 if(f) {
-                  // Hard Limit Check for Gallery Uploads
                   const tempVid = document.createElement('video');
                   tempVid.preload = 'metadata';
                   tempVid.onloadedmetadata = () => {
@@ -317,8 +326,19 @@ export default function CreatePage() {
           </div>
         ) : !isFinalStep ? (
           <div className="flex-1 relative overflow-hidden flex flex-col">
-             <div className="flex-1 w-full relative overflow-hidden">
+              <div className="flex-1 w-full relative overflow-hidden">
                 {renderContent(!previewUrl)}
+                
+                {/* Visual Recording Indicator (Progress Bar) */}
+                {isRecording && (
+                  <div className="absolute top-20 inset-x-6 h-1.5 bg-white/20 rounded-full overflow-hidden z-[220]">
+                    <div 
+                      className="h-full bg-red-600 transition-all duration-1000 ease-linear"
+                      style={{ width: `${(timer / durationLimit) * 100}%` }}
+                    />
+                  </div>
+                )}
+
                 <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8 z-[210]">
                    {!previewUrl && (
                        <button onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-2">
@@ -331,8 +351,9 @@ export default function CreatePage() {
                        <span className="text-[9px] font-bold uppercase tracking-tighter">Filters</span>
                    </button>
                 </div>
-             </div>
-             <div className="shrink-0 w-full p-6 pb-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black to-transparent z-[210]">
+              </div>
+
+              <div className="shrink-0 w-full p-6 pb-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black to-transparent z-[210]">
                 {!previewUrl ? (
                   <>
                     <div className="flex bg-black/50 p-1.5 rounded-full border border-white/10 backdrop-blur-xl">
@@ -340,9 +361,16 @@ export default function CreatePage() {
                         <button key={d} onClick={() => setDurationLimit(d)} className={`px-7 py-2 rounded-full text-[10px] font-black transition-all ${durationLimit === d ? 'bg-white text-black' : 'text-zinc-500'}`}>{d}s</button>
                       ))}
                     </div>
-                    <button onClick={isRecording ? stopRec : startRec} className="w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center">
-                        <div className={`transition-all ${isRecording ? 'w-8 h-8 bg-red-600 rounded-lg animate-pulse' : 'w-14 h-14 bg-red-600 rounded-full'}`}/>
-                    </button>
+                    <div className="relative flex items-center justify-center">
+                      {isRecording && (
+                        <span className="absolute -top-10 text-white font-black text-sm tabular-nums">
+                          {timer}s / {durationLimit}s
+                        </span>
+                      )}
+                      <button onClick={isRecording ? stopRec : startRec} className="w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center">
+                          <div className={`transition-all ${isRecording ? 'w-8 h-8 bg-red-600 rounded-lg animate-pulse' : 'w-14 h-14 bg-red-600 rounded-full'}`}/>
+                      </button>
+                    </div>
                   </>
                 ) : (
                   <div className="flex gap-4 w-full max-w-sm">
@@ -350,7 +378,7 @@ export default function CreatePage() {
                     <button onClick={() => setIsFinalStep(true)} className="flex-1 py-4 bg-red-600 rounded-2xl font-black uppercase text-[10px]">Next</button>
                   </div>
                 )}
-             </div>
+              </div>
           </div>
         ) : (
           <div className="h-full w-full bg-zinc-950 p-8 flex flex-col pt-16">
@@ -371,8 +399,9 @@ export default function CreatePage() {
         )}
       </main>
 
+      {/* Filters Modal */}
       {showFilters && (
-        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[300] border-t border-white/10">
+        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[300] border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
            <div className="flex justify-between items-center mb-8">
              <h3 className="font-black italic uppercase text-lg">Visual Studio</h3>
              <button onClick={() => setShowFilters(false)} className="p-2 bg-white/5 rounded-full"><X size={20}/></button>
@@ -390,6 +419,7 @@ export default function CreatePage() {
         </div>
       )}
 
+      {/* Music Library Modal */}
       {showMusic && (
         <div className="absolute inset-0 bg-[#000000] z-[400] p-6 pt-12 flex flex-col">
            <div className="flex justify-between items-center mb-6">
