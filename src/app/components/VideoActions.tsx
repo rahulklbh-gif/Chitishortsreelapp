@@ -1,345 +1,187 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { VideoActions } from './VideoActions';
-// Filter engine ko import kiya
-import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
+import { Heart, MessageCircle, Share2 } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react'; 
 import { supabase } from '@/lib/supabase';
+import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2, Music2, Play as PlayIcon, Pause } from 'lucide-react'; 
-import { toast } from 'sonner'; 
 
-export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
-  const { user: currentUser } = useAuth();
-  const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const [videos, setVideos] = useState<any[]>([]); 
-  const [loading, setLoading] = useState(true);
-  const [activeIndex, setActiveIndex] = useState(0);
-
-  const [isPlaying, setIsPlaying] = useState(true); 
-  const [showPlayIcon, setShowPlayIcon] = useState(false); 
+export function VideoActions({ 
+  videoId, 
+  initialLikes, 
+  initialComments, 
+  initialShares, 
+  videoOwnerId, 
+  onComment, 
+  onShare 
+}: any) {
+  const { user } = useAuth(); 
+  const [isLiked, setIsLiked] = useState(false);
+  const [likeCount, setLikeCount] = useState(initialLikes || 0);
   
-  const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
-  const containerRef = useRef<HTMLDivElement>(null);
+  // States for dynamic counts
+  const [commentCount, setCommentCount] = useState(initialComments || 0);
+  const [shareCount, setShareCount] = useState(initialShares || 0);
   
-  // UNIQUE VIEW LOGIC: viewedVideos ab session-based memory rakhega
-  const viewedVideos = useRef<Set<string>>(new Set());
-  
-  // Aapka original videoRefs logic
-  const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [hearts, setHearts] = useState<any[]>([]);
 
-  useEffect(() => {
-    const domains = ['https://cdnjs.cloudflare.com'];
-    domains.forEach(domain => {
-      const link = document.createElement('link');
-      link.rel = 'preconnect';
-      link.href = domain;
-      document.head.appendChild(link);
-    });
-  }, []);
-
-  useEffect(() => {
-    fetchVideos();
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (currentUser) fetchFollows();
-  }, [currentUser]);
-
-  // --- REAL-TIME COMMENT COUNT UPDATE ---
-  useEffect(() => {
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'comments' },
-        (payload) => {
-          setVideos(prev => prev.map(v => 
-            v.id === payload.new.post_id 
-              ? { ...v, comments_count: (v.comments_count || 0) + 1 } 
-              : v
-          ));
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  // --- VIEW RECORDING (FIXED: UNIQUE & 3s DELAY) ---
-  useEffect(() => {
-    const recordView = async () => {
-      if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
-      
-      const currentVideoId = videos[activeIndex].id;
-      const currentUserId = currentUser.id;
-
-      // 🛑 Unique View Check: Agar pehle se viewed hai toh RPC call nahi hogi
-      if (viewedVideos.current.has(currentVideoId)) return;
-
-      try {
-        // ✅ RPC call jo unique view handle karega database level par
-        await supabase.rpc('increment_views', { 
-          post_id: currentVideoId, 
-          viewer_id: currentUserId 
-        });
-        
-        // Memory mein add karo taki is session mein dubara count na badhe
-        viewedVideos.current.add(currentVideoId);
-      } catch (err) {
-        console.error("View error:", err);
-      }
-    };
-
-    // ⚡ 3 second ka delay: User scroll karte huye nikal gaya toh count nahi hoga
-    const timer = setTimeout(recordView, 3000); 
-    return () => clearTimeout(timer);
-  }, [activeIndex, videos, currentUser?.id]); 
-
-  // --- FETCH VIDEOS (URL ID Support ke saath) ---
-  const fetchVideos = async () => {
-    try {
-      setLoading(true);
-      const videoIdFromUrl = searchParams.get('video');
-
-      const { data, error } = await supabase
-       .from('posts')
-       .select(`
-          *,
-          profiles:user_id (
-            username,
-            full_name,
-            avatar_url
-          )
-        `)
-       .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      
-      if (data) {
-        let updatedVideos = data.map((video: any) => {
-          const freshName = video.profiles?.full_name || video.profiles?.username || video.user_name || 'user';
-          const freshAvatar = video.profiles?.avatar_url || video.user_avatar;
-
-          return {
-            ...video,
-            user_name: freshName,
-            user_avatar: freshAvatar,
-            // Refresh issue fix: likes_count ko explicitly yahan set kiya
-            likes_count: video.likes_count ?? 0,
-            comments_count: video.comments_count ?? 0,
-            shares_count: video.shares_count ?? 0
-          };
-        });
-
-        if (videoIdFromUrl) {
-          const targetIndex = updatedVideos.findIndex(v => v.id === videoIdFromUrl);
-          if (targetIndex !== -1) {
-            const targetVideo = updatedVideos.splice(targetIndex, 1)[0];
-            updatedVideos = [targetVideo, ...updatedVideos];
-          }
-        }
-
-        setVideos(updatedVideos);
-      }
-    } catch (error) { 
-      console.error('Error fetching videos:', error); 
-    } finally { 
-      setLoading(false); 
-    }
-  };
-
-  const fetchFollows = async () => {
-    if (!currentUser) return;
+  // Like check logic (Unchanged as per your request)
+  const checkIfLiked = useCallback(async () => {
+    if (!user || !videoId) return;
     try {
       const { data } = await supabase
-       .from('follows')
-       .select('following_id')
-       .eq('follower_id', currentUser.id);
-      if (data) setFollowedUsers(new Set(data.map(f => f.following_id)));
-    } catch (err) { console.error(err); }
-  };
+        .from('likes')
+        .select('id') 
+        .eq('post_id', videoId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+      setIsLiked(!!data);
+    } catch (err) { console.error("Check like error:", err); }
+  }, [user?.id, videoId]);
 
-  // --- SCROLL HANDLER ---
-  const handleScroll = () => {
-    if (!containerRef.current) return;
-    const { scrollTop, clientHeight } = containerRef.current;
-    const index = Math.round(scrollTop / clientHeight);
-    if (index !== activeIndex) {
-      setActiveIndex(index);
-      setIsPlaying(true); 
-    }
-  };
+  // 🔥 FIX: Syncing initial props with local state properly
+  useEffect(() => {
+    checkIfLiked();
+    // Jab database se fresh data aaye, toh state update karo
+    setLikeCount(initialLikes ?? 0);
+    setCommentCount(initialComments ?? 0);
+    setShareCount(initialShares ?? 0);
+  }, [videoId, initialLikes, initialComments, initialShares, checkIfLiked]);
 
-  // --- PLAY/PAUSE LOGIC ---
-  const togglePlayPause = () => {
-    setIsPlaying(!isPlaying);
-    setShowPlayIcon(true);
-    setTimeout(() => setShowPlayIcon(false), 500); 
-  };
+  // --- 1. HANDLE LIKE (Aapka Original Function) ---
+  const handleLike = async () => {
+    if (!user) { toast.error("Pehle login karein!"); return; }
+    if (isUpdating) return;
+    setIsUpdating(true);
 
-  // --- FOLLOW LOGIC ---
-  const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
-    e.stopPropagation();
-    if (!currentUser) { toast.error("Pehle login karein!"); return; }
-    if (currentUser.id === targetUserId) return;
-    const isCurrentlyFollowing = followedUsers.has(targetUserId);
-    try {
-      if (isCurrentlyFollowing) {
-        await supabase.from('follows').delete().eq('follower_id', currentUser.id).eq('following_id', targetUserId);
-        await supabase.rpc('decrement_followers', { user_id: targetUserId });
-        await supabase.rpc('decrement_following', { user_id: currentUser.id });
-        setFollowedUsers(prev => { const next = new Set(prev); next.delete(targetUserId); return next; });
-      } else {
-        await supabase.from('follows').insert([{ follower_id: currentUser.id, following_id: targetUserId }]);
-        await supabase.rpc('increment_followers', { user_id: targetUserId });
-        await supabase.rpc('increment_following', { user_id: currentUser.id });
-        setFollowedUsers(prev => new Set(prev).add(targetUserId));
-        toast.success("Following!");
-      }
-    } catch (err) { toast.error("Koshish nakam rahi"); }
-  };
-
-  // --- SHARE LOGIC (FIXED: REAL SHARE ONLY) ---
-  const handleVideoShare = async (video: any) => {
-    const shareUrl = `${window.location.origin}/?video=${video.id}`;
+    const newIsLiked = !isLiked;
+    const newCount = newIsLiked ? likeCount + 1 : Math.max(0, likeCount - 1);
     
-    try {
-      if (navigator.share) {
-        // Browser ka native share open hoga
-        await navigator.share({
-          title: 'Chiti Shorts',
-          text: `Check out this video by @${video.user_name}`,
-          url: shareUrl
-        });
+    setIsLiked(newIsLiked);
+    setLikeCount(newCount);
 
-        // ✅ User ne Share complete kiya tabhi count badhega
-        await supabase.rpc('increment_shares', { post_id: video.id });
-        setVideos(prev => prev.map(v => 
-          v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
-        ));
-        toast.success("Shared!");
+    if (newIsLiked) {
+      const newHearts = Array.from({ length: 5 }).map((_, i) => ({
+        id: Date.now() + i,
+        left: Math.random() * 50 - 25
+      }));
+      setHearts(newHearts);
+      setTimeout(() => setHearts([]), 1000);
+    }
+
+    try {
+      if (newIsLiked) {
+        await Promise.all([
+           supabase.from('likes').insert([{ user_id: user.id, post_id: videoId }]),
+           supabase.rpc('increment_likes', { post_id: videoId })
+        ]);
+
+        if (videoOwnerId && user.id !== videoOwnerId) {
+          await supabase.from('notifications').insert([{
+            type: 'like',
+            sender_id: user.id,
+            sender_name: user.user_metadata?.username || user.email?.split('@')[0] || "Someone",
+            receiver_id: videoOwnerId,
+            post_id: videoId,
+            content: 'liked your video',
+            is_read: false
+          }]);
+        }
       } else {
-        // Desktop ke liye copy logic
-        await navigator.clipboard.writeText(shareUrl);
-        toast.success("Link copy ho gaya!");
-        
-        // Copy hone par count badhana padega kyunki native menu nahi hai
-        await supabase.rpc('increment_shares', { post_id: video.id });
-        setVideos(prev => prev.map(v => 
-          v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
-        ));
+        await Promise.all([
+          supabase.from('likes').delete().eq('post_id', videoId).eq('user_id', user.id),
+          supabase.rpc('decrement_likes', { post_id: videoId }) 
+        ]);
       }
     } catch (err) {
-      // User ne share cancel kar diya (No action needed, count nahi badhega)
-      console.log("Share action cancelled");
+      console.error("Like error:", err);
+      setIsLiked(!newIsLiked);
+      setLikeCount(likeCount);
+    } finally {
+      setIsUpdating(false);
     }
   };
 
-  if (loading) return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black">
-      <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
-    </div>
-  );
+  // --- 2. HANDLE COMMENT (Enhanced with DB Increment) ---
+  const handleCommentClick = async () => {
+    // Comment modal kholne ka logic jo parent se aa raha hai
+    onComment(videoId, videoOwnerId);
+    
+    // Note: Comment count tab badhna chahiye jab user actual comment post kare.
+    // Agar aap modal khulte hi count badhana chahte hain (Sirf test ke liye), 
+    // toh niche wala RPC logic yahan bhi use kar sakte hain.
+  };
+
+  // --- 3. HANDLE SHARE (Enhanced with DB Increment) ---
+  const handleShareInternal = async () => {
+    try {
+      // Optimistically update UI
+      setShareCount(prev => prev + 1);
+
+      // Call the parent sharing function (Navigator or Clipboard)
+      if (onShare) {
+        await onShare();
+      }
+
+      // Note: Backend increment RealVideoFeed ke handleVideoShare mein pehle se ho raha hai.
+      // Isliye yahan dubara RPC call karne ki zarurat nahi hai warna count double badhega.
+
+    } catch (err) {
+      console.error("Share DB error:", err);
+      // Rollback if fail
+      setShareCount(prev => Math.max(0, prev - 1));
+    }
+  };
 
   return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 overflow-y-scroll snap-y snap-mandatory no-scrollbar bg-black scroll-smooth"
-      onScroll={handleScroll}
-      style={{ WebkitOverflowScrolling: 'touch' }}
-    >
-      {videos.map((video, index) => {
-        const isActive = index === activeIndex;
-        
-        /** 🚀 INSTAGRAM-STYLE PREDICTIVE LOADING: 
-         * index <= activeIndex + 3: Hum agle 3 videos ko standby pe rakhte hain.
-         * Taki jab aap scroll karein, toh data pehle se buffer ho chuka ho.
-        **/
-        const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 3;
+    <div className="flex flex-col items-center gap-5 relative">
+      {/* Hearts Animation */}
+      {hearts.map(heart => (
+        <div key={heart.id} className="absolute bottom-10 text-red-500 text-2xl animate-bounce-up pointer-events-none" style={{ left: `${heart.left}px` }}>❤️</div>
+      ))}
 
-        return (
-          <div 
-            key={video.id} 
-            className="relative h-screen w-full snap-start snap-always bg-black"
-            onClick={togglePlayPause} 
-          >
-            
-            {/* ✅ Predictive Standby Rendering */}
-            {shouldRender ? (
-              <OptimizedVideoPlayer
-                videoUrl={video.video_url}
-                videoId={video.id}
-                isActive={isActive && isPlaying}
-                username={video.user_name}
-                avatarUrl={video.user_avatar}
-                caption={video.caption}
-                filterName={video.filter_name || 'none'}
-              />
-            ) : (
-              <div className="w-full h-full bg-black flex items-center justify-center">
-                <Loader2 className="w-6 h-6 text-white/5 animate-spin" />
-              </div>
-            )}
+      {/* Like Button */}
+      <button onClick={handleLike} className="flex flex-col items-center group outline-none focus:outline-none bg-transparent border-none">
+        <div className={`p-2 rounded-full transition-transform active:scale-150 duration-200 ${isLiked ? 'scale-110' : 'scale-100'}`}>
+          <Heart className={`w-9 h-9 ${isLiked ? 'fill-red-500 text-red-500' : 'text-white'}`} strokeWidth={2.5} />
+        </div>
+        <span className="text-white text-[12px] font-black drop-shadow-md">{likeCount}</span>
+      </button>
 
-            {/* Play/Pause Visual Feedback */}
-            {showPlayIcon && (
-              <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
-                <div className="bg-black/40 p-4 rounded-full animate-ping">
-                  {!isPlaying ? <Pause size={40} fill="white" /> : <PlayIcon size={40} fill="white" />}
-                </div>
-              </div>
-            )}
+      {/* Reply (Comment) Button */}
+      <button 
+        onClick={handleCommentClick} 
+        className="flex flex-col items-center group outline-none bg-transparent border-none"
+      >
+        <div className="p-2 active:scale-125 transition-transform text-white">
+          <MessageCircle className="w-9 h-9" strokeWidth={2.5} />
+        </div>
+        <span className="text-white text-[12px] font-black drop-shadow-md">
+          {commentCount}
+        </span>
+      </button>
 
-            {/* UI LAYER (FOLLOW, NAME, CAPTION) */}
-            <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-transparent to-transparent text-white z-20 pointer-events-none">
-              <div 
-                className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (video.user_id) navigate(`/profile/${video.user_id}`);
-                }}
-              >
-                <img 
-                  src={video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
-                  className="w-11 h-11 rounded-full border-2 border-white object-cover" 
-                  alt="avatar"
-                />
-                <span className="font-black text-lg shadow-black drop-shadow-lg">@{video.user_name}</span>
-                <button 
-                  onClick={(e) => handleFollowToggle(e, video.user_id)} 
-                  className={`ml-2 px-5 py-1.5 rounded-full text-xs font-black ${followedUsers.has(video.user_id) ? 'bg-gray-700/80' : 'bg-blue-600'}`}
-                >
-                  {followedUsers.has(video.user_id) ? 'Following' : 'Follow'}
-                </button>
-              </div>
-              <p className="text-sm mb-4 line-clamp-2 pr-20 drop-shadow-md pointer-events-auto">{video.caption}</p>
-              <div className="flex items-center gap-2 text-xs bg-white/10 w-fit px-3 py-1.5 rounded-full backdrop-blur-md">
-                <Music2 size={14} />
-                <span className="truncate">Original Audio - {video.user_name}</span>
-              </div>
-            </div>
+      {/* Share Button */}
+      <button 
+        onClick={handleShareInternal} 
+        className="flex flex-col items-center group outline-none bg-transparent border-none"
+      >
+        <div className="p-2 active:scale-125 transition-transform text-white">
+          <Share2 className="w-9 h-9" strokeWidth={2.5} />
+        </div>
+        <span className="text-white text-[12px] font-black drop-shadow-md">
+          {shareCount}
+        </span>
+      </button>
 
-            {/* ACTIONS LAYER */}
-            <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
-              <VideoActions 
-                videoId={video.id} 
-                // Yahan maine ensure kiya hai ki video.likes_count pass ho
-                initialLikes={video.likes_count || 0}
-                initialComments={video.comments_count || 0}
-                initialShares={video.shares_count || 0}
-                videoOwnerId={video.user_id} 
-                onComment={() => onComment(video.id, video.user_id)} 
-                onShare={() => handleVideoShare(video)} 
-              />
-            </div>
-          </div>
-        );
-      })}
+      <style>{`
+        @keyframes bounce-up {
+          0% { transform: translateY(0) scale(1); opacity: 1; }
+          100% { transform: translateY(-150px) scale(2.5); opacity: 0; }
+        }
+        .animate-bounce-up { animation: bounce-up 0.8s ease-out forwards; }
+      `}</style>
     </div>
   );
-} 
+}
