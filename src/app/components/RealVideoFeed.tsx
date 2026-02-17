@@ -89,12 +89,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
-  // --- FETCH VIDEOS (Optimized for R2) ---
+  // --- FETCH VIDEOS (Fix: Latest Profile Join) ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
 
+      // 🔥 JOIN Query: Ab hamesha "profiles" table se fresh data aayega
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -111,8 +112,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       
       if (data) {
         let updatedVideos = data.map((video: any) => {
-          const freshName = video.user_name || video.profiles?.full_name || video.profiles?.username || 'user';
-          const freshAvatar = video.user_avatar || video.profiles?.avatar_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
+          // Priority: 1. Profile table ka data, 2. Post table ka purana data, 3. Default
+          const freshName = video.profiles?.username || video.profiles?.full_name || video.user_name || 'user';
+          const freshAvatar = video.profiles?.avatar_url || video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
           const finalUrl = video.video_url || video.url || "";
 
           return {
@@ -231,7 +233,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        // ⚡ ULTRA FAST: Render 2 videos ahead and 1 behind to keep them ready in cache
         const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 2;
 
         return (
@@ -246,6 +247,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 videoUrl={video.video_url}
                 videoId={video.id}
                 isActive={isActive && isPlaying}
+                // Props are sent but handle UI here as you requested
                 username={video.user_name}
                 avatarUrl={video.user_avatar}
                 caption={video.caption}
@@ -265,7 +267,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
-            {/* UI LAYER */}
+            {/* UI LAYER (Saara logic yahi hai) */}
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-transparent to-transparent text-white z-20 pointer-events-none">
               <div 
                 className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer"
