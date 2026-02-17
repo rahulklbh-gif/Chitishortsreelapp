@@ -51,7 +51,7 @@ export function OptimizedVideoPlayer({
  const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
  const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
 
- // 🚀 FAST LOADING: URL change hote hi state reset aur video pre-load
+ // 🚀 FAST LOAD RESET
  useEffect(() => {
   setIsLoaded(false);
   if (videoRef.current) {
@@ -59,19 +59,19 @@ export function OptimizedVideoPlayer({
   }
  }, [videoUrl]);
 
- // --- PLAY/PAUSE & SOUND JUGAR ---
+ // --- PLAYBACK & SOUND OPTIMIZATION ---
  useEffect(() => {
   const video = videoRef.current;
   if (!video) return;
   
   if (isActive) {
-   // Browser policy bypass: Try unmuted first
+   // Try unmuted first for better experience
    video.muted = false; 
    const playPromise = video.play();
    
    if (playPromise !== undefined) {
     playPromise.then(() => {
-     // Video play ho rahi hai sound ke saath
+     // Playback started successfully
      secondaryRefs.current.forEach((v) => {
       if (v) {
        v.currentTime = video.currentTime;
@@ -79,7 +79,7 @@ export function OptimizedVideoPlayer({
       }
      });
     }).catch(() => {
-     // Agar browser block kare, toh muted play karo (Fastest way)
+     // Fallback: Autoplay with sound is often blocked by browsers
      video.muted = true;
      video.play();
     });
@@ -93,14 +93,14 @@ export function OptimizedVideoPlayer({
  return (
   <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
    
-   {/* 🔥 INSTAGRAM STYLE SKELETON LOADER */}
+   {/* 🔥 INSTANT UI FEEDBACK */}
    {!isLoaded && (
     <div className="absolute inset-0 flex items-center justify-center bg-zinc-950 z-20">
      <div className="flex flex-col items-center gap-3">
-      <div className="w-12 h-12 border-4 border-blue-600/20 border-t-blue-600 rounded-full animate-spin"></div>
+      <div className="w-10 h-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
       <div className="flex items-center gap-2">
        <Zap size={14} className="text-blue-500 animate-pulse"/>
-       <span className="text-blue-500 text-[10px] font-black uppercase tracking-widest">Ultra Flash Load</span>
+       <span className="text-blue-500 text-[9px] font-bold uppercase tracking-tighter">Fast Loading...</span>
       </div>
      </div>
     </div>
@@ -113,7 +113,7 @@ export function OptimizedVideoPlayer({
         } : {}}>
     
     {[...Array(gridCount)].map((_, i) => (
-     <div key={i} className="relative w-full h-full overflow-hidden bg-zinc-900 border-[0.1px] border-white/5">
+     <div key={i} className="relative w-full h-full overflow-hidden bg-zinc-900">
       <video
        ref={(el) => {
         if (i === 0) (videoRef as any).current = el;
@@ -123,11 +123,10 @@ export function OptimizedVideoPlayer({
        src={videoUrl}
        loop
        playsInline
-       // 🔥 MAGIC PARAMETERS FOR SPEED
+       // ⚡ KEY FIX: metadata load hote hi screen unlock
        preload="auto"
        // @ts-ignore
        fetchpriority={isActive ? "high" : "low"}
-       // Sabse pehle metadata load hote hi screen show kar do
        onLoadedMetadata={() => i === 0 && setIsLoaded(true)}
        onCanPlay={() => i === 0 && setIsLoaded(true)}
        crossOrigin="anonymous"
@@ -142,12 +141,12 @@ export function OptimizedVideoPlayer({
 
     {/* Filter Name Badge */}
     {isActive && filterName !== 'none' && (
-     <div className="absolute top-24 left-6 z-30 flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 pointer-events-none">
-       <Sparkles size={12} className="text-blue-400 animate-pulse"/>
-       <span className="text-[10px] font-black uppercase tracking-widest text-white">{currentFilter.name}</span>
+     <div className="absolute top-24 left-6 z-30 flex items-center gap-1.5 bg-black/30 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-none opacity-60">
+       <Sparkles size={10} className="text-blue-400"/>
+       <span className="text-[8px] font-bold uppercase tracking-widest text-white">{currentFilter.name}</span>
      </div>
     )}
    </div>
   </div>
  );
-} 
+}
