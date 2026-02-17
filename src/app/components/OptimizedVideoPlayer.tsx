@@ -27,7 +27,6 @@ const FILTERS_DATA: any = {
  ocean: { name: "Oceanic", style: "hue-rotate(180deg) brightness(1.1)" }
 };
 
-// 🔥 Props mein username, userAvatar aur caption receive kiya (Jo feed se aa raha hai)
 export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName = 'none', username, userAvatar, caption }: any) {
  const videoRef = useRef<HTMLVideoElement>(null);
  const secondaryRefs = useRef<(HTMLVideoElement | null)[]>([]);
@@ -37,7 +36,6 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
  const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
  const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
 
- // 🚀 JUGAR 1: Resource Pre-connection (Browser ko pehle hi alert karna)
  useEffect(() => {
   if (videoUrl) {
     const link = document.createElement('link');
@@ -57,26 +55,18 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
   }
  }, [videoUrl]);
 
- // 🚀 JUGAR 2: Aggressive Buffer & Sound Management
  useEffect(() => {
   const video = videoRef.current;
   if (!video) return;
   
   if (isActive) {
-   // Force mute on start for ultra-fast playback (Auto-play policy bypass)
    video.muted = true; 
-   
    const playPromise = video.play();
-   
    if (playPromise !== undefined) {
     playPromise.then(() => {
      setIsLoaded(true);
      setIsBuffering(false);
-     
-     // ⚡ Unmute only after successful play
      video.muted = false;
-
-     // Sync grids
      secondaryRefs.current.forEach(v => {
       if(v) { 
         v.currentTime = video.currentTime; 
@@ -84,7 +74,6 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
       }
      });
     }).catch((error) => {
-     console.log("Autoplay blocked, playing muted...");
      video.muted = true;
      video.play().then(() => setIsLoaded(true));
     });
@@ -98,7 +87,6 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
  return (
   <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
    
-   {/* 🔥 ULTRA FAST LOADER UI */}
    {(!isLoaded || isBuffering) && (
     <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-20">
      <div className="flex flex-col items-center gap-3">
@@ -128,14 +116,11 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
        src={videoUrl}
        loop
        playsInline
-       // Force play even if JS is slow
        autoPlay={isActive}
        muted={i !== 0 || !isActive}
-       // 🔥 PRELOAD SETTINGS
        preload="auto"
        // @ts-ignore
        fetchpriority={isActive ? "high" : "low"}
-       // Sabse important events - Metadata milte hi show kardo
        onLoadedMetadata={() => i === 0 && setIsLoaded(true)}
        onWaiting={() => i === 0 && setIsBuffering(true)}
        onPlaying={() => i === 0 && (setIsBuffering(false), setIsLoaded(true))}
@@ -152,27 +137,25 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
     )}
    </div>
 
-   {/* 🔥 PROFILE INFO OVERLAY (Naya Add kiya gaya hai bina purana code chhede) */}
-   <div className="absolute bottom-8 left-4 z-30 pointer-events-none max-w-[80%]">
-      <div className="flex items-center gap-3 mb-3 pointer-events-auto">
-        <div className="w-11 h-11 rounded-full border-2 border-white overflow-hidden shadow-lg">
+   {/* 🔥 INFO OVERLAY (Sahi jagah set kiya gaya hai) */}
+   <div className="absolute bottom-24 left-4 z-30 pointer-events-none max-w-[80%]">
+      <div className="flex items-center gap-3 mb-2 pointer-events-auto">
+        <div className="w-10 h-10 rounded-full border border-white/50 overflow-hidden shadow-lg">
           <img 
             src={userAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`} 
             className="w-full h-full object-cover" 
-            alt="profile" 
+            alt="avatar" 
           />
         </div>
-        <div className="flex flex-col">
-          <span className="text-white font-black italic text-lg tracking-tighter shadow-black drop-shadow-md">
-            @{username || 'chiti_user'}
-          </span>
-        </div>
+        <span className="text-white font-bold italic text-base drop-shadow-lg">
+          @{username || 'user'}
+        </span>
       </div>
-      <p className="text-white text-sm font-medium leading-snug drop-shadow-md">
+      <p className="text-white text-xs font-light line-clamp-2 drop-shadow-md px-1">
         {caption}
       </p>
    </div>
 
   </div>
  );
-} 
+}
