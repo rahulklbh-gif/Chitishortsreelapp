@@ -28,89 +28,140 @@ const FILTERS_DATA: any = {
  ocean: { name: "Oceanic", style: "hue-rotate(180deg) brightness(1.1)" }
 };
 
-export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName = 'none' }: any) {
+interface OptimizedVideoPlayerProps {
+ videoUrl: string;
+ videoId: string;
+ isActive: boolean;
+ username?: string;
+ avatarUrl?: string;
+ caption?: string;
+ filterName?: string;
+}
+
+export function OptimizedVideoPlayer({
+ videoUrl,
+ videoId,
+ isActive,
+ filterName = 'none'
+}: OptimizedVideoPlayerProps) {
  const videoRef = useRef<HTMLVideoElement>(null);
  const secondaryRefs = useRef<(HTMLVideoElement | null)[]>([]);
+ const hasCounted = useRef(false);
  const [isLoaded, setIsLoaded] = useState(false);
 
  const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
  const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
 
- // 🚀 ULTRA FAST LOADING: Pre-connect to R2
+ let gridContainerClass = "w-full h-full";
+ if (currentFilter.isGrid) {
+  if (gridCount === 4) gridContainerClass = "w-full h-full grid grid-cols-2 grid-rows-2";
+  if (gridCount === 6) gridContainerClass = "w-full h-full grid grid-cols-2 grid-rows-3";
+  if (gridCount === 3) gridContainerClass = "w-full h-full grid grid-cols-1 grid-rows-3";
+ }
+
  useEffect(() => {
   setIsLoaded(false);
   if (videoRef.current) {
-    videoRef.current.load();
+   videoRef.current.load();
   }
  }, [videoUrl]);
 
- // 🔊 SOUND & PLAYBACK SYNC
+ // --- VIEW COUNTER ---
+ useEffect(() => {
+  let timer: any; 
+  if (isActive && !hasCounted.current && videoId) {
+   timer = setTimeout(async () => {
+    try {
+     const { error } = await supabase.rpc('increment_views', { post_id: videoId });
+     if (!error) hasCounted.current = true;
+    } catch (err) {
+     console.error("View update failed", err);
+    }
+   }, 3000); 
+  }
+  return () => clearTimeout(timer);
+ }, [isActive, videoId]);
+
+ // --- PLAY/PAUSE SYNC (Sound & Fast Load Fix) ---
  useEffect(() => {
   if (!videoRef.current) return;
   
   if (isActive) {
-   // Sound on karne ke liye muted false hona chahiye (User interaction ke baad)
+   // 🔥 MUSIC FIX: First attempt with sound
    videoRef.current.muted = false; 
-   const playPromise = videoRef.current.play();
    
+   const playPromise = videoRef.current.play();
    if (playPromise !== undefined) {
     playPromise.then(() => {
      setIsLoaded(true);
-     // Sync grid videos (Always muted for performance)
-     secondaryRefs.current.forEach(v => {
+     secondaryRefs.current.forEach((v) => {
       if (v) {
        v.currentTime = videoRef.current!.currentTime;
        v.play().catch(() => {});
       }
      });
     }).catch(() => {
-     // Fallback: Agar sound ke saath play block ho, toh muted play karein
-     if(videoRef.current) videoRef.current.muted = true;
+     // Browser block fallback: Mute karke play karo (Policy requirement)
+     if (videoRef.current) videoRef.current.muted = true;
      videoRef.current?.play();
     });
    }
   } else {
    videoRef.current.pause();
-   secondaryRefs.current.forEach(v => v?.pause());
+   secondaryRefs.current.forEach((v) => v?.pause());
   }
  }, [isActive, videoUrl]);
 
  return (
   <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
+   
    {!isLoaded && (
-    <div className="absolute inset-0 flex items-center justify-center bg-black z-30">
-     <div className="w-10 h-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+    <div className="absolute inset-0 flex items-center justify-center bg-zinc-950 z-20">
+     <div className="flex flex-col items-center gap-3">
+      <div className="w-10 h-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      <Zap size={18} className="text-blue-500 animate-pulse"/>
+      <span className="text-blue-500 text-[10px] uppercase font-bold tracking-tighter">Ultra Loading...</span>
+     </div>
     </div>
    )}
 
-   <div className={`w-full h-full transition-opacity duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'} ${currentFilter.isGrid ? 'grid' : ''}`}
-        style={currentFilter.isGrid ? { 
-          gridTemplateColumns: `repeat(${currentFilter.cols}, 1fr)`,
-          gridTemplateRows: `repeat(${currentFilter.rows}, 1fr)` 
-        } : {}}>
-    
+   <div className={`${gridContainerClass} transition-all duration-500 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}>
     {[...Array(gridCount)].map((_, i) => (
-     <video
-      key={i}
-      ref={(el) => { if (i === 0) (videoRef as any).current = el; else secondaryRefs.current[i] = el; }}
-      src={videoUrl}
-      className="w-full h-full object-cover"
-      loop
-      playsInline
-      crossOrigin="anonymous"
-      // 🔥 ULTRA FAST ATTRIBUTES
-      preload="auto"
-      // @ts-ignore
-      fetchpriority={isActive ? "high" : "low"}
-      onLoadedData={() => i === 0 && setIsLoaded(true)}
-      style={{ filter: currentFilter.style }}
-     />
+     <div key={i} className="relative w-full h-full overflow-hidden border-[0.2px] border-white/5 bg-zinc-900">
+      <video
+       ref={(el) => {
+        if (i === 0) (videoRef as any).current = el;
+        else secondaryRefs.current[i] = el;
+       }}
+       className="w-full h-full object-cover"
+       src={videoUrl}
+       loop
+       // 🔥 ULTRA FAST SETTINGS:
+       // @ts-ignore
+       fetchpriority={isActive ? "high" : "low"}
+       preload="auto"
+       muted={!isActive || i !== 0}
+       playsInline
+       crossOrigin="anonymous" 
+       autoPlay={isActive}
+       onLoadedData={() => i === 0 && setIsLoaded(true)}
+       onCanPlay={() => i === 0 && setIsLoaded(true)}
+       style={{ filter: currentFilter.style }}
+      />
+     </div>
     ))}
 
     {isActive && currentFilter.vfxType === 'lightning' && (
-      <div className="absolute inset-0 z-10 bg-blue-400/10 animate-pulse pointer-events-none" />
+     <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
+    )}
+
+    {isActive && filterName !== 'none' && (
+     <div className="absolute top-20 left-6 z-30 flex items-center gap-2 bg-black/20 backdrop-blur-sm px-3 py-1 rounded-full border border-white/5 pointer-events-none opacity-50">
+       <Sparkles size={10} className="text-blue-400"/>
+       <span className="text-[9px] font-bold uppercase tracking-widest text-white">{currentFilter.name}</span>
+     </div>
     )}
    </div>
   </div>
  );
-} 
+}
