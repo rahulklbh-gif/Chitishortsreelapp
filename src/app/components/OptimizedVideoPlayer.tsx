@@ -51,27 +51,26 @@ export function OptimizedVideoPlayer({
  const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
  const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
 
- // 🚀 FAST LOAD RESET
+ // 🚀 SPEED JUGAR 1: Metadata over Download
  useEffect(() => {
-  setIsLoaded(false);
   if (videoRef.current) {
+   setIsLoaded(false);
    videoRef.current.load();
   }
  }, [videoUrl]);
 
- // --- PLAYBACK & SOUND OPTIMIZATION ---
+ // 🚀 SPEED JUGAR 2: Aggressive Playback
  useEffect(() => {
   const video = videoRef.current;
   if (!video) return;
   
   if (isActive) {
-   // Try unmuted first for better experience
    video.muted = false; 
    const playPromise = video.play();
    
    if (playPromise !== undefined) {
     playPromise.then(() => {
-     // Playback started successfully
+     setIsLoaded(true); // Play shuru hote hi loader khatam
      secondaryRefs.current.forEach((v) => {
       if (v) {
        v.currentTime = video.currentTime;
@@ -79,9 +78,9 @@ export function OptimizedVideoPlayer({
       }
      });
     }).catch(() => {
-     // Fallback: Autoplay with sound is often blocked by browsers
+     // Browser block fallback
      video.muted = true;
-     video.play();
+     video.play().then(() => setIsLoaded(true));
     });
    }
   } else {
@@ -93,27 +92,24 @@ export function OptimizedVideoPlayer({
  return (
   <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
    
-   {/* 🔥 INSTANT UI FEEDBACK */}
+   {/* Fast Skeleton Loader */}
    {!isLoaded && (
-    <div className="absolute inset-0 flex items-center justify-center bg-zinc-950 z-20">
-     <div className="flex flex-col items-center gap-3">
-      <div className="w-10 h-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-      <div className="flex items-center gap-2">
-       <Zap size={14} className="text-blue-500 animate-pulse"/>
-       <span className="text-blue-500 text-[9px] font-bold uppercase tracking-tighter">Fast Loading...</span>
-      </div>
+    <div className="absolute inset-0 flex items-center justify-center bg-black z-20">
+     <div className="flex flex-col items-center gap-2">
+      <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      <Zap size={14} className="text-blue-500 animate-pulse"/>
      </div>
     </div>
    )}
 
-   <div className={`w-full h-full transition-all duration-500 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'} ${currentFilter.isGrid ? 'grid' : ''}`}
+   <div className={`w-full h-full transition-all duration-300 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'} ${currentFilter.isGrid ? 'grid' : ''}`}
         style={currentFilter.isGrid ? { 
           gridTemplateColumns: `repeat(${currentFilter.cols}, 1fr)`,
           gridTemplateRows: `repeat(${currentFilter.rows}, 1fr)` 
         } : {}}>
     
     {[...Array(gridCount)].map((_, i) => (
-     <div key={i} className="relative w-full h-full overflow-hidden bg-zinc-900">
+     <div key={i} className="relative w-full h-full overflow-hidden bg-zinc-950">
       <video
        ref={(el) => {
         if (i === 0) (videoRef as any).current = el;
@@ -123,12 +119,14 @@ export function OptimizedVideoPlayer({
        src={videoUrl}
        loop
        playsInline
-       // ⚡ KEY FIX: metadata load hote hi screen unlock
+       // 🔥 INSTAGRAM STREAMING LOGIC
        preload="auto"
        // @ts-ignore
        fetchpriority={isActive ? "high" : "low"}
+       // onLoadedMetadata = Jab video ka pehla byte mil jaye tabhi show karo
        onLoadedMetadata={() => i === 0 && setIsLoaded(true)}
-       onCanPlay={() => i === 0 && setIsLoaded(true)}
+       onWaiting={() => i === 0 && setIsLoaded(false)}
+       onPlaying={() => i === 0 && setIsLoaded(true)}
        crossOrigin="anonymous"
        style={{ filter: currentFilter.style }}
       />
@@ -139,11 +137,10 @@ export function OptimizedVideoPlayer({
      <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
     )}
 
-    {/* Filter Name Badge */}
     {isActive && filterName !== 'none' && (
-     <div className="absolute top-24 left-6 z-30 flex items-center gap-1.5 bg-black/30 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-none opacity-60">
+     <div className="absolute top-24 left-6 z-30 flex items-center gap-1.5 bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-none">
        <Sparkles size={10} className="text-blue-400"/>
-       <span className="text-[8px] font-bold uppercase tracking-widest text-white">{currentFilter.name}</span>
+       <span className="text-[9px] font-bold uppercase tracking-widest text-white">{currentFilter.name}</span>
      </div>
     )}
    </div>
