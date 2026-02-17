@@ -2,7 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.6.1 (FOLDER PATH & PLAYBACK FIX - NO DELETIONS)
+ * VERSION: 4.6.2 (Uint8Array Fix for R2 & Android Compatibility)
  * VAADA: No functions removed, Code remains full length.
  */
 
@@ -225,7 +225,7 @@ export default function CreatePage() {
     }
   };
 
-  // 🔥 UPDATED PUBLISH (FIXED PATH & CONTENT TYPE)
+  // 🔥 UPDATED PUBLISH WITH Uint8Array FIX (NO getReader ERROR)
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
@@ -253,11 +253,14 @@ export default function CreatePage() {
       
       setStatusText("Uploading to Chiti Cloud...");
 
+      // 🔥 Uint8Array Fix for R2 SDK Compatibility
+      const arrayBuffer = await fileToUpload.arrayBuffer();
+
       await s3Client.send(new PutObjectCommand({
         Bucket: R2_CONFIG.bucketName,
         Key: path,
-        Body: fileToUpload,
-        ContentType: 'video/mp4', // Sabse zaroori playback ke liye
+        Body: new Uint8Array(arrayBuffer), // Fixes t.getReader is not a function
+        ContentType: 'video/mp4', 
         ContentDisposition: 'inline',
         CacheControl: "public, max-age=31536000, immutable"
       }));
