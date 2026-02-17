@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { VideoActions } from './VideoActions';
-// Filter engine ko import kiya
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
@@ -23,11 +22,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
-  
-  // UNIQUE VIEW LOGIC: viewedVideos ab session-based memory rakhega
   const viewedVideos = useRef<Set<string>>(new Set());
-  
-  // Aapka original videoRefs logic
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
 
   useEffect(() => {
@@ -48,7 +43,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- REAL-TIME COMMENT COUNT UPDATE (Full Function) ---
+  // --- REAL-TIME COMMENT COUNT UPDATE ---
   useEffect(() => {
     const channel = supabase
       .channel('schema-db-changes')
@@ -70,42 +65,36 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     };
   }, []);
 
-  // --- VIEW RECORDING (FIXED: UNIQUE & 3s DELAY - Full Logic) ---
+  // --- VIEW RECORDING (UNIQUE & 3s DELAY) ---
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
-      
       const currentVideoId = videos[activeIndex].id;
       const currentUserId = currentUser.id;
-
-      // 🛑 Unique View Check
       if (viewedVideos.current.has(currentVideoId)) return;
 
       try {
-        // ✅ RPC call jo unique view handle karega database level par
         await supabase.rpc('increment_views', { 
           post_id: currentVideoId, 
           viewer_id: currentUserId 
         });
-        
-        // Memory mein add karo taki is session mein dubara count na badhe
         viewedVideos.current.add(currentVideoId);
       } catch (err) {
         console.error("View error:", err);
       }
     };
 
-    // ⚡ 3 second ka delay
     const timer = setTimeout(recordView, 3000); 
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
-  // --- FETCH VIDEOS (Full logic with table column fixes) ---
+  // --- FETCH VIDEOS (Cloudflare R2 & Profile Mapping Fix) ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
 
+      // ✅ Fetching both 'posts' and joined 'profiles'
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -122,11 +111,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       
       if (data) {
         let updatedVideos = data.map((video: any) => {
-          // 🛠️ Database mapping fixes based on your screenshots
+          // 🛠️ Profile Mapping Fix (Rahul Bharti wala data profile se uthayega)
           const freshName = video.user_name || video.profiles?.full_name || video.profiles?.username || 'user';
-          // Fix for broken avatar: check multiple fields
           const freshAvatar = video.user_avatar || video.profiles?.avatar_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
-          // Fix for loading: ensure video_url is never null
+          
+          // 🛠️ R2 URL Fix (chiti-videos bucket links)
           const finalUrl = video.video_url || video.url || "";
 
           return {
@@ -168,7 +157,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { console.error(err); }
   };
 
-  // --- SCROLL HANDLER (Full Function) ---
   const handleScroll = () => {
     if (!containerRef.current) return;
     const { scrollTop, clientHeight } = containerRef.current;
@@ -179,14 +167,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     }
   };
 
-  // --- PLAY/PAUSE LOGIC (Full Function) ---
   const togglePlayPause = () => {
     setIsPlaying(!isPlaying);
     setShowPlayIcon(true);
     setTimeout(() => setShowPlayIcon(false), 500); 
   };
 
-  // --- FOLLOW LOGIC (Full Function) ---
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
     e.stopPropagation();
     if (!currentUser) { toast.error("Pehle login karein!"); return; }
@@ -208,7 +194,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { toast.error("Koshish nakam rahi"); }
   };
 
-  // --- SHARE LOGIC (Full Function) ---
   const handleVideoShare = async (video: any) => {
     const shareUrl = `${window.location.origin}/?video=${video.id}`;
     try {
@@ -249,7 +234,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        // Predictive standby loading
+        // Pre-rendering logic unchanged
         const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 3;
 
         return (
@@ -275,7 +260,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
-            {/* Play/Pause Visual Feedback */}
             {showPlayIcon && (
               <div className="absolute inset-0 flex items-center justify-center z-50 pointer-events-none">
                 <div className="bg-black/40 p-4 rounded-full animate-ping">
@@ -284,7 +268,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
-            {/* UI LAYER (FOLLOW, NAME, CAPTION) */}
+            {/* UI LAYER */}
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-transparent to-transparent text-white z-20 pointer-events-none">
               <div 
                 className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer"
@@ -314,7 +298,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             </div>
 
-            {/* ACTIONS LAYER */}
             <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
               <VideoActions 
                 videoId={video.id} 
