@@ -158,4 +158,4 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
 
   </div>
  );
-}
+} 
