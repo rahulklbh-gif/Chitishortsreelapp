@@ -25,6 +25,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const viewedVideos = useRef<Set<string>>(new Set());
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
 
+  // 🚀 PERFORMANCE: Pre-warm domains
   useEffect(() => {
     const domains = ['https://cdnjs.cloudflare.com'];
     domains.forEach(domain => {
@@ -65,7 +66,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     };
   }, []);
 
-  // --- VIEW RECORDING (UNIQUE & 3s DELAY) ---
+  // --- VIEW RECORDING ---
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
@@ -88,13 +89,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
-  // --- FETCH VIDEOS (Cloudflare R2 & Profile Mapping Fix) ---
+  // --- FETCH VIDEOS (Optimized for R2) ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
 
-      // ✅ Fetching both 'posts' and joined 'profiles'
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -111,11 +111,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       
       if (data) {
         let updatedVideos = data.map((video: any) => {
-          // 🛠️ Profile Mapping Fix (Rahul Bharti wala data profile se uthayega)
           const freshName = video.user_name || video.profiles?.full_name || video.profiles?.username || 'user';
           const freshAvatar = video.user_avatar || video.profiles?.avatar_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
-          
-          // 🛠️ R2 URL Fix (chiti-videos bucket links)
           const finalUrl = video.video_url || video.url || "";
 
           return {
@@ -234,8 +231,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        // Pre-rendering logic unchanged
-        const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 3;
+        // ⚡ ULTRA FAST: Render 2 videos ahead and 1 behind to keep them ready in cache
+        const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 2;
 
         return (
           <div 
