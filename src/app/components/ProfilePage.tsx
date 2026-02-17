@@ -70,20 +70,17 @@ export function ProfilePage() {
     } catch (error) { console.error(error); } finally { setLoading(false); }
   };
 
-  // --- LOGIC ADDED HERE: Following & Followers Count Sync ---
   const handleFollow = async () => {
     if (!currentUser || !profile || isFollowLoading) return;
     setIsFollowLoading(true);
     try {
       if (isFollowing) {
-        // Unfollow Logic
         const { error } = await supabase.from('follows')
           .delete()
           .eq('follower_id', currentUser.id)
           .eq('following_id', profile.id);
 
         if (!error) {
-          // SQL functions call to decrement both counts
           await supabase.rpc('decrement_followers', { user_id: profile.id });
           await supabase.rpc('decrement_following', { user_id: currentUser.id });
           
@@ -91,18 +88,16 @@ export function ProfilePage() {
           setProfile((p: any) => ({ 
             ...p, 
             followers_count: Math.max(0, (p.followers_count || 0) - 1),
-            following_count: Math.max(0, (p.following_count || 0)) // Hum target user ke profile pe hain
+            following_count: Math.max(0, (p.following_count || 0))
           }));
           toast.success("Unfollowed");
         }
       } else {
-        // Follow Logic
         const { error } = await supabase.from('follows').insert([
           { follower_id: currentUser.id, following_id: profile.id }
         ]);
 
         if (!error) {
-          // SQL functions call to increment both counts
           await supabase.rpc('increment_followers', { user_id: profile.id });
           await supabase.rpc('increment_following', { user_id: currentUser.id });
           
@@ -173,9 +168,22 @@ export function ProfilePage() {
       <div className="p-6 flex items-center gap-6">
         <div className="relative shrink-0">
           <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-blue-600">
-            {profile?.avatar_url ? <img src={profile.avatar_url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center bg-gray-900"><User /></div>}
+            {profile?.avatar_url ? (
+              <img 
+                src={profile.avatar_url} 
+                className="w-full h-full object-cover" 
+                crossOrigin="anonymous" // 🔥 Fix for R2 Profile Image
+                onError={(e) => { e.currentTarget.src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png' }}
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-gray-900"><User /></div>
+            )}
           </div>
-          {profile?.id === currentUser?.id && <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-1 -right-1 bg-blue-600 p-1.5 rounded-full border border-black"><Camera size={12} /></button>}
+          {profile?.id === currentUser?.id && (
+            <button onClick={() => fileInputRef.current?.click()} className="absolute -bottom-1 -right-1 bg-blue-600 p-1.5 rounded-full border border-black">
+              {isUploading ? <Loader2 size={12} className="animate-spin" /> : <Camera size={12} />}
+            </button>
+          )}
           <input type="file" ref={fileInputRef} className="hidden" onChange={handlePhotoUpload} />
         </div>
         
@@ -226,6 +234,7 @@ export function ProfilePage() {
               muted
               playsInline
               preload="metadata"
+              crossOrigin="anonymous" // 🔥 Fix for Video Thumbnails
               onMouseOver={(e) => e.currentTarget.play()}
               onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0.5; }}
             />
@@ -255,4 +264,4 @@ export function ProfilePage() {
       )}
     </div>
   );
-} 
+}
