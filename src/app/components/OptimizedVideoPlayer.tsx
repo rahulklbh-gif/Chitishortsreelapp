@@ -27,7 +27,8 @@ const FILTERS_DATA: any = {
  ocean: { name: "Oceanic", style: "hue-rotate(180deg) brightness(1.1)" }
 };
 
-export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName = 'none' }: any) {
+// 🔥 Props mein username, userAvatar aur caption receive kiya (Jo feed se aa raha hai)
+export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName = 'none', username, userAvatar, caption }: any) {
  const videoRef = useRef<HTMLVideoElement>(null);
  const secondaryRefs = useRef<(HTMLVideoElement | null)[]>([]);
  const [isLoaded, setIsLoaded] = useState(false);
@@ -52,7 +53,7 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
   setIsLoaded(false);
   setIsBuffering(false);
   if (videoRef.current) {
-   videoRef.current.load();
+    videoRef.current.load();
   }
  }, [videoUrl]);
 
@@ -150,6 +151,28 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
      <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
     )}
    </div>
+
+   {/* 🔥 PROFILE INFO OVERLAY (Naya Add kiya gaya hai bina purana code chhede) */}
+   <div className="absolute bottom-8 left-4 z-30 pointer-events-none max-w-[80%]">
+      <div className="flex items-center gap-3 mb-3 pointer-events-auto">
+        <div className="w-11 h-11 rounded-full border-2 border-white overflow-hidden shadow-lg">
+          <img 
+            src={userAvatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${username}`} 
+            className="w-full h-full object-cover" 
+            alt="profile" 
+          />
+        </div>
+        <div className="flex flex-col">
+          <span className="text-white font-black italic text-lg tracking-tighter shadow-black drop-shadow-md">
+            @{username || 'chiti_user'}
+          </span>
+        </div>
+      </div>
+      <p className="text-white text-sm font-medium leading-snug drop-shadow-md">
+        {caption}
+      </p>
+   </div>
+
   </div>
  );
-}
+} 
