@@ -89,13 +89,12 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
-  // --- FETCH VIDEOS (Fix: Latest Profile Join) ---
+  // --- FETCH VIDEOS (Fix: Priority to Profile Join) ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
 
-      // 🔥 JOIN Query: Ab hamesha "profiles" table se fresh data aayega
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -112,9 +111,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       
       if (data) {
         let updatedVideos = data.map((video: any) => {
-          // Priority: 1. Profile table ka data, 2. Post table ka purana data, 3. Default
+          // ⚡ Yahan logic change kiya hai: Hamesha profiles se pehle data uthayega
           const freshName = video.profiles?.username || video.profiles?.full_name || video.user_name || 'user';
-          const freshAvatar = video.profiles?.avatar_url || video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
+          
+          // Agar profiles.avatar_url hai toh wo, warna posts.user_avatar, warna default
+          const freshAvatar = video.profiles?.avatar_url || 
+                             video.user_avatar || 
+                             'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
+          
           const finalUrl = video.video_url || video.url || "";
 
           return {
@@ -247,7 +251,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 videoUrl={video.video_url}
                 videoId={video.id}
                 isActive={isActive && isPlaying}
-                // Props are sent but handle UI here as you requested
                 username={video.user_name}
                 avatarUrl={video.user_avatar}
                 caption={video.caption}
@@ -267,7 +270,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
-            {/* UI LAYER (Saara logic yahi hai) */}
+            {/* UI LAYER */}
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-transparent to-transparent text-white z-20 pointer-events-none">
               <div 
                 className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer"
@@ -280,7 +283,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   src={video.user_avatar} 
                   className="w-11 h-11 rounded-full border-2 border-white object-cover" 
                   alt="avatar"
-                  onError={(e) => { e.currentTarget.src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png' }}
+                  onError={(e) => { 
+                    e.currentTarget.onerror = null;
+                    e.currentTarget.src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'; 
+                  }}
                 />
                 <span className="font-black text-lg shadow-black drop-shadow-lg">@{video.user_name}</span>
                 <button 
@@ -313,4 +319,4 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       })}
     </div>
   );
-} 
+}
