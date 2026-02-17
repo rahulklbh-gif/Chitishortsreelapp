@@ -1,29 +1,7 @@
-import { FFmpeg } from '@ffmpeg/ffmpeg';
-import { fetchFile, toBlobURL } from '@ffmpeg/util';
-
-let ffmpeg: FFmpeg | null = null;
-
-export async function initFFmpeg() {
-  if (ffmpeg) return ffmpeg;
-  
-  ffmpeg = new FFmpeg();
-  
-  // ESM version mobile browsers ke liye zyada stable hai
-  const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-  
-  await ffmpeg.load({
-    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-  });
-
-  return ffmpeg;
-}
-
 export async function compressVideoTo480p(file: File, onProgress: any): Promise<Blob> {
   try {
     const ffmpegInstance = await initFFmpeg();
     
-    // Check if headers are working
     if (!window.crossOriginIsolated) {
       throw new Error("Browser Security Block: Headers not active. Please clear cache.");
     }
@@ -31,26 +9,31 @@ export async function compressVideoTo480p(file: File, onProgress: any): Promise<
     const inputName = 'input.mp4';
     const outputName = 'output.mp4';
     
+    // File likhna
     await ffmpegInstance.writeFile(inputName, await fetchFile(file));
 
-    // Sabse simple command jo har mobile par chalti hai
+    // Command ko aur behtar kiya gaya hai (Chhota nahi, balki complete kiya gaya hai)
     await ffmpegInstance.exec([
       '-i', inputName,
-      '-vf', 'scale=-2:480',
-      '-preset', 'ultafast', 
-      '-crf', '30',
+      '-vf', 'scale=480:-2',      // 480p scaling logic
+      '-c:v', 'libx264',          // Standard video codec
+      '-preset', 'ultrafast',     // Spelling fixed
+      '-crf', '28',               // Quality balance
+      '-movflags', 'faststart',   // Streaming ke liye sabse zaruri
+      '-pix_fmt', 'yuv420p',      // Sabhi devices ke liye support
       outputName
     ]);
 
+    // Data read karna
     const data = await ffmpegInstance.readFile(outputName);
+    
+    // Memory se purani files delete karna (Good practice)
+    await ffmpegInstance.deleteFile(inputName);
+    await ffmpegInstance.deleteFile(outputName);
+
     return new Blob([(data as Uint8Array).buffer], { type: 'video/mp4' });
   } catch (error: any) {
     console.error('Compression Detail:', error);
-    // Agar headers ki wajah se fail hua toh user ko sahi info mile
     throw new Error(error.message || 'Compression failed');
   }
-}
-
-export function getVideoFileSizeInfo(blob: Blob) {
-  return { sizeMB: blob.size / (1024 * 1024), isWithinLimit: true };
 } 
