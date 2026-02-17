@@ -108,7 +108,6 @@ export default function CreatePage() {
     };
   }, []);
 
-  // Reliability Fix: Ensure preview video plays immediately
   useEffect(() => {
     if (previewUrl && previewVideoRef.current) {
         previewVideoRef.current.load();
@@ -229,40 +228,61 @@ export default function CreatePage() {
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
+    setUploadProgress(5);
     setStatusText("Chiti is processing...");
+    
     try {
-      const optimized = await compressVideoTo480p(selectedFile, (p) => {
-        setUploadProgress(10 + Math.floor(p.progress * 60));
-        setStatusText(p.message);
-      });
+      let fileToUpload: any = selectedFile;
+
+      // Compression logic with safety fallback
+      try {
+        const optimized = await compressVideoTo480p(selectedFile, (p) => {
+          setUploadProgress(10 + Math.floor(p.progress * 50));
+          setStatusText(p.message);
+        });
+        fileToUpload = optimized;
+      } catch (compressionError) {
+        console.warn("Compression skipped, uploading original...");
+        fileToUpload = selectedFile;
+        setUploadProgress(30);
+      }
 
       // 🔥 ANDROID COMPATIBILITY FIX: 
-      // Force .mp4 extension for streaming and use folder structure
       const path = `chiti_vids/${user.id}/${Date.now()}.mp4`;
       
+      setStatusText("Uploading to Chiti Cloud...");
+
+      // 🚀 R2 Upload - Direct Bucket Name Fix
       await s3Client.send(new PutObjectCommand({
-        Bucket: R2_CONFIG.bucketName,
+        Bucket: "chiti-videos", // Hardcoded for reliability
         Key: path,
-        Body: new Uint8Array(await optimized.arrayBuffer()),
-        // 🔥 Sabse important line Android ke liye:
+        Body: new Uint8Array(await fileToUpload.arrayBuffer()),
         ContentType: 'video/mp4',
         CacheControl: "public, max-age=31536000, immutable"
       }));
 
-      await supabase.from('posts').insert([{
+      setUploadProgress(90);
+      setStatusText("Finishing post...");
+
+      const { error: dbError } = await supabase.from('posts').insert([{
         video_url: `${R2_CONFIG.publicDomain}/${path}`, 
-        caption, 
+        caption: caption || "", 
         user_id: user.id,
         user_name: user.user_metadata?.full_name || 'Creator',
         filter_name: selectedFilter,
         music_id: activeMusic?.id || null
       }]);
 
+      if (dbError) throw dbError;
+
+      setUploadProgress(100);
       toast.success("Short Published!");
-      window.location.href = '/';
-    } catch (e) {
-      toast.error("Upload failed.");
+      setTimeout(() => { window.location.href = '/'; }, 1000);
+    } catch (e: any) {
+      console.error("Upload Error:", e);
+      toast.error(`Upload failed: ${e.message || 'Check Connection'}`);
       setIsUploading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -484,4 +504,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-}
+} 
