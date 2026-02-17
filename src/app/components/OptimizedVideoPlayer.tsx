@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from 'react';
-import { supabase } from '@/lib/supabase';
 import { Sparkles, Zap } from 'lucide-react';
 
 const FILTERS_DATA: any = {
@@ -28,81 +27,78 @@ const FILTERS_DATA: any = {
  ocean: { name: "Oceanic", style: "hue-rotate(180deg) brightness(1.1)" }
 };
 
-interface OptimizedVideoPlayerProps {
- videoUrl: string;
- videoId: string;
- isActive: boolean;
- username?: string;
- avatarUrl?: string;
- caption?: string;
- filterName?: string;
-}
-
-export function OptimizedVideoPlayer({
- videoUrl,
- videoId,
- isActive,
- filterName = 'none'
-}: OptimizedVideoPlayerProps) {
+export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName = 'none' }: any) {
  const videoRef = useRef<HTMLVideoElement>(null);
  const secondaryRefs = useRef<(HTMLVideoElement | null)[]>([]);
  const [isLoaded, setIsLoaded] = useState(false);
+ const [isBuffering, setIsBuffering] = useState(false);
 
  const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
  const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
 
- // 🚀 SPEED JUGAR 1: Metadata over Download
+ // 🚀 JUGAR 1: Resource Pre-connection (Browser ko pehle hi alert karna)
  useEffect(() => {
+  if (videoUrl) {
+    const link = document.createElement('link');
+    link.rel = 'preload';
+    link.as = 'video';
+    link.href = videoUrl;
+    document.head.appendChild(link);
+    return () => { document.head.removeChild(link); };
+  }
+ }, [videoUrl]);
+
+ useEffect(() => {
+  setIsLoaded(false);
   if (videoRef.current) {
-   setIsLoaded(false);
    videoRef.current.load();
   }
  }, [videoUrl]);
 
- // 🚀 SPEED JUGAR 2: Aggressive Playback
+ // 🚀 JUGAR 2: Aggressive Buffer & Sound Management
  useEffect(() => {
   const video = videoRef.current;
   if (!video) return;
   
   if (isActive) {
-   video.muted = false; 
+   video.muted = false; // Initial try unmuted
    const playPromise = video.play();
    
    if (playPromise !== undefined) {
     playPromise.then(() => {
-     setIsLoaded(true); // Play shuru hote hi loader khatam
-     secondaryRefs.current.forEach((v) => {
-      if (v) {
-       v.currentTime = video.currentTime;
-       v.play().catch(() => {});
-      }
+     setIsLoaded(true);
+     // Sync grids
+     secondaryRefs.current.forEach(v => {
+      if(v) { v.currentTime = video.currentTime; v.play().catch(() => {}); }
      });
     }).catch(() => {
-     // Browser block fallback
-     video.muted = true;
+     video.muted = true; // Fallback for auto-play policy
      video.play().then(() => setIsLoaded(true));
     });
    }
   } else {
    video.pause();
-   secondaryRefs.current.forEach((v) => v?.pause());
+   secondaryRefs.current.forEach(v => v?.pause());
   }
  }, [isActive]);
 
  return (
   <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
    
-   {/* Fast Skeleton Loader */}
-   {!isLoaded && (
-    <div className="absolute inset-0 flex items-center justify-center bg-black z-20">
-     <div className="flex flex-col items-center gap-2">
-      <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-      <Zap size={14} className="text-blue-500 animate-pulse"/>
+   {/* 🔥 ULTRA FAST LOADER UI */}
+   {(!isLoaded || isBuffering) && (
+    <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-20">
+     <div className="flex flex-col items-center gap-3">
+      <div className="w-12 h-12 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
+      <div className="flex items-center gap-2">
+       <Zap size={16} className="text-blue-500 animate-pulse"/>
+       <span className="text-blue-500 text-[10px] font-black uppercase tracking-widest">Streaming...</span>
+      </div>
      </div>
     </div>
    )}
 
-   <div className={`w-full h-full transition-all duration-300 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'} ${currentFilter.isGrid ? 'grid' : ''}`}
+   <div className={`w-full h-full transition-all duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'} ${currentFilter.isGrid ? 'grid' : ''}`}
         style={currentFilter.isGrid ? { 
           gridTemplateColumns: `repeat(${currentFilter.cols}, 1fr)`,
           gridTemplateRows: `repeat(${currentFilter.rows}, 1fr)` 
@@ -119,14 +115,15 @@ export function OptimizedVideoPlayer({
        src={videoUrl}
        loop
        playsInline
-       // 🔥 INSTAGRAM STREAMING LOGIC
+       // 🔥 PRELOAD SETTINGS
        preload="auto"
        // @ts-ignore
        fetchpriority={isActive ? "high" : "low"}
-       // onLoadedMetadata = Jab video ka pehla byte mil jaye tabhi show karo
+       // Sabse important events
        onLoadedMetadata={() => i === 0 && setIsLoaded(true)}
-       onWaiting={() => i === 0 && setIsLoaded(false)}
-       onPlaying={() => i === 0 && setIsLoaded(true)}
+       onWaiting={() => i === 0 && setIsBuffering(true)}
+       onPlaying={() => i === 0 && setIsBuffering(false)}
+       onCanPlay={() => i === 0 && setIsLoaded(true)}
        crossOrigin="anonymous"
        style={{ filter: currentFilter.style }}
       />
@@ -136,14 +133,7 @@ export function OptimizedVideoPlayer({
     {isActive && currentFilter.vfxType === 'lightning' && (
      <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
     )}
-
-    {isActive && filterName !== 'none' && (
-     <div className="absolute top-24 left-6 z-30 flex items-center gap-1.5 bg-black/40 backdrop-blur-md px-2.5 py-1 rounded-full border border-white/10 pointer-events-none">
-       <Sparkles size={10} className="text-blue-400"/>
-       <span className="text-[9px] font-bold uppercase tracking-widest text-white">{currentFilter.name}</span>
-     </div>
-    )}
    </div>
   </div>
  );
-}
+} 
