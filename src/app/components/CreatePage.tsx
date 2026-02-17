@@ -2,7 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.5.7 (Fixed: Preview Mirroring & Load Stability)
+ * VERSION: 4.5.8 (Android MP4 Force & R2 Compatibility Fix)
  * VAADA: No functions removed, Code remains full length.
  */
 
@@ -30,13 +30,13 @@ const R2_CONFIG = {
 
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "none", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
-  crystal: { name: "Crystal", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
-  angel: { name: "Angel", style: "brightness(1.6) saturate(1.2) contrast(0.9)", thumb: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100" },
+  crystal: { name: "Crystal Glow", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
+  angel: { name: "Angel White", style: "brightness(1.6) saturate(1.2) contrast(0.9)", thumb: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100" },
   ivory: { name: "Ivory", style: "brightness(1.3) sepia(0.1) contrast(1.1)", thumb: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100" },
   soft: { name: "Soft Glow", style: "brightness(1.2) blur(0.6px)", thumb: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=100" },
   cine: { name: "Cinema", style: "contrast(1.6) saturate(0.8) brightness(0.9)", thumb: "https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?w=100" },
   teal: { name: "Teal&Orange", style: "hue-rotate(-10deg) saturate(1.8) contrast(1.2)", thumb: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=100" },
-  retro: { name: "Retro", style: "sepia(0.8) contrast(1.2) brightness(0.9)", thumb: "https://images.unsplash.com/photo-1502823403499-6ccfcf4fb453?w=100" },
+  retro: { name: "Vintage", style: "sepia(0.8) contrast(1.2) brightness(0.9)", thumb: "https://images.unsplash.com/photo-1502823403499-6ccfcf4fb453?w=100" },
   noir: { name: "Noir", style: "grayscale(1) contrast(1.8)", thumb: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100" },
   warm: { name: "Warmth", style: "sepia(0.4) saturate(1.6) brightness(1.1)", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
   gold: { name: "Golden", style: "sepia(0.5) brightness(1.1) saturate(2)", thumb: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100" },
@@ -236,17 +236,23 @@ export default function CreatePage() {
         setStatusText(p.message);
       });
 
-      const path = `shorts/${user.id}/${Date.now()}.mp4`;
+      // 🔥 ANDROID COMPATIBILITY FIX: 
+      // Force .mp4 extension for streaming and use folder structure
+      const path = `chiti_vids/${user.id}/${Date.now()}.mp4`;
+      
       await s3Client.send(new PutObjectCommand({
         Bucket: R2_CONFIG.bucketName,
         Key: path,
         Body: new Uint8Array(await optimized.arrayBuffer()),
-        ContentType: 'video/mp4'
+        // 🔥 Sabse important line Android ke liye:
+        ContentType: 'video/mp4',
+        CacheControl: "public, max-age=31536000, immutable"
       }));
 
       await supabase.from('posts').insert([{
         video_url: `${R2_CONFIG.publicDomain}/${path}`, 
-        caption, user_id: user.id,
+        caption, 
+        user_id: user.id,
         user_name: user.user_metadata?.full_name || 'Creator',
         filter_name: selectedFilter,
         music_id: activeMusic?.id || null
@@ -264,8 +270,6 @@ export default function CreatePage() {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
-    // Mirroring Fix: Apply scaleX(-1) ONLY when live & using front camera. 
-    // PREVIEW (isLive = false) will always be scaleX(1) to show original recording.
     const videoStyle = {
       filter: filter.style,
       transform: (isLive && facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
@@ -341,7 +345,6 @@ export default function CreatePage() {
               <div className="flex-1 w-full relative overflow-hidden">
                 {renderContent(!previewUrl)}
                 
-                {/* Visual Recording Indicator (Progress Bar) */}
                 {isRecording && (
                   <div className="absolute top-20 inset-x-6 h-1.5 bg-white/20 rounded-full overflow-hidden z-[220]">
                     <div 
@@ -404,6 +407,19 @@ export default function CreatePage() {
                  </div>
                  <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Caption your short..." className="flex-1 bg-transparent border-none outline-none font-bold text-lg h-40 resize-none pt-4" />
               </div>
+
+              {isUploading && (
+                <div className="mb-6">
+                  <div className="flex justify-between text-[10px] font-black mb-2 text-blue-400">
+                    <span>{statusText.toUpperCase()}</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-600 transition-all duration-300" style={{width: `${uploadProgress}%`}} />
+                  </div>
+                </div>
+              )}
+
               <button onClick={publish} disabled={isUploading} className="w-full bg-red-600 py-6 rounded-[30px] font-black text-xl flex items-center justify-center gap-3">
                 {isUploading ? <Loader2 className="animate-spin"/> : <><Send size={24}/> POST SHORT</>}
               </button>
@@ -468,4 +484,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-}
+} 
