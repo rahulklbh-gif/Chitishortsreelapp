@@ -46,7 +46,6 @@ export function OptimizedVideoPlayer({
 }: OptimizedVideoPlayerProps) {
  const videoRef = useRef<HTMLVideoElement>(null);
  const secondaryRefs = useRef<(HTMLVideoElement | null)[]>([]);
- const hasCounted = useRef(false);
  const [isLoaded, setIsLoaded] = useState(false);
 
  const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
@@ -59,58 +58,44 @@ export function OptimizedVideoPlayer({
   if (gridCount === 3) gridContainerClass = "w-full h-full grid grid-cols-1 grid-rows-3";
  }
 
+ // 🚀 Preload Logic: URL change hone par load reset
  useEffect(() => {
-  setIsLoaded(false);
   if (videoRef.current) {
+   setIsLoaded(false);
    videoRef.current.load();
   }
  }, [videoUrl]);
 
- // --- VIEW COUNTER ---
+ // --- PLAYBACK & SOUND LOGIC ---
  useEffect(() => {
-  let timer: any; 
-  if (isActive && !hasCounted.current && videoId) {
-   timer = setTimeout(async () => {
-    try {
-     const { error } = await supabase.rpc('increment_views', { post_id: videoId });
-     if (!error) hasCounted.current = true;
-    } catch (err) {
-     console.error("View update failed", err);
-    }
-   }, 3000); 
-  }
-  return () => clearTimeout(timer);
- }, [isActive, videoId]);
-
- // --- PLAY/PAUSE SYNC (Sound & Fast Load Fix) ---
- useEffect(() => {
-  if (!videoRef.current) return;
+  const video = videoRef.current;
+  if (!video) return;
   
   if (isActive) {
-   // 🔥 MUSIC FIX: First attempt with sound
-   videoRef.current.muted = false; 
+   video.muted = false; // Unmute by default if active
+   const playPromise = video.play();
    
-   const playPromise = videoRef.current.play();
    if (playPromise !== undefined) {
     playPromise.then(() => {
      setIsLoaded(true);
+     // Sync grid videos
      secondaryRefs.current.forEach((v) => {
       if (v) {
-       v.currentTime = videoRef.current!.currentTime;
+       v.currentTime = video.currentTime;
        v.play().catch(() => {});
       }
      });
     }).catch(() => {
-     // Browser block fallback: Mute karke play karo (Policy requirement)
-     if (videoRef.current) videoRef.current.muted = true;
-     videoRef.current?.play();
+     // Fallback: Agar browser sound ke saath play block kare, toh mute karke play karo
+     video.muted = true;
+     video.play();
     });
    }
   } else {
-   videoRef.current.pause();
+   video.pause();
    secondaryRefs.current.forEach((v) => v?.pause());
   }
- }, [isActive, videoUrl]);
+ }, [isActive]);
 
  return (
   <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
@@ -125,9 +110,9 @@ export function OptimizedVideoPlayer({
     </div>
    )}
 
-   <div className={`${gridContainerClass} transition-all duration-500 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}>
+   <div className={`${gridContainerClass} transition-all duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'}`}>
     {[...Array(gridCount)].map((_, i) => (
-     <div key={i} className="relative w-full h-full overflow-hidden border-[0.2px] border-white/5 bg-zinc-900">
+     <div key={i} className="relative w-full h-full overflow-hidden bg-zinc-900">
       <video
        ref={(el) => {
         if (i === 0) (videoRef as any).current = el;
@@ -136,16 +121,14 @@ export function OptimizedVideoPlayer({
        className="w-full h-full object-cover"
        src={videoUrl}
        loop
-       // 🔥 ULTRA FAST SETTINGS:
-       // @ts-ignore
-       fetchpriority={isActive ? "high" : "low"}
+       playsInline
+       // 🔥 PERFORMANCE FIX:
        preload="auto"
        muted={!isActive || i !== 0}
-       playsInline
-       crossOrigin="anonymous" 
-       autoPlay={isActive}
+       // @ts-ignore
+       fetchpriority={isActive ? "high" : "low"}
        onLoadedData={() => i === 0 && setIsLoaded(true)}
-       onCanPlay={() => i === 0 && setIsLoaded(true)}
+       onCanPlayThrough={() => i === 0 && setIsLoaded(true)}
        style={{ filter: currentFilter.style }}
       />
      </div>
@@ -153,13 +136,6 @@ export function OptimizedVideoPlayer({
 
     {isActive && currentFilter.vfxType === 'lightning' && (
      <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
-    )}
-
-    {isActive && filterName !== 'none' && (
-     <div className="absolute top-20 left-6 z-30 flex items-center gap-2 bg-black/20 backdrop-blur-sm px-3 py-1 rounded-full border border-white/5 pointer-events-none opacity-50">
-       <Sparkles size={10} className="text-blue-400"/>
-       <span className="text-[9px] font-bold uppercase tracking-widest text-white">{currentFilter.name}</span>
-     </div>
     )}
    </div>
   </div>
