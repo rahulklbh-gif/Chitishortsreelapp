@@ -11,24 +11,33 @@ export default function VideoFeed() {
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 1. Data Fetching (Profiles Join ke saath update kiya gaya hai)
+  // 1. Data Fetching (Join logic with safety check)
   useEffect(() => {
     const fetchPosts = async () => {
       try {
-        // 🔥 YAHAN CHANGE KIYA HAI: posts ke saath profiles table ko join kiya
+        // 🔥 Profiles join kar rahe hain hamesha latest data ke liye
         const { data, error } = await supabase
           .from('posts')
           .select(`
             *,
-            profiles:user_id (
+            profiles!user_id (
               username,
               avatar_url
             )
           `)
           .order('created_at', { ascending: false });
 
-        if (error) throw error;
-        setPosts(data || []);
+        if (error) {
+          console.error("Join Error, fetching basic posts:", error);
+          // Agar join fail ho jaye (Foreign key issue), toh normal fetch karo
+          const { data: basicData } = await supabase
+            .from('posts')
+            .select('*')
+            .order('created_at', { ascending: false });
+          setPosts(basicData || []);
+        } else {
+          setPosts(data || []);
+        }
       } catch (err) {
         console.error("Feed error:", err);
       } finally {
@@ -72,6 +81,11 @@ export default function VideoFeed() {
         posts.map((post, index) => {
           const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 1;
 
+          // 🔥 Logic for latest username and photo
+          // Agar profiles join work kar raha hai toh wahan se lo, nahi toh post table se
+          const latestName = post.profiles?.username || post.user_name || 'user';
+          const latestAvatar = post.profiles?.avatar_url || post.user_avatar;
+
           return (
             <div 
               key={post.id} 
@@ -82,9 +96,9 @@ export default function VideoFeed() {
                   videoUrl={post.video_url}
                   videoId={post.id}
                   isActive={index === activeIndex}
-                  // 🔥 YAHAN CHANGE KIYA HAI: Latest data dikhane ke liye profiles object ka use
-                  username={post.profiles?.username || post.user_name}
-                  userAvatar={post.profiles?.avatar_url || post.user_avatar}
+                  // Latest dynamic data pass ho raha hai
+                  username={latestName}
+                  userAvatar={latestAvatar}
                   caption={post.caption}
                   filterName={post.filter_name || 'none'}
                 />
