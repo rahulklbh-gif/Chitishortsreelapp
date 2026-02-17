@@ -283,6 +283,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   src={video.user_avatar} 
                   className="w-11 h-11 rounded-full border-2 border-white object-cover" 
                   alt="avatar"
+                  // 🔥 CORS aur Cloudflare policy ke liye ye line add ki gayi hai
+                  crossOrigin="anonymous"
                   onError={(e) => { 
                     e.currentTarget.onerror = null;
                     e.currentTarget.src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'; 
@@ -319,4 +321,4 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       })}
     </div>
   );
-}
+} 
