@@ -24,9 +24,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
   
-  // UNIQUE VIEW LOGIC
+  // UNIQUE VIEW LOGIC: viewedVideos ab session-based memory rakhega
   const viewedVideos = useRef<Set<string>>(new Set());
   
+  // Aapka original videoRefs logic
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
 
   useEffect(() => {
@@ -47,7 +48,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- REAL-TIME COMMENT COUNT ---
+  // --- REAL-TIME COMMENT COUNT UPDATE ---
   useEffect(() => {
     const channel = supabase
       .channel('schema-db-changes')
@@ -69,35 +70,43 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     };
   }, []);
 
-  // --- VIEW RECORDING ---
+  // --- VIEW RECORDING (FIXED: UNIQUE & 3s DELAY) ---
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
+      
       const currentVideoId = videos[activeIndex].id;
       const currentUserId = currentUser.id;
+
+      // 🛑 Unique View Check: Agar pehle se viewed hai toh RPC call nahi hogi
       if (viewedVideos.current.has(currentVideoId)) return;
 
       try {
+        // ✅ RPC call jo unique view handle karega database level par
         await supabase.rpc('increment_views', { 
           post_id: currentVideoId, 
           viewer_id: currentUserId 
         });
+        
+        // Memory mein add karo taki is session mein dubara count na badhe
         viewedVideos.current.add(currentVideoId);
       } catch (err) {
         console.error("View error:", err);
       }
     };
 
+    // ⚡ 3 second ka delay: User scroll karte huye nikal gaya toh count nahi hoga
     const timer = setTimeout(recordView, 3000); 
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
-  // --- FETCH VIDEOS (FIXED MAPPING) ---
+  // --- FETCH VIDEOS (URL ID Support ke saath) ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
 
+      // 🛑 'likes_count' select ho raha hai
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -114,17 +123,15 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       
       if (data) {
         let updatedVideos = data.map((video: any) => {
-          // 🛡️ Sabse important part: Field mapping
-          // Video URL agar 'video_url' mein nahi hai toh 'url' check karega
-          const finalVideoUrl = video.video_url || video.url || "";
-          
-          // User data mapping
-          const freshName = video.profiles?.username || video.profiles?.full_name || video.user_name || 'user';
+          // --- YAHAN FIX HAI: Video URL aur Avatar check ---
+          const freshName = video.profiles?.full_name || video.profiles?.username || video.user_name || 'user';
           const freshAvatar = video.profiles?.avatar_url || video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
+          // Check if database uses 'url' instead of 'video_url'
+          const finalUrl = video.video_url || video.url || "";
 
           return {
             ...video,
-            video_url: finalVideoUrl, 
+            video_url: finalUrl,
             user_name: freshName,
             user_avatar: freshAvatar,
             likes_count: video.likes_count || 0,
@@ -133,7 +140,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           };
         });
 
-        // URL Specific Video logic
         if (videoIdFromUrl) {
           const targetIndex = updatedVideos.findIndex(v => v.id === videoIdFromUrl);
           if (targetIndex !== -1) {
@@ -162,6 +168,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { console.error(err); }
   };
 
+  // --- SCROLL HANDLER ---
   const handleScroll = () => {
     if (!containerRef.current) return;
     const { scrollTop, clientHeight } = containerRef.current;
@@ -172,12 +179,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     }
   };
 
+  // --- PLAY/PAUSE LOGIC ---
   const togglePlayPause = () => {
     setIsPlaying(!isPlaying);
     setShowPlayIcon(true);
     setTimeout(() => setShowPlayIcon(false), 500); 
   };
 
+  // --- FOLLOW LOGIC ---
   const handleFollowToggle = async (e: React.MouseEvent, targetUserId: string) => {
     e.stopPropagation();
     if (!currentUser) { toast.error("Pehle login karein!"); return; }
@@ -196,21 +205,33 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         setFollowedUsers(prev => new Set(prev).add(targetUserId));
         toast.success("Following!");
       }
-    } catch (err) { toast.error("Error toggling follow"); }
+    } catch (err) { toast.error("Koshish nakam rahi"); }
   };
 
+  // --- SHARE LOGIC ---
   const handleVideoShare = async (video: any) => {
     const shareUrl = `${window.location.origin}/?video=${video.id}`;
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'Chiti Shorts', text: `Check out this video`, url: shareUrl });
+        await navigator.share({
+          title: 'Chiti Shorts',
+          text: `Check out this video by @${video.user_name}`,
+          url: shareUrl
+        });
         await supabase.rpc('increment_shares', { post_id: video.id });
+        setVideos(prev => prev.map(v => 
+          v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
+        ));
+        toast.success("Shared!");
       } else {
         await navigator.clipboard.writeText(shareUrl);
         toast.success("Link copy ho gaya!");
         await supabase.rpc('increment_shares', { post_id: video.id });
+        setVideos(prev => prev.map(v => 
+          v.id === video.id ? { ...v, shares_count: (v.shares_count || 0) + 1 } : v
+        ));
       }
-    } catch (err) { console.log("Share cancelled"); }
+    } catch (err) { console.log("Share action cancelled"); }
   };
 
   if (loading) return (
@@ -236,10 +257,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always bg-black"
             onClick={togglePlayPause} 
           >
+            
             {shouldRender ? (
               <OptimizedVideoPlayer
-                // ✅ Humne fetchVideos mein mapping fix kar di hai, 
-                // toh ab video.video_url mein confirm data hoga.
                 videoUrl={video.video_url}
                 videoId={video.id}
                 isActive={isActive && isPlaying}
@@ -271,13 +291,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 }}
               >
                 <img 
-                  // ✅ Profile Photo Fix: Fallback image handle ho rahi hai
                   src={video.user_avatar} 
                   className="w-11 h-11 rounded-full border-2 border-white object-cover" 
                   alt="avatar"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
-                  }}
+                  onError={(e) => { e.currentTarget.src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png' }}
                 />
                 <span className="font-black text-lg shadow-black drop-shadow-lg">@{video.user_name}</span>
                 <button 
