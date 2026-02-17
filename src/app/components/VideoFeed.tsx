@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; // Path check kar lena
+import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
 import { Loader2, Zap } from 'lucide-react';
 
 export default function VideoFeed() {
@@ -11,13 +11,20 @@ export default function VideoFeed() {
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // 1. Data Fetching (Fastest way)
+  // 1. Data Fetching (Profiles Join ke saath update kiya gaya hai)
   useEffect(() => {
     const fetchPosts = async () => {
       try {
+        // 🔥 YAHAN CHANGE KIYA HAI: posts ke saath profiles table ko join kiya
         const { data, error } = await supabase
           .from('posts')
-          .select('*')
+          .select(`
+            *,
+            profiles:user_id (
+              username,
+              avatar_url
+            )
+          `)
           .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -63,11 +70,6 @@ export default function VideoFeed() {
     >
       {posts.length > 0 ? (
         posts.map((post, index) => {
-          /**
-           * 🔥 SMART RENDER:
-           * Sirf current, agli aur pichli video ko render karega.
-           * Isse 8MB wali video ko poori RAM aur Internet speed milegi.
-           */
           const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 1;
 
           return (
@@ -80,7 +82,9 @@ export default function VideoFeed() {
                   videoUrl={post.video_url}
                   videoId={post.id}
                   isActive={index === activeIndex}
-                  username={post.user_name}
+                  // 🔥 YAHAN CHANGE KIYA HAI: Latest data dikhane ke liye profiles object ka use
+                  username={post.profiles?.username || post.user_name}
+                  userAvatar={post.profiles?.avatar_url || post.user_avatar}
                   caption={post.caption}
                   filterName={post.filter_name || 'none'}
                 />
@@ -99,4 +103,4 @@ export default function VideoFeed() {
       )}
     </div>
   );
-} 
+}
