@@ -4,9 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Sparkles, Zap } from 'lucide-react';
 
-/**
- * 🎨 MASTER FILTERS DATA (Original Full List)
- */
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "" },
   crystal: { name: "Crystal Glow", style: "brightness(1.4) contrast(1.1) saturate(1.1)" },
@@ -31,170 +28,95 @@ const FILTERS_DATA: any = {
   ocean: { name: "Oceanic", style: "hue-rotate(180deg) brightness(1.1)" }
 };
 
-interface OptimizedVideoPlayerProps {
-  videoUrl: string;
-  videoId: string;
-  isActive: boolean;
-  username?: string;
-  avatarUrl?: string;
-  caption?: string;
-  filterName?: string;
-}
-
-export function OptimizedVideoPlayer({
-  videoUrl,
-  videoId,
-  isActive,
-  filterName = 'none'
-}: OptimizedVideoPlayerProps) {
+export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName = 'none' }: any) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const secondaryRefs = useRef<(HTMLVideoElement | null)[]>([]);
-  const hasCounted = useRef(false);
   const [isLoaded, setIsLoaded] = useState(false);
-  const [error, setError] = useState(false);
-
   const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
   const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
 
-  // Grid Structure Logic
-  let gridContainerClass = "w-full h-full";
-  if (currentFilter.isGrid) {
-    if (gridCount === 4) gridContainerClass = "w-full h-full grid grid-cols-2 grid-rows-2";
-    if (gridCount === 6) gridContainerClass = "w-full h-full grid grid-cols-2 grid-rows-3";
-    if (gridCount === 3) gridContainerClass = "w-full h-full grid grid-cols-1 grid-rows-3";
-  }
-
-  // --- LOADING & COMPRESSION RESET ---
+  // URL change par loading state reset karein
   useEffect(() => {
     setIsLoaded(false);
-    setError(false);
-    if (videoRef.current) {
-      videoRef.current.load();
-    }
-    
-    // Safety Fallback: Agar video data send na kare toh 3s baad loader hatao
-    const timer = setTimeout(() => {
-      if (!isLoaded) setIsLoaded(true);
-    }, 3000);
-    
-    return () => clearTimeout(timer);
   }, [videoUrl]);
 
-  // --- UNIQUE VIEW COUNTER (Original Logic) ---
-  useEffect(() => {
-    let timer: any; 
-    if (isActive && !hasCounted.current && videoId) {
-      timer = setTimeout(async () => {
-        try {
-          const { error } = await supabase.rpc('increment_views', { post_id: videoId });
-          if (!error) hasCounted.current = true;
-        } catch (err) {
-          console.error("View update failed", err);
-        }
-      }, 3000); 
-    }
-    return () => clearTimeout(timer);
-  }, [isActive, videoId]);
-
-  // --- PLAY/PAUSE & GRID SYNC (Full Logic) ---
+  // R2 Video Playback Sync
   useEffect(() => {
     if (!videoRef.current) return;
     
     if (isActive) {
+      // Browser ko force karein playback start karne ke liye
+      videoRef.current.muted = true;
       const playPromise = videoRef.current.play();
+      
       if (playPromise !== undefined) {
         playPromise.then(() => {
           setIsLoaded(true);
-          // Sync secondary grid videos
-          secondaryRefs.current.forEach((v) => {
+          // Sync secondary videos for grid filters
+          secondaryRefs.current.forEach(v => {
             if (v) {
               v.currentTime = videoRef.current!.currentTime;
               v.play().catch(() => {});
             }
           });
-        }).catch((err) => {
-          console.log("Autoplay prevented or video error", err);
+        }).catch(err => {
+          console.error("R2 Playback Error:", err);
+          // Agar autoplay block ho toh bhi loader hatao
+          setIsLoaded(true);
         });
       }
     } else {
       videoRef.current.pause();
-      secondaryRefs.current.forEach((v) => v?.pause());
+      secondaryRefs.current.forEach(v => v?.pause());
     }
   }, [isActive, videoUrl]);
 
   return (
     <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
-      
-      {/* 🔄 LOADING STATE (Full UI) */}
-      {!isLoaded && !error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-zinc-950 z-30">
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-            <div className="flex items-center gap-2">
-              <Zap size={18} className="text-blue-500 animate-pulse"/>
-              <span className="text-blue-500 font-bold text-xs uppercase tracking-tighter">Processing VFX...</span>
-            </div>
-          </div>
+      {/* 🔄 Processing/Loading Overlay */}
+      {!isLoaded && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-black z-30">
+          <div className="w-12 h-12 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <Zap size={16} className="mt-4 text-blue-500 animate-pulse" />
         </div>
       )}
 
-      {/* ⚠️ ERROR STATE */}
-      {error && (
-        <div className="absolute inset-0 flex items-center justify-center bg-zinc-900 z-30">
-          <p className="text-white text-xs">Video format not supported</p>
-        </div>
-      )}
-
-      {/* 🎥 VIDEO GRID LAYER (Original Complex Render) */}
-      <div className={`${gridContainerClass} transition-all duration-700 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'}`}>
+      <div className={`w-full h-full ${currentFilter.isGrid ? 'grid' : ''}`}
+           style={currentFilter.isGrid ? { 
+             gridTemplateColumns: `repeat(${currentFilter.cols}, 1fr)`,
+             gridTemplateRows: `repeat(${currentFilter.rows}, 1fr)` 
+           } : {}}>
+        
         {[...Array(gridCount)].map((_, i) => (
-          <div key={i} className="relative w-full h-full overflow-hidden border-[0.2px] border-white/5 bg-zinc-900">
+          <div key={i} className="relative w-full h-full bg-zinc-950">
             <video
-              ref={(el) => {
-                if (i === 0) (videoRef as any).current = el;
-                else secondaryRefs.current[i] = el;
-              }}
-              className="w-full h-full object-cover"
+              ref={(el) => { if (i === 0) (videoRef as any).current = el; else secondaryRefs.current[i] = el; }}
               src={videoUrl}
+              className="w-full h-full object-cover"
               loop
-              muted={!isActive || i !== 0}
+              muted
               playsInline
+              // 🔥 R2 Compatibility fix: crossOrigin set karna zaroori hai
+              crossOrigin="anonymous"
               preload="auto"
-              // Faster loading flags
-              // @ts-ignore
-              fetchpriority={isActive ? "high" : "low"}
-              onLoadedData={() => { if(i === 0) setIsLoaded(true); }}
-              onCanPlay={() => { if(i === 0) setIsLoaded(true); }}
-              onError={() => { if(i === 0) setError(true); setIsLoaded(true); }}
+              onLoadedData={() => i === 0 && setIsLoaded(true)}
+              onCanPlay={() => i === 0 && setIsLoaded(true)}
               style={{ filter: currentFilter.style }}
             />
           </div>
         ))}
 
-        {/* ⚡ VFX OVERLAY (Lightning/Pulse) */}
+        {/* Filters/VFX (Original) */}
         {isActive && currentFilter.vfxType === 'lightning' && (
-          <div className="absolute inset-0 z-10 pointer-events-none bg-blue-400/10 animate-pulse mix-blend-overlay" />
+          <div className="absolute inset-0 z-10 pointer-events-none bg-blue-400/10 animate-pulse" />
         )}
-        {isActive && currentFilter.vfxType === 'pulse' && (
-          <div className="absolute inset-0 z-10 pointer-events-none animate-[ping_2s_infinite] border-4 border-white/10" />
-        )}
-
-        {/* ✨ FILTER NAME BADGE */}
         {isActive && filterName !== 'none' && (
-          <div className="absolute top-24 left-6 z-30 flex items-center gap-2 bg-black/30 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/10 pointer-events-none">
-            <Sparkles size={12} className="text-yellow-400 animate-spin-slow"/>
-            <span className="text-[10px] font-black uppercase tracking-widest text-white shadow-lg">{currentFilter.name}</span>
+          <div className="absolute top-24 left-6 z-30 flex items-center gap-2 bg-black/40 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
+            <Sparkles size={12} className="text-blue-400"/>
+            <span className="text-[10px] font-bold text-white uppercase">{currentFilter.name}</span>
           </div>
         )}
       </div>
-
-      {/* 🎨 CUSTOM CSS FOR ANIMATIONS */}
-      <style jsx>{`
-        @keyframes spin-slow {
-          from { transform: rotate(0deg); }
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 } 
