@@ -44,12 +44,13 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
     link.as = 'video';
     link.href = videoUrl;
     document.head.appendChild(link);
-    return () => { document.head.removeChild(link); };
+    return () => { try { document.head.removeChild(link); } catch(e) {} };
   }
  }, [videoUrl]);
 
  useEffect(() => {
   setIsLoaded(false);
+  setIsBuffering(false);
   if (videoRef.current) {
    videoRef.current.load();
   }
@@ -61,18 +62,29 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
   if (!video) return;
   
   if (isActive) {
-   video.muted = false; // Initial try unmuted
+   // Force mute on start for ultra-fast playback (Auto-play policy bypass)
+   video.muted = true; 
+   
    const playPromise = video.play();
    
    if (playPromise !== undefined) {
     playPromise.then(() => {
      setIsLoaded(true);
+     setIsBuffering(false);
+     
+     // ⚡ Unmute only after successful play
+     video.muted = false;
+
      // Sync grids
      secondaryRefs.current.forEach(v => {
-      if(v) { v.currentTime = video.currentTime; v.play().catch(() => {}); }
+      if(v) { 
+        v.currentTime = video.currentTime; 
+        v.play().catch(() => {}); 
+      }
      });
-    }).catch(() => {
-     video.muted = true; // Fallback for auto-play policy
+    }).catch((error) => {
+     console.log("Autoplay blocked, playing muted...");
+     video.muted = true;
      video.play().then(() => setIsLoaded(true));
     });
    }
@@ -87,7 +99,7 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
    
    {/* 🔥 ULTRA FAST LOADER UI */}
    {(!isLoaded || isBuffering) && (
-    <div className="absolute inset-0 flex items-center justify-center bg-black/50 backdrop-blur-sm z-20">
+    <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-20">
      <div className="flex flex-col items-center gap-3">
       <div className="w-12 h-12 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
       <div className="flex items-center gap-2">
@@ -98,7 +110,7 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
     </div>
    )}
 
-   <div className={`w-full h-full transition-all duration-300 ${isLoaded ? 'opacity-100' : 'opacity-0'} ${currentFilter.isGrid ? 'grid' : ''}`}
+   <div className={`w-full h-full transition-all duration-500 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'} ${currentFilter.isGrid ? 'grid' : ''}`}
         style={currentFilter.isGrid ? { 
           gridTemplateColumns: `repeat(${currentFilter.cols}, 1fr)`,
           gridTemplateRows: `repeat(${currentFilter.rows}, 1fr)` 
@@ -115,15 +127,19 @@ export function OptimizedVideoPlayer({ videoUrl, videoId, isActive, filterName =
        src={videoUrl}
        loop
        playsInline
+       // Force play even if JS is slow
+       autoPlay={isActive}
+       muted={i !== 0 || !isActive}
        // 🔥 PRELOAD SETTINGS
        preload="auto"
        // @ts-ignore
        fetchpriority={isActive ? "high" : "low"}
-       // Sabse important events
+       // Sabse important events - Metadata milte hi show kardo
        onLoadedMetadata={() => i === 0 && setIsLoaded(true)}
        onWaiting={() => i === 0 && setIsBuffering(true)}
-       onPlaying={() => i === 0 && setIsBuffering(false)}
+       onPlaying={() => i === 0 && (setIsBuffering(false), setIsLoaded(true))}
        onCanPlay={() => i === 0 && setIsLoaded(true)}
+       onCanPlayThrough={() => i === 0 && setIsLoaded(true)}
        crossOrigin="anonymous"
        style={{ filter: currentFilter.style }}
       />
