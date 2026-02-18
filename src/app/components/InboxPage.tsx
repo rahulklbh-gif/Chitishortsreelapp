@@ -8,26 +8,12 @@ export function InboxPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Mark as read function (Purana logic)
-  const markNotificationsAsRead = async () => {
-    if (!user) return;
-    try {
-      await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('receiver_id', user.id)
-        .eq('is_read', false);
-    } catch (err) {
-      console.error('Error marking as read:', err);
-    }
-  };
-
   const fetchNotifications = async () => {
     if (!user) return;
     try {
       setLoading(true);
       
-      // 1. Notifications fetch karo
+      // 1. Pehle notifications le kar aao
       const { data: notifs, error } = await supabase
         .from('notifications')
         .select('*')
@@ -36,14 +22,13 @@ export function InboxPage() {
 
       if (error) throw error;
 
-      // 2. Data Enrichment (Photo aur Username ke liye)
-      // Kyunki UUID alag hai, hum notifications table ke 'sender_id' 
-      // ka use karke profile table se matching data nikaalenge
+      // 2. Data Enrichment (Photo, Username aur R2 Video link ke liye)
       const enriched = await Promise.all((notifs || []).map(async (n) => {
+        // Direct ID match logic for profile
         const { data: profile } = await supabase
           .from('profiles')
           .select('username, avatar_url')
-          .eq('id', n.sender_id) // Yahan match check ho raha hai
+          .eq('id', n.sender_id) 
           .single();
 
         return {
@@ -54,7 +39,7 @@ export function InboxPage() {
 
       setNotifications(enriched);
     } catch (err) {
-      console.error('Error:', err);
+      console.error('Fetch error:', err);
     } finally {
       setLoading(false);
     }
@@ -63,11 +48,17 @@ export function InboxPage() {
   useEffect(() => {
     if (user) {
       fetchNotifications();
-      markNotificationsAsRead();
+      
+      // Mark as read (Database update)
+      supabase.from('notifications')
+        .update({ is_read: true })
+        .eq('receiver_id', user.id)
+        .eq('is_read', false)
+        .then();
 
-      // Real-time notification logic
+      // Real-time listener: Bina refresh ke naya notification dikhane ke liye
       const channel = supabase
-        .channel(`inbox_realtime_${user.id}`)
+        .channel(`inbox_v3_${user.id}`)
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'public',
@@ -80,65 +71,72 @@ export function InboxPage() {
     }
   }, [user]);
 
-  if (loading && notifications.length === 0) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-white" /></div>;
+  if (loading && notifications.length === 0) return (
+    <div className="flex justify-center items-center min-h-screen bg-black">
+      <Loader2 className="animate-spin text-blue-500" size={32} />
+    </div>
+  );
 
   return (
-    <div className="min-h-screen bg-black text-white p-4 pb-24">
-      <h1 className="text-xl font-bold mb-6 italic tracking-widest uppercase">Inbox</h1>
+    <div className="min-h-screen bg-black text-white p-4 pb-24 font-sans">
+      <h1 className="text-xl font-bold mb-6 italic tracking-widest uppercase border-b border-white/5 pb-2">
+        Inbox
+      </h1>
       
       {notifications.length === 0 ? (
-        <div className="text-center text-gray-500 mt-20">
-          <MessageCircle className="mx-auto mb-2 opacity-20" size={50} />
-          <p>Koi activity nahi mili</p>
+        <div className="flex flex-col items-center justify-center mt-32 text-gray-600">
+          <MessageCircle className="mb-4 opacity-10" size={60} />
+          <p className="text-sm font-medium">Koi activity nahi mili</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {notifications.map((n) => (
-            <div key={n.id} className="flex items-center gap-3 bg-white/5 p-4 rounded-2xl border border-white/5">
+            <div key={n.id} className="flex items-center gap-3 bg-[#0f0f0f] p-3 rounded-2xl border border-white/5 hover:bg-white/5 transition-colors">
               
-              {/* ✅ PROFILE PHOTO FIX: Direct link or Initial */}
-              <div className="w-11 h-11 flex-shrink-0">
-                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 overflow-hidden flex items-center justify-center border border-white/10">
+              {/* ✅ PROFILE PHOTO: Profiles table se ID match karke */}
+              <div className="relative w-12 h-12 flex-shrink-0">
+                <div className="w-12 h-12 rounded-full bg-blue-900/30 overflow-hidden flex items-center justify-center border border-white/10">
                   {n.sender?.avatar_url ? (
                     <img 
                       src={n.sender.avatar_url} 
                       className="w-full h-full object-cover"
                       alt="avatar"
-                      onError={(e) => (e.currentTarget.style.display = 'none')}
                     />
                   ) : (
-                    <span className="text-white font-bold text-sm uppercase">
+                    <span className="text-blue-400 font-black text-sm uppercase">
                       {n.sender?.username?.[0] || 'U'}
                     </span>
                   )}
                 </div>
               </div>
               
+              {/* Notification Content */}
               <div className="flex-1 min-w-0">
-                <p className="text-sm">
-                  <span className="font-black text-white">@{n.sender?.username || 'User'}</span>
-                  <span className="text-gray-300 ml-1">
-                    {/* ✅ FOLLOW NOTIFICATION FIX */}
+                <p className="text-sm leading-snug">
+                  <span className="font-bold text-white">@{n.sender?.username || 'user'}</span>
+                  <span className="text-gray-400 ml-1">
+                    {/* ✅ FOLLOW NOTIFICATION TEXT FIX */}
                     {n.type === 'follow' ? 'started following you' : n.content}
                   </span>
                 </p>
-                <p className="text-[10px] text-gray-500 mt-1 uppercase font-bold tracking-tighter">
+                <p className="text-[10px] text-gray-500 mt-1 font-bold uppercase tracking-tight">
                   {n.type} • {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
 
-              {/* ✅ R2 VIDEO THUMBNAIL (YouTube hata diya) */}
+              {/* ✅ CLOUDFLARE R2 VIDEO THUMBNAIL (chiti-videos bucket) */}
               {n.post_id && (n.type === 'like' || n.type === 'comment') && (
-                <div className="w-10 h-14 rounded overflow-hidden border border-white/10 bg-gray-900 flex-shrink-0">
+                <div className="w-10 h-14 rounded-lg overflow-hidden border border-white/10 bg-black flex-shrink-0 shadow-lg">
                   <video 
-                    src={`https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/videos/${n.post_id}`} 
-                    className="w-full h-full object-cover opacity-50"
+                    src={`https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/chiti-videos/${n.post_id}`} 
+                    className="w-full h-full object-cover opacity-60"
+                    muted
                   />
                 </div>
               )}
 
-              {/* Unread dot */}
-              {!n.is_read && <div className="w-2 h-2 bg-blue-500 rounded-full"></div>}
+              {/* Unread Indicator */}
+              {!n.is_read && <div className="w-2 h-2 bg-blue-600 rounded-full shadow-[0_0_8px_rgba(37,99,235,0.6)]"></div>}
             </div>
           ))}
         </div>
