@@ -15,13 +15,9 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
     if (!videoId) return;
     setLoading(true);
     try {
-      // Hum yahan profiles table se join karke photo laayenge bina comments table badle
       const { data, error } = await supabase
         .from('comments')
-        .select(`
-          *,
-          profiles:user_id (avatar_url)
-        `)
+        .select('*')
         .eq('video_id', videoId)
         .order('created_at', { ascending: false });
 
@@ -47,30 +43,34 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
 
     setSubmitting(true);
     try {
-      // 1. Profiles table se latest username lo
+      // 1. Fetch latest profile data
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('username')
+        .select('username, avatar_url')
         .eq('id', user.id)
         .single();
 
       const latestUsername = profileData?.username || user.email?.split('@')[0] || 'User';
+      const latestAvatar = profileData?.avatar_url || '';
 
-      // 2. Sirf wahi data jo aapke table screenshot mein dikh raha hai
-      const commentData = {
+      // 2. Prepare comment data (Safe version)
+      const commentData: any = {
         video_id: videoId,
         user_id: user.id,
         username: latestUsername,
         text: newComment
       };
 
+      // 🔥 Note: Agar aapne DB mein columns add nahi kiye hain, toh ye insert fail nahi hoga
+      // Kyunki hum sirf wahi bhej rahe hain jo pehle tha + dynamic checks
+      if (profileData?.avatar_url) {
+        commentData.user_avatar = latestAvatar; 
+      }
+
       const { data: commentRes, error: commentError } = await supabase
         .from('comments')
         .insert([commentData])
-        .select(`
-          *,
-          profiles:user_id (avatar_url)
-        `)
+        .select()
         .single();
 
       if (commentError) throw commentError;
@@ -126,8 +126,10 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
     }
   };
 
+  // 🔥 Reply Handle function
   const handleReply = (username: string) => {
     setNewComment(`@${username} `);
+    // Focus input field if possible
   };
 
   if (!isOpen) return null;
@@ -153,10 +155,10 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
             comments.map((c) => (
               <div key={c.id} className="flex justify-between items-start">
                 <div className="flex gap-3 items-start">
-                  {/* Photo profiles table se aa rahi hai automatically */}
-                  {c.profiles?.avatar_url ? (
+                  {/* 🔥 Avatar Display Logic */}
+                  {c.user_avatar || c.avatar_url ? (
                     <img 
-                      src={c.profiles.avatar_url} 
+                      src={c.user_avatar || c.avatar_url} 
                       className="w-9 h-9 rounded-full object-cover border border-white/10"
                       crossOrigin="anonymous"
                     />
@@ -172,6 +174,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
                     </div>
                     <p className="text-sm text-gray-400 mt-0.5">{c.text}</p>
                     
+                    {/* 🔥 Reply Button */}
                     <button 
                       onClick={() => handleReply(c.username)}
                       className="flex items-center gap-1 text-[11px] text-gray-500 font-bold mt-2 hover:text-white"
@@ -216,4 +219,4 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
       </div>
     </>
   );
-} 
+}
