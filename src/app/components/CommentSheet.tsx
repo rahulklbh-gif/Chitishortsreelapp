@@ -11,7 +11,6 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Simple fetch taaki error na aaye
   const fetchComments = useCallback(async () => {
     if (!videoId) return;
     setLoading(true);
@@ -44,7 +43,6 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
 
     setSubmitting(true);
     try {
-      // Latest username fetch
       const { data: profileData } = await supabase
         .from('profiles')
         .select('username')
@@ -53,7 +51,6 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
 
       const latestUsername = profileData?.username || user.email?.split('@')[0] || 'User';
 
-      // Sirf wahi columns jo confirm aapke DB mein hain
       const commentData = {
         video_id: videoId,
         user_id: user.id,
@@ -148,30 +145,33 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
               <div key={c.id} className="flex justify-between items-start">
                 <div className="flex gap-3 items-start">
                   
-                  {/* 🔥 Photo Logic: Direct profile storage link using user_id */}
-                  <img 
-                    src={`https://pub-your-id.r2.dev/avatars/${c.user_id}`} 
-                    className="w-9 h-9 rounded-full object-cover border border-white/10 flex-shrink-0"
-                    crossOrigin="anonymous"
-                    onError={(e) => {
-                      // Agar photo nahi milti toh letter dikhayega
-                      (e.target as HTMLImageElement).style.display = 'none';
-                      (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                    }}
-                  />
-                  <div className="hidden w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
-                    {c.username ? c.username[0].toUpperCase() : 'U'}
+                  {/* 🔥 PHOTO MAGIC AREA START */}
+                  <div className="relative w-9 h-9 flex-shrink-0">
+                    {/* Fallback Letter (Hamesha piche rahega) */}
+                    <div className="absolute inset-0 w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-xs">
+                      {c.username ? c.username[0].toUpperCase() : 'U'}
+                    </div>
+                    
+                    {/* Actual Photo (Upar load hogi) */}
+                    <img 
+                      src={`https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/avatars/${c.user_id}`} 
+                      className="absolute inset-0 w-9 h-9 rounded-full object-cover border border-white/10 transition-opacity duration-300 opacity-0"
+                      crossOrigin="anonymous"
+                      onLoad={(e) => (e.currentTarget.style.opacity = '1')}
+                      onError={(e) => (e.currentTarget.style.display = 'none')}
+                    />
                   </div>
+                  {/* 🔥 PHOTO MAGIC AREA END */}
                   
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-sm text-gray-200">@{c.username}</span>
                     </div>
-                    <p className="text-sm text-gray-400 mt-0.5">{c.text}</p>
+                    <p className="text-sm text-gray-400 mt-0.5 leading-relaxed">{c.text}</p>
                     
                     <button 
                       onClick={() => handleReply(c.username)}
-                      className="flex items-center gap-1 text-[11px] text-gray-500 font-bold mt-2 hover:text-white"
+                      className="flex items-center gap-1 text-[11px] text-gray-500 font-bold mt-2 hover:text-white transition-colors"
                     >
                       <Reply size={12} /> Reply
                     </button>
@@ -181,7 +181,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
                 {user?.id === c.user_id && (
                   <button 
                     onClick={() => handleDelete(c.id)}
-                    className="p-3 text-red-500/70 hover:text-red-500 transition-colors"
+                    className="p-3 text-gray-600 hover:text-red-500 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
