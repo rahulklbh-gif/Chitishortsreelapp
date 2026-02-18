@@ -8,6 +8,42 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 
+// ✅ Wahi logic jo ChatListPage aur CommentSheet mein kaam kar raha hai
+function UserAvatar({ userId, username }: { userId: string, username: string }) {
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function getPhoto() {
+      if (!userId) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('avatar_url')
+        .eq('id', userId)
+        .single();
+      if (data?.avatar_url) setAvatarUrl(data.avatar_url);
+    }
+    getPhoto();
+  }, [userId]);
+
+  return (
+    <div className="relative w-10 h-10 flex-shrink-0">
+      {/* Background Initials (Fallback) */}
+      <div className="absolute inset-0 w-10 h-10 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center text-gray-500 font-bold text-xs">
+        {username ? username[0].toUpperCase() : 'U'}
+      </div>
+      {/* Actual Image */}
+      {avatarUrl && (
+        <img 
+          src={avatarUrl} 
+          className="absolute inset-0 w-10 h-10 rounded-full object-cover border border-gray-100"
+          crossOrigin="anonymous"
+          onError={(e) => (e.currentTarget.style.display = 'none')}
+        />
+      )}
+    </div>
+  );
+}
+
 export function ChatRoom() {
   const { roomId } = useParams();
   const [searchParams] = useSearchParams();
@@ -100,29 +136,29 @@ export function ChatRoom() {
   };
 
   return (
-    /* ✅ fixed inset-0 aur z-[100] se ye Bottom Nav ke upar aa jayega */
     <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black">
       {/* Header (White Theme) */}
       <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0">
         <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer text-black" />
+        
+        {/* ✅ Header Photo Fix yahan hai */}
         <div className="relative">
-          <img 
-            src={friendProfile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friendProfile?.username || 'user'}`} 
-            className="w-10 h-10 rounded-full object-cover border border-gray-200"
-            alt="profile"
-            onError={(e) => {
-                (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${friendProfile?.username || 'default'}`;
-            }}
+          <UserAvatar 
+            userId={friendId || ''} 
+            username={friendProfile?.username || 'U'} 
           />
           <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
         </div>
+
         <div>
-          <h3 className="text-sm font-bold text-gray-900">{friendProfile?.full_name || friendProfile?.username || 'Chiti User'}</h3>
+          <h3 className="text-sm font-bold text-gray-900">
+            {friendProfile?.full_name || friendProfile?.username || 'Chiti User'}
+          </h3>
           <p className="text-[10px] text-green-600 font-medium">Active now</p>
         </div>
       </div>
 
-      {/* Messages Area (Light Gray/White) */}
+      {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f9f9f9]">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}>
@@ -144,7 +180,7 @@ export function ChatRoom() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area (White Theme) */}
+      {/* Input Area */}
       <div className="p-4 bg-white border-t border-gray-100 pb-8">
         <form onSubmit={handleSendMessage} className="flex items-center gap-3 bg-gray-100 p-2 rounded-full px-4 border border-gray-200">
           <button type="button" onClick={() => fileInputRef.current?.click()} className="text-blue-600">
