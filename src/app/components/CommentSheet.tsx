@@ -1,4 +1,4 @@
-import { X, Send, Loader2, Trash2 } from 'lucide-react'; 
+import { X, Send, Loader2, Trash2, Reply } from 'lucide-react'; 
 import { useState, useEffect, useCallback } from 'react'; 
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -10,6 +10,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [replyTo, setReplyTo] = useState<string | null>(null); // 🔥 Reply track karne ke liye
 
   const fetchComments = useCallback(async () => {
     if (!videoId) return;
@@ -43,21 +44,23 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
 
     setSubmitting(true);
     try {
-      // 🔥 FIX: Pehle profiles table se latest username le kar aate hain
+      // Pehle profiles table se latest username aur avatar fetch karein
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('username')
+        .select('username, avatar_url') // 🔥 avatar_url bhi mangwa liya
         .eq('id', user.id)
         .single();
 
-      // Agar profile mein username hai toh wo lo, nahi toh email wala lo
       const latestUsername = profileData?.username || user.email?.split('@')[0] || 'User';
+      const latestAvatar = profileData?.avatar_url || null; // 🔥 Photo link
 
       const commentData = {
         video_id: videoId,
         user_id: user.id,
-        username: latestUsername, // ✅ Ab yahan hamesha latest naam jayega
-        text: newComment
+        username: latestUsername,
+        user_avatar: latestAvatar, // 🔥 Database mein photo save karne ke liye (ensure column exists)
+        text: newComment,
+        parent_id: replyTo // 🔥 Agar reply hai toh parent id save hogi
       };
 
       const { data: commentRes, error: commentError } = await supabase
@@ -82,6 +85,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
 
       setComments(prev => [commentRes, ...prev]);
       setNewComment('');
+      setReplyTo(null); // Reset reply
       toast.success('Comment added!');
     } catch (error: any) {
       toast.error('Could not post comment');
@@ -118,6 +122,13 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
     }
   };
 
+  // 🔥 Reply handle karne ka function
+  const handleReplyClick = (username: string) => {
+    setNewComment(`@${username} `);
+    // Note: Agar aapka database nested replies support karta hai toh parent_id set karein
+    // Filhaal hum mention feature use kar rahe hain jo simple hai.
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -139,23 +150,44 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
             <p className="text-center text-gray-500 py-10">No comments yet.</p>
           ) : (
             comments.map((c) => (
-              <div key={c.id} className="flex justify-between items-center">
-                <div className="flex gap-3 items-center">
-                  <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
-                    {c.username ? c.username[0].toUpperCase() : 'U'}
-                  </div>
+              <div key={c.id} className="flex justify-between items-start">
+                <div className="flex gap-3 items-start">
+                  {/* 🔥 Profile Photo Logic */}
+                  {c.user_avatar ? (
+                    <img 
+                      src={c.user_avatar} 
+                      className="w-9 h-9 rounded-full object-cover border border-white/10"
+                      crossOrigin="anonymous"
+                    />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                      {c.username ? c.username[0].toUpperCase() : 'U'}
+                    </div>
+                  )}
+                  
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-sm text-gray-200">@{c.username}</span>
+                      <span className="font-bold text-[13px] text-gray-200">@{c.username}</span>
+                      <span className="text-[10px] text-gray-500">
+                        {new Date(c.created_at).toLocaleDateString()}
+                      </span>
                     </div>
-                    <p className="text-sm text-gray-400 mt-0.5">{c.text}</p>
+                    <p className="text-sm text-gray-400 mt-0.5 leading-relaxed">{c.text}</p>
+                    
+                    {/* 🔥 Reply Button */}
+                    <button 
+                      onClick={() => handleReplyClick(c.username)}
+                      className="text-[11px] font-bold text-gray-500 mt-2 hover:text-white transition-colors flex items-center gap-1"
+                    >
+                      Reply
+                    </button>
                   </div>
                 </div>
 
                 {user?.id === c.user_id && (
                   <button 
                     onClick={() => handleDelete(c.id)}
-                    className="p-3 text-red-500/70 hover:text-red-500 transition-colors"
+                    className="p-2 text-gray-600 hover:text-red-500 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -187,4 +219,4 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
       </div>
     </>
   );
-} 
+}
