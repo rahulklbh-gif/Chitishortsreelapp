@@ -11,17 +11,14 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // 1. Fetch function: Profiles table se photo join karke la raha hai
+  // Simple fetch bina kisi join ke taaki "Failed to load" na aaye
   const fetchComments = useCallback(async () => {
     if (!videoId) return;
     setLoading(true);
     try {
       const { data, error } = await supabase
         .from('comments')
-        .select(`
-          *,
-          profiles:user_id (avatar_url)
-        `)
+        .select('*')
         .eq('video_id', videoId)
         .order('created_at', { ascending: false });
 
@@ -47,7 +44,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
 
     setSubmitting(true);
     try {
-      // Latest profile username fetch kar rahe hain
+      // Latest username fetch kar rahe hain
       const { data: profileData } = await supabase
         .from('profiles')
         .select('username')
@@ -56,7 +53,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
 
       const latestUsername = profileData?.username || user.email?.split('@')[0] || 'User';
 
-      // 🔥 FIX: Sirf wahi columns insert kar rahe hain jo aapke DB screenshot mein hain
+      // Sirf wahi columns jo aapke DB mein hain
       const commentData = {
         video_id: videoId,
         user_id: user.id,
@@ -67,16 +64,15 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
       const { data: commentRes, error: commentError } = await supabase
         .from('comments')
         .insert([commentData])
-        .select(`
-          *,
-          profiles:user_id (avatar_url)
-        `)
+        .select()
         .single();
 
       if (commentError) throw commentError;
 
+      // Increment count
       await supabase.rpc('increment_comments', { post_id: videoId });
 
+      // Notification logic
       if (videoOwnerId && user.id !== videoOwnerId) {
         await supabase.from('notifications').insert([{
             type: 'comment',
@@ -153,18 +149,10 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
             comments.map((c) => (
               <div key={c.id} className="flex justify-between items-start">
                 <div className="flex gap-3 items-start">
-                  {/* 🔥 Avatar: Profiles table se join hoke aa raha hai */}
-                  {c.profiles?.avatar_url ? (
-                    <img 
-                      src={c.profiles.avatar_url} 
-                      className="w-9 h-9 rounded-full object-cover border border-white/10"
-                      crossOrigin="anonymous"
-                    />
-                  ) : (
-                    <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
-                      {c.username ? c.username[0].toUpperCase() : 'U'}
-                    </div>
-                  )}
+                  {/* Default Letter Avatar (Safe) */}
+                  <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                    {c.username ? c.username[0].toUpperCase() : 'U'}
+                  </div>
                   
                   <div>
                     <div className="flex items-center gap-2">
@@ -216,4 +204,4 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
       </div>
     </>
   );
-} 
+}
