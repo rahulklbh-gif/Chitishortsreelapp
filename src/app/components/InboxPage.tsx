@@ -140,4 +140,4 @@ export function InboxPage() {
       )}
     </div>
   );
-} 
+}
