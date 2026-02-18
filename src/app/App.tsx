@@ -16,6 +16,10 @@ import { AuthModal } from '@/app/components/AuthModal';
 import { LogIn, Send } from 'lucide-react'; // ✅ Send icon add kiya
 import { useAuth } from '@/contexts/AuthContext';
 
+// 🔥 NAYE COMPONENTS IMPORT KIYE (Bina kisi purane import ko chhade)
+import { ChatListPage } from '@/app/components/ChatListPage';
+import { ChatRoom } from '@/app/components/ChatRoom';
+
 function AppContent() {
   const [commentSheetOpen, setCommentSheetOpen] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<string>('');
@@ -68,7 +72,7 @@ function AppContent() {
                 Sign In
               </button>
             ) : (
-              /* ✅ FIX: Yahan se Sign Out hata diya aur Message Icon laga diya */
+              /* ✅ Message Icon (Send) logic */
               <button
                 onClick={() => navigate('/chats')} 
                 className="p-2 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition relative"
@@ -93,8 +97,10 @@ function AppContent() {
           <Route path="/inbox" element={<InboxPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/profile/:username" element={<ProfilePage />} />
-          {/* ✅ Naya Route Chat Page ke liye */}
-          <Route path="/chats" element={<div className="text-white p-20">Chat List Page Coming Soon...</div>} />
+          
+          {/* ✅ NAYE ROUTES ADD KIYE (Purane routes waise hi hain) */}
+          <Route path="/chats" element={<ChatListPage />} />
+          <Route path="/chat/:roomId" element={<ChatRoom />} />
         </Routes>
       </main>
 
