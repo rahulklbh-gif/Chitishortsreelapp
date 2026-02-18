@@ -4,7 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { 
   Settings, Grid, Play, Loader2, Check, 
-  User, Camera, ArrowLeft, X, Trash2, Heart
+  User, Camera, ArrowLeft, X, Trash2, Heart,
+  LogOut // ✅ Naya icon add kiya
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -22,6 +23,7 @@ export function ProfilePage() {
   const [isUploading, setIsUploading] = useState(false);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false); // ✅ Settings dropdown ke liye
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -147,6 +149,13 @@ export function ProfilePage() {
     setIsUploading(false);
   };
 
+  // ✅ Naya Logout Function (Sirf isko add kiya hai)
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate('/');
+    toast.success("Signed out successfully");
+  };
+
   if (loading) return <div className="h-screen bg-black flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" /></div>;
 
   return (
@@ -157,14 +166,39 @@ export function ProfilePage() {
           <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer" />
           <h1 className="text-lg font-black italic text-blue-400">@{profile?.username}</h1>
         </div>
+        
+        {/* ✅ Settings and Logout Logic (Modified UI, same logic) */}
         {profile?.id === currentUser?.id && (
-          <button onClick={() => setIsEditing(!isEditing)} className="p-2 bg-white/5 rounded-full">
-             {isEditing ? <X className="text-red-500" /> : <Settings size={20} />}
-          </button>
+          <div className="relative">
+            <button 
+              onClick={() => setShowSettingsMenu(!showSettingsMenu)} 
+              className="p-2 bg-white/5 rounded-full hover:bg-white/10 transition-colors"
+            >
+               {showSettingsMenu ? <X size={20} className="text-red-500" /> : <Settings size={20} />}
+            </button>
+
+            {/* ✅ Settings Dropdown Menu (Instagram style logout) */}
+            {showSettingsMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-[#121212] border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in fade-in zoom-in duration-200">
+                <button 
+                  onClick={() => { setIsEditing(true); setShowSettingsMenu(false); }}
+                  className="w-full text-left p-4 text-sm font-bold border-b border-white/5 hover:bg-white/5"
+                >
+                  Edit Profile
+                </button>
+                <button 
+                  onClick={handleSignOut}
+                  className="w-full text-left p-4 text-sm font-bold text-red-500 hover:bg-white/5 flex items-center gap-2"
+                >
+                  <LogOut size={16} /> Sign Out
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </div>
 
-      {/* Stats Section */}
+      {/* Stats Section (BILKUL SAME) */}
       <div className="p-6 flex items-center gap-6">
         <div className="relative shrink-0">
           <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-blue-600">
@@ -172,7 +206,7 @@ export function ProfilePage() {
               <img 
                 src={profile.avatar_url} 
                 className="w-full h-full object-cover" 
-                crossOrigin="anonymous" // 🔥 Fix for R2 Profile Image
+                crossOrigin="anonymous" 
                 onError={(e) => { e.currentTarget.src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png' }}
               />
             ) : (
@@ -195,7 +229,7 @@ export function ProfilePage() {
         </div>
       </div>
 
-      {/* Action Button */}
+      {/* Action Button (BILKUL SAME) */}
       <div className="px-6 mb-4">
         {profile?.id !== currentUser?.id ? (
           <button onClick={handleFollow} className={`w-full py-2 rounded-lg font-black text-xs uppercase ${isFollowing ? 'bg-white/10' : 'bg-blue-600'}`}>
@@ -206,7 +240,7 @@ export function ProfilePage() {
         )}
       </div>
 
-      {/* Profile Info */}
+      {/* Profile Info (BILKUL SAME) */}
       <div className="px-6 mb-6">
         {isEditing ? (
           <div className="space-y-3">
@@ -223,7 +257,7 @@ export function ProfilePage() {
 
       <div className="flex justify-center border-t border-white/10 py-3"><Grid size={20} className="text-gray-500" /></div>
       
-      {/* Video Grid */}
+      {/* Video Grid (BILKUL SAME) */}
       <div className="grid grid-cols-3 gap-0.5 px-0.5">
         {userPosts.map(post => (
           <div key={post.id} className="relative aspect-[9/16] bg-gray-900 overflow-hidden group">
@@ -234,7 +268,7 @@ export function ProfilePage() {
               muted
               playsInline
               preload="metadata"
-              crossOrigin="anonymous" // 🔥 Fix for Video Thumbnails
+              crossOrigin="anonymous"
               onMouseOver={(e) => e.currentTarget.play()}
               onMouseOut={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0.5; }}
             />
@@ -264,4 +298,4 @@ export function ProfilePage() {
       )}
     </div>
   );
-}
+} 
