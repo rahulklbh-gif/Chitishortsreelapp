@@ -13,10 +13,9 @@ import CreatePage from '@/app/components/CreatePage';
 import { InboxPage } from '@/app/components/InboxPage';
 import { ProfilePage } from '@/app/components/ProfilePage';
 import { AuthModal } from '@/app/components/AuthModal';
-import { LogIn } from 'lucide-react';
+import { LogIn, Send } from 'lucide-react'; // ✅ Send icon add kiya
 import { useAuth } from '@/contexts/AuthContext';
 
-// ... (Baki poora AppContent aur App function bilkul same rahega jaise aapne diya tha)
 function AppContent() {
   const [commentSheetOpen, setCommentSheetOpen] = useState(false);
   const [selectedVideoId, setSelectedVideoId] = useState<string>('');
@@ -69,11 +68,14 @@ function AppContent() {
                 Sign In
               </button>
             ) : (
+              /* ✅ FIX: Yahan se Sign Out hata diya aur Message Icon laga diya */
               <button
-                onClick={() => signOut()}
-                className="px-4 py-2 bg-gray-800 rounded-full text-sm font-semibold text-white hover:bg-gray-700 transition"
+                onClick={() => navigate('/chats')} 
+                className="p-2 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition relative"
               >
-                Sign Out
+                <Send size={22} className="-rotate-12" />
+                {/* Notification dot */}
+                <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-black"></span>
               </button>
             )}
           </div>
@@ -91,6 +93,8 @@ function AppContent() {
           <Route path="/inbox" element={<InboxPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/profile/:username" element={<ProfilePage />} />
+          {/* ✅ Naya Route Chat Page ke liye */}
+          <Route path="/chats" element={<div className="text-white p-20">Chat List Page Coming Soon...</div>} />
         </Routes>
       </main>
 
