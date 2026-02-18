@@ -15,13 +15,10 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
     if (!videoId) return;
     setLoading(true);
     try {
-      // ✅ Badlav 1: Profiles table se avatar_url ko fetch karna
+      // ✅ Badlav: Yahan select mein profiles ko add kiya hai (No line cut)
       const { data, error } = await supabase
         .from('comments')
-        .select(`
-          *,
-          profiles:user_id (avatar_url)
-        `)
+        .select('*, profiles:user_id(avatar_url)')
         .eq('video_id', videoId)
         .order('created_at', { ascending: false });
 
@@ -62,14 +59,11 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
         text: newComment
       };
 
-      // ✅ Badlav 2: Insert ke baad bhi profiles join karke data lana taaki nayi photo turant dikhe
+      // ✅ Badlav: Naya comment insert hone ke baad profiles data saath layega
       const { data: commentRes, error: commentError } = await supabase
         .from('comments')
         .insert([commentData])
-        .select(`
-          *,
-          profiles:user_id (avatar_url)
-        `)
+        .select('*, profiles:user_id(avatar_url)')
         .single();
 
       if (commentError) throw commentError;
@@ -153,14 +147,14 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
               <div key={c.id} className="flex justify-between items-start">
                 <div className="flex gap-3 items-start">
                   
-                  {/* ✅ Badlav 3: Direct Profile Table Avatar Link Display */}
+                  {/* 🔥 PHOTO MAGIC AREA START */}
                   <div className="relative w-9 h-9 flex-shrink-0">
-                    {/* Fallback Letter */}
-                    <div className="absolute inset-0 w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs uppercase">
+                    {/* Fallback Letter (Hamesha piche rahega) */}
+                    <div className="absolute inset-0 w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-xs uppercase">
                       {c.username ? c.username[0] : 'U'}
                     </div>
                     
-                    {/* Profile Photo from Table */}
+                    {/* ✅ Badlav: Ab ye direct profiles table se avatar_url uthayega */}
                     {c.profiles?.avatar_url && (
                       <img 
                         src={c.profiles.avatar_url} 
@@ -170,6 +164,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
                       />
                     )}
                   </div>
+                  {/* 🔥 PHOTO MAGIC AREA END */}
                   
                   <div>
                     <div className="flex items-center gap-2">
