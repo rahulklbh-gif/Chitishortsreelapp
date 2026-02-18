@@ -25,17 +25,17 @@ const s3Client = new S3Client({
   forcePathStyle: true,
 });
 
-// ✅ Helper: Time ago calculator (Online status ke liye)
+// ✅ Helper: Behtar Time Ago logic
 function getTimeAgo(lastSeen: string | null) {
   if (!lastSeen) return "Offline";
   const now = new Date();
   const last = new Date(lastSeen);
   const diffInSecs = Math.floor((now.getTime() - last.getTime()) / 1000);
 
-  if (diffInSecs < 60) return "Active now";
-  if (diffInSecs < 3600) return `Active ${Math.floor(diffInSecs / 60)}m ago`;
-  if (diffInSecs < 86400) return `Active ${Math.floor(diffInSecs / 3600)}h ago`;
-  return `Active ${Math.floor(diffInSecs / 86400)}d ago`;
+  if (diffInSecs < 40) return "Online"; // 40s se kam toh Online dikhao
+  if (diffInSecs < 3600) return `${Math.floor(diffInSecs / 60)}m ago`;
+  if (diffInSecs < 86400) return `${Math.floor(diffInSecs / 3600)}h ago`;
+  return `${Math.floor(diffInSecs / 86400)}d ago`;
 }
 
 function UserAvatar({ userId, username }: { userId: string, username: string }) {
@@ -75,21 +75,41 @@ export function ChatRoom() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // ✅ Status update interval ref
+  const statusInterval = useRef<any>(null);
+
   useEffect(() => {
     if (roomId) {
       fetchFriendProfile();
       fetchMessages();
       subscribeToMessages();
-      updateMyStatus(); // ✅ Jab aap chat kholo, aap online ho jao
+      
+      // Heartbeat: Har 20 second mein online status update karo
+      updateMyStatus();
+      statusInterval.current = setInterval(updateMyStatus, 20000);
+      
+      // Dost ka status real-time update karne ke liye ek aur subscription
+      const profileSubscription = supabase
+        .channel(`profile-${friendId}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${friendId}` }, 
+        (payload) => {
+          setFriendProfile(payload.new);
+        })
+        .subscribe();
+
+      return () => {
+        clearInterval(statusInterval.current);
+        supabase.removeChannel(profileSubscription);
+      };
     }
-  }, [roomId]);
+  }, [roomId, friendId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
   const updateMyStatus = async () => {
-    if (user) {
+    if (user?.id) {
       await supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', user.id);
     }
   };
@@ -140,13 +160,12 @@ export function ChatRoom() {
       const fileName = `chats/${user.id}/${Date.now()}.mp4`;
       const arrayBuffer = await file.arrayBuffer();
 
-      // ✅ Updated for Auto-Play Fix
       await s3Client.send(new PutObjectCommand({
         Bucket: R2_CONFIG.bucketName,
         Key: fileName,
         Body: new Uint8Array(arrayBuffer),
-        ContentType: 'video/mp4', // 🔥 Zaroori hai playback ke liye
-        ContentDisposition: 'inline', // 🔥 Browser ko play karne bolta hai
+        ContentType: 'video/mp4',
+        ContentDisposition: 'inline',
       }));
 
       const finalUrl = `${R2_CONFIG.publicDomain}/${fileName}`;
@@ -159,26 +178,26 @@ export function ChatRoom() {
     }
   };
 
+  const status = getTimeAgo(friendProfile?.last_seen);
+
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black">
-      {/* Header with Activity Status */}
       <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0 shadow-sm">
         <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer text-black" />
         <div className="relative">
           <UserAvatar userId={friendId || ''} username={friendProfile?.username || 'U'} />
-          {getTimeAgo(friendProfile?.last_seen) === "Active now" && (
+          {status === "Online" && (
             <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
           )}
         </div>
         <div>
           <h3 className="text-sm font-bold text-gray-900">{friendProfile?.full_name || friendProfile?.username || 'User'}</h3>
-          <p className={`text-[10px] font-medium ${getTimeAgo(friendProfile?.last_seen) === "Active now" ? 'text-green-600' : 'text-gray-400'}`}>
-            {getTimeAgo(friendProfile?.last_seen)}
+          <p className={`text-[10px] font-bold ${status === "Online" ? 'text-green-600' : 'text-gray-400'}`}>
+            {status === "Online" ? "Online" : `Active ${status}`}
           </p>
         </div>
       </div>
 
-      {/* Messages Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f9f9f9]">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}>
@@ -186,13 +205,14 @@ export function ChatRoom() {
               msg.sender_id === user?.id ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none border border-gray-100'
             }`}>
               {msg.media_url && (
-                <div className="relative rounded-lg overflow-hidden bg-black mb-2 border border-white/10">
+                <div className="relative rounded-lg overflow-hidden bg-black mb-2 border border-white/10 aspect-video">
                   <video 
                     src={msg.media_url} 
-                    className="w-full max-h-64 object-cover" 
+                    className="w-full h-full object-cover" 
                     controls 
                     playsInline 
-                    preload="metadata"
+                    preload="auto"
+                    crossOrigin="anonymous" // 🔥 R2 playback fix
                   />
                 </div>
               )}
@@ -218,4 +238,4 @@ export function ChatRoom() {
       </div>
     </div>
   );
-} 
+}
