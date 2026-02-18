@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { 
   ArrowLeft, Send, Camera, Image as ImageIcon, 
-  Paperclip, Mic, Smile, Plus, Loader2, Play 
+  Mic, Smile, Loader2 
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -31,12 +31,8 @@ export function ChatRoom() {
   }, [roomId]);
 
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  }, [messages]);
 
   const fetchFriendProfile = async () => {
     const { data } = await supabase.from('profiles').select('*').eq('id', friendId).single();
@@ -64,7 +60,6 @@ export function ChatRoom() {
         setMessages((prev) => [...prev, payload.new]);
       })
       .subscribe();
-
     return () => { supabase.removeChannel(channel); };
   };
 
@@ -72,17 +67,15 @@ export function ChatRoom() {
     if (e) e.preventDefault();
     if (!newMessage.trim() && !mediaUrl) return;
 
-    const messageData = {
+    const { error } = await supabase.from('chat_messages').insert([{
       room_id: roomId,
       sender_id: user?.id,
       content: newMessage,
       media_url: mediaUrl || null
-    };
+    }]);
 
-    const { error } = await supabase.from('chat_messages').insert([messageData]);
     if (!error) {
       setNewMessage('');
-      // Update last message in chat_rooms
       await supabase.from('chat_rooms').update({
         last_message: mediaUrl ? '🎥 Video' : newMessage,
         last_message_time: new Date()
@@ -90,70 +83,59 @@ export function ChatRoom() {
     }
   };
 
-  // 🔥 R2 VIDEO UPLOAD LOGIC
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
-
     setIsUploading(true);
-    const fileName = `chats/${roomId}/${Date.now()}-${file.name}`;
-
     try {
-      // 1. Upload to R2 Bucket (chiti-videos)
-      const { data, error } = await supabase.storage
-        .from('chiti-videos')
-        .upload(fileName, file);
-
+      const fileName = `chats/${roomId}/${Date.now()}-${file.name}`;
+      const { data, error } = await supabase.storage.from('chiti-videos').upload(fileName, file);
       if (error) throw error;
-
-      // 2. Get Public URL
-      const { data: { publicUrl } } = supabase.storage
-        .from('chiti-videos')
-        .getPublicUrl(fileName);
-
-      // 3. Send as Message
+      const { data: { publicUrl } } = supabase.storage.from('chiti-videos').getPublicUrl(fileName);
       await handleSendMessage(undefined, publicUrl);
-      toast.success("Video sent!");
+      toast.success("Sent!");
     } catch (err) {
-      console.error(err);
       toast.error("Upload failed");
-    } finally {
-      setIsUploading(false);
-    }
+    } finally { setIsUploading(false); }
   };
 
   return (
-    <div className="flex flex-col h-screen bg-black text-white">
-      {/* Header */}
-      <div className="p-4 pt-8 border-b border-white/10 flex items-center justify-between bg-black sticky top-0 z-20">
-        <div className="flex items-center gap-4">
-          <ArrowLeft onClick={() => navigate('/chats')} className="cursor-pointer" />
-          <div className="relative">
-            <img 
-              src={friendProfile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friendProfile?.username}`} 
-              className="w-10 h-10 rounded-full object-cover border border-white/10"
-            />
-            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-black rounded-full"></span>
-          </div>
-          <div>
-            <h3 className="text-sm font-bold leading-none">{friendProfile?.full_name || friendProfile?.username}</h3>
-            <p className="text-[10px] text-gray-500 mt-1">Active now</p>
-          </div>
+    /* ✅ fixed inset-0 aur z-[100] se ye Bottom Nav ke upar aa jayega */
+    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black">
+      {/* Header (White Theme) */}
+      <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0">
+        <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer text-black" />
+        <div className="relative">
+          <img 
+            src={friendProfile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friendProfile?.username || 'user'}`} 
+            className="w-10 h-10 rounded-full object-cover border border-gray-200"
+            alt="profile"
+            onError={(e) => {
+                (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${friendProfile?.username || 'default'}`;
+            }}
+          />
+          <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
+        </div>
+        <div>
+          <h3 className="text-sm font-bold text-gray-900">{friendProfile?.full_name || friendProfile?.username || 'Chiti User'}</h3>
+          <p className="text-[10px] text-green-600 font-medium">Active now</p>
         </div>
       </div>
 
-      {/* Messages Area */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+      {/* Messages Area (Light Gray/White) */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f9f9f9]">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[75%] ${msg.sender_id === user?.id ? 'bg-blue-600 rounded-2xl rounded-tr-none' : 'bg-white/10 rounded-2xl rounded-tl-none'} p-3 shadow-lg`}>
+            <div className={`max-w-[75%] px-4 py-2.5 shadow-sm ${
+              msg.sender_id === user?.id 
+              ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' 
+              : 'bg-white text-gray-800 rounded-2xl rounded-tl-none border border-gray-100'
+            }`}>
               {msg.media_url && (
-                <div className="relative rounded-xl overflow-hidden mb-2 bg-black border border-white/10">
-                  <video src={msg.media_url} className="max-h-60 w-full object-cover" controls />
-                </div>
+                <video src={msg.media_url} className="rounded-lg mb-2 max-h-60 w-full object-cover" controls />
               )}
-              {msg.content && <p className="text-sm leading-relaxed">{msg.content}</p>}
-              <span className="text-[8px] opacity-50 mt-1 block text-right">
+              <p className="text-sm leading-relaxed">{msg.content}</p>
+              <span className={`text-[8px] mt-1 block text-right ${msg.sender_id === user?.id ? 'text-blue-100' : 'text-gray-400'}`}>
                 {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
@@ -162,43 +144,25 @@ export function ChatRoom() {
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input Area */}
-      <div className="p-4 bg-black border-t border-white/10">
-        <form onSubmit={handleSendMessage} className="flex items-center gap-3 bg-white/5 p-2 rounded-3xl px-4 border border-white/10 focus-within:border-blue-500/50 transition-all">
-          <button 
-            type="button" 
-            onClick={() => fileInputRef.current?.click()}
-            className="text-blue-500 hover:scale-110 transition-transform"
-          >
+      {/* Input Area (White Theme) */}
+      <div className="p-4 bg-white border-t border-gray-100 pb-8">
+        <form onSubmit={handleSendMessage} className="flex items-center gap-3 bg-gray-100 p-2 rounded-full px-4 border border-gray-200">
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="text-blue-600">
             {isUploading ? <Loader2 className="animate-spin" size={20} /> : <Camera size={22} />}
           </button>
           
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            className="hidden" 
-            accept="video/*" 
-            onChange={handleVideoUpload}
-          />
+          <input type="file" ref={fileInputRef} className="hidden" accept="video/*" onChange={handleVideoUpload} />
 
           <input 
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            className="flex-1 bg-transparent text-sm outline-none placeholder:text-gray-600" 
+            className="flex-1 bg-transparent text-sm outline-none text-black placeholder:text-gray-400" 
             placeholder="Message..." 
           />
 
-          {newMessage.trim() ? (
-            <button type="submit" className="text-blue-500 font-bold text-sm px-2 animate-in fade-in zoom-in duration-200">
-              Send
-            </button>
-          ) : (
-            <div className="flex items-center gap-3 text-gray-400">
-              <Mic size={20} />
-              <ImageIcon size={20} />
-              <Smile size={20} />
-            </div>
-          )}
+          <button type="submit" className="text-blue-600 font-bold text-sm px-2">
+            Send
+          </button>
         </form>
       </div>
     </div>
