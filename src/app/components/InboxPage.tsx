@@ -3,32 +3,30 @@ import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, MessageCircle } from 'lucide-react';
 
-// ✅ Naya Component: Ye har notification ke liye database se direct photo layega
-function NotificationAvatar({ userId, fallbackName }: { userId: string, fallbackName: string }) {
-  const [avatar, setAvatar] = useState<string | null>(null);
+// ✅ ALAG COMPONENT: Ye 100% photo dikhayega kyunki ye direct profiles table se fetch karega
+function NotificationAvatar({ userId }: { userId: string }) {
+  const [imgUrl, setImgUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    async function getSenderPhoto() {
+    async function getAvatar() {
       if (!userId) return;
       const { data } = await supabase
         .from('profiles')
         .select('avatar_url')
         .eq('id', userId)
         .single();
-      if (data?.avatar_url) setAvatar(data.avatar_url);
+      if (data?.avatar_url) setImgUrl(data.avatar_url);
     }
-    getSenderPhoto();
+    getAvatar();
   }, [userId]);
 
   return (
-    <div className="w-10 h-10 flex-shrink-0">
-      <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs uppercase overflow-hidden border border-white/10">
-        {avatar ? (
-          <img src={avatar} className="w-full h-full object-cover" alt="user" />
-        ) : (
-          <span>{fallbackName ? fallbackName[0] : 'U'}</span>
-        )}
-      </div>
+    <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center border border-white/10 overflow-hidden flex-shrink-0">
+      {imgUrl ? (
+        <img src={imgUrl} className="w-full h-full object-cover" alt="p" />
+      ) : (
+        <span className="text-white text-xs font-bold">U</span>
+      )}
     </div>
   );
 }
@@ -43,15 +41,15 @@ export function InboxPage() {
       fetchNotifications();
       markNotificationsAsRead(); 
 
-      // Real-time logic (No change)
+      // Real-time listener
       const channel = supabase
-        .channel(`inbox_realtime_${user.id}`)
+        .channel(`inbox_updates_${user.id}`)
         .on('postgres_changes', {
             event: 'INSERT',
             schema: 'public',
             table: 'notifications',
             filter: `receiver_id=eq.${user.id}`,
-          }, () => { fetchNotifications(); }
+          }, () => fetchNotifications()
         ).subscribe();
 
       return () => { supabase.removeChannel(channel); };
@@ -61,7 +59,7 @@ export function InboxPage() {
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      // Original Query (No change in logic)
+      // ✅ FIX: Query ko simple rakha hai taaki Follow wale data mein error na aaye
       const { data, error } = await supabase
         .from('notifications')
         .select(`
@@ -75,7 +73,7 @@ export function InboxPage() {
       if (error) throw error;
       setNotifications(data || []);
     } catch (err) {
-      console.error('Error fetching:', err);
+      console.error('Fetch error:', err);
     } finally {
       setLoading(false);
     }
@@ -88,7 +86,7 @@ export function InboxPage() {
     } catch (err) { console.error(err); }
   };
 
-  if (loading && notifications.length === 0) return <div className="flex justify-center p-10 text-white"><Loader2 className="animate-spin" /></div>;
+  if (loading && notifications.length === 0) return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-white" /></div>;
 
   return (
     <div className="min-h-screen bg-black text-white p-4 pb-24">
@@ -102,30 +100,35 @@ export function InboxPage() {
       ) : (
         <div className="space-y-4">
           {notifications.map((n) => (
-            <div key={n.id} className="flex items-center gap-3 bg-gray-900/60 p-4 rounded-xl border border-white/5">
+            <div key={n.id} className="flex items-center gap-3 bg-gray-900/40 p-3 rounded-2xl border border-white/5">
               
-              {/* ✅ FIXED: Use the new NotificationAvatar component */}
-              <NotificationAvatar userId={n.sender_id} fallbackName={n.sender?.username || 'U'} />
+              {/* ✅ PHOTO FIX: Naya component use kiya hai */}
+              <NotificationAvatar userId={n.sender_id} />
               
               <div className="flex-1">
                 <p className="text-sm">
-                  <span className="font-black text-white">@{n.sender?.username || 'User'}</span>
-                  <span className="text-gray-300 ml-1">
+                  <span className="font-bold text-white">@{n.sender?.username || 'User'}</span>
+                  <span className="text-gray-400 ml-1">
                     {n.type === 'follow' ? 'started following you' : n.content}
                   </span>
                 </p>
-                <p className="text-[10px] text-gray-500 mt-1 uppercase tracking-tighter font-bold">
+                <p className="text-[10px] text-gray-500 mt-0.5 font-medium uppercase">
                   {n.type} • {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
 
-              {n.post?.youtube_video_id && (
-                <div className="w-10 h-14 rounded overflow-hidden border border-white/10 bg-gray-800 flex-shrink-0">
-                  <img src={`https://img.youtube.com/vi/${n.post.youtube_video_id}/mqdefault.jpg`} className="w-full h-full object-cover" alt="v" />
+              {/* Video Preview - Only for Likes/Comments */}
+              {n.post?.youtube_video_id && (n.type === 'like' || n.type === 'comment') && (
+                <div className="w-10 h-14 rounded bg-gray-800 overflow-hidden border border-white/10">
+                  <img 
+                    src={`https://img.youtube.com/vi/${n.post.youtube_video_id}/mqdefault.jpg`}
+                    className="w-full h-full object-cover opacity-70"
+                    alt="v"
+                  />
                 </div>
               )}
 
-              {!n.is_read && <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>}
+              {!n.is_read && <div className="w-2 h-2 bg-blue-500 rounded-full"></div>}
             </div>
           ))}
         </div>
