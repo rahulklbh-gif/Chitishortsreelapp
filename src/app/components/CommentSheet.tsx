@@ -15,14 +15,29 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
     if (!videoId) return;
     setLoading(true);
     try {
+      // 🔄 Update: Humne select mein profiles table ko add kiya hai bina purana logic hataye
       const { data, error } = await supabase
         .from('comments')
-        .select('*')
+        .select(`
+          *,
+          profiles:user_id (avatar_url)
+        `)
         .eq('video_id', videoId)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setComments(data || []);
+      if (error) {
+        // Fallback: Agar profiles join fail hota hai toh normal fetch karega
+        const { data: simpleData, error: simpleError } = await supabase
+          .from('comments')
+          .select('*')
+          .eq('video_id', videoId)
+          .order('created_at', { ascending: false });
+        
+        if (simpleError) throw simpleError;
+        setComments(simpleData || []);
+      } else {
+        setComments(data || []);
+      }
     } catch (error) {
       console.error('Error:', error);
       toast.error('Failed to load comments');
@@ -61,7 +76,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
       const { data: commentRes, error: commentError } = await supabase
         .from('comments')
         .insert([commentData])
-        .select()
+        .select(`*, profiles:user_id (avatar_url)`) // 🔄 Insert ke baad bhi photo fetch hogi
         .single();
 
       if (commentError) throw commentError;
@@ -145,23 +160,23 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
               <div key={c.id} className="flex justify-between items-start">
                 <div className="flex gap-3 items-start">
                   
-                  {/* 🔥 PHOTO MAGIC AREA START */}
+                  {/* 🔥 PHOTO AREA: DB Link + Fallback Logic */}
                   <div className="relative w-9 h-9 flex-shrink-0">
-                    {/* Fallback Letter (Hamesha piche rahega) */}
+                    {/* Background Letter (Hamesha rahega) */}
                     <div className="absolute inset-0 w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-xs">
                       {c.username ? c.username[0].toUpperCase() : 'U'}
                     </div>
                     
-                    {/* Actual Photo (Upar load hogi) */}
-                    <img 
-                      src={`https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/avatars/${c.user_id}`} 
-                      className="absolute inset-0 w-9 h-9 rounded-full object-cover border border-white/10 transition-opacity duration-300 opacity-0"
-                      crossOrigin="anonymous"
-                      onLoad={(e) => (e.currentTarget.style.opacity = '1')}
-                      onError={(e) => (e.currentTarget.style.display = 'none')}
-                    />
+                    {/* Actual Profile Photo (Agar DB mein avatar_url hai toh dikhega) */}
+                    {(c.profiles?.avatar_url || c.avatar_url) && (
+                      <img 
+                        src={c.profiles?.avatar_url || c.avatar_url} 
+                        className="absolute inset-0 w-9 h-9 rounded-full object-cover border border-white/10"
+                        crossOrigin="anonymous"
+                        onError={(e) => (e.currentTarget.style.display = 'none')}
+                      />
+                    )}
                   </div>
-                  {/* 🔥 PHOTO MAGIC AREA END */}
                   
                   <div>
                     <div className="flex items-center gap-2">
