@@ -15,7 +15,7 @@ export function DiscoverPage() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
-  // Trending & Mock Data (Aapka original data)
+  // Trending & Mock Data
   const trendingHashtags: TrendingItem[] = [
     { hashtag: 'dance', views: '12.5M', thumbnail: 'https://images.unsplash.com/photo-1504609773096-104ff2c73ba4?w=400' },
     { hashtag: 'comedy', views: '8.2M', thumbnail: 'https://images.unsplash.com/photo-1517849845537-4d257902454a?w=400' },
@@ -64,11 +64,6 @@ export function DiscoverPage() {
     }
   };
 
-  /**
-   * VIDEO PLAY LOGIC:
-   * Is par click karte hi hum Home page par jayenge 
-   * aur URL mein video ID pass karenge taaki feed wahi video load kare.
-   */
   const handleVideoClick = (videoId: string) => {
     navigate(`/?video=${videoId}`);
   };
@@ -116,16 +111,19 @@ export function DiscoverPage() {
                     onClick={() => handleVideoClick(video.id)}
                     className="relative aspect-[9/16] bg-gray-900 rounded-md overflow-hidden active:scale-95 transition-transform cursor-pointer border border-white/5 group"
                   >
-                    {/* UPDATED LOGIC:
-                       1. Pehle check karega agar 'thumbnail_url' hai.
-                       2. Agar nahi hai, toh seedha VIDEO dikhayega (muted) taaki "No Preview" na dikhe.
-                    */}
+                    {/* FIXED: Added crossOrigin and better fallback handling */}
                     {video.thumbnail_url ? (
                       <img 
                         src={video.thumbnail_url}
                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
                         alt={video.caption || "video thumbnail"}
                         loading="lazy"
+                        crossOrigin="anonymous" // 🔥 CORS Fix
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          // Agar thumbnail link fail ho jaye, toh placeholder image
+                          e.currentTarget.src = 'https://placehold.co/400x600/1a1a1a/purple?text=Video';
+                        }}
                       />
                     ) : (
                       // Fallback: Show Video if thumbnail is missing
@@ -134,12 +132,11 @@ export function DiscoverPage() {
                         className="w-full h-full object-cover pointer-events-none"
                         muted
                         preload="metadata"
-                        // Mobile performance ke liye playsInline
                         playsInline 
+                        crossOrigin="anonymous" // 🔥 CORS Fix for video
                       />
                     )}
 
-                    {/* Overlay Info */}
                     <div className="absolute inset-0 bg-black/10 group-hover:bg-black/30 transition-colors" />
                     
                     <div className="absolute bottom-1.5 left-1.5 flex items-center text-[10px] font-bold bg-black/60 backdrop-blur-md px-2 py-1 rounded-full shadow-lg border border-white/10 z-10">
@@ -178,6 +175,7 @@ export function DiscoverPage() {
                       src={item.thumbnail}
                       alt={item.hashtag}
                       className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                      crossOrigin="anonymous"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent" />
                     <div className="absolute bottom-0 left-0 right-0 p-4">
@@ -201,6 +199,7 @@ export function DiscoverPage() {
                       src={creator.avatar}
                       alt={creator.username}
                       className="w-14 h-14 rounded-full object-cover ring-2 ring-purple-500/20"
+                      crossOrigin="anonymous"
                     />
                     <div className="flex-1">
                       <h3 className="font-bold text-gray-100 italic">@{creator.username}</h3>
