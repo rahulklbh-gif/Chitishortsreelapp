@@ -1,5 +1,5 @@
 import { X, Send, Loader2, Trash2 } from 'lucide-react'; 
-import { useState, useEffect, useCallback } from 'react'; // useCallback add kiya
+import { useState, useEffect, useCallback } from 'react'; 
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -11,7 +11,6 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Fetch function ko useCallback mein dala taaki hum ise kahin bhi use kar sakein
   const fetchComments = useCallback(async () => {
     if (!videoId) return;
     setLoading(true);
@@ -32,7 +31,6 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
     }
   }, [videoId]);
 
-  // Jab sheet khule toh fresh data aaye
   useEffect(() => {
     if (isOpen) {
       fetchComments();
@@ -45,10 +43,20 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
 
     setSubmitting(true);
     try {
+      // 🔥 FIX: Pehle profiles table se latest username le kar aate hain
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('username')
+        .eq('id', user.id)
+        .single();
+
+      // Agar profile mein username hai toh wo lo, nahi toh email wala lo
+      const latestUsername = profileData?.username || user.email?.split('@')[0] || 'User';
+
       const commentData = {
         video_id: videoId,
         user_id: user.id,
-        username: user.email?.split('@')[0] || 'User',
+        username: latestUsername, // ✅ Ab yahan hamesha latest naam jayega
         text: newComment
       };
 
@@ -82,16 +90,10 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
     }
   };
 
-  /**
-   * UPDATED DELETE LOGIC:
-   * Ismein hum delete ke baad 'setComments' ko filter kar rahe hain 
-   * taaki UI turant update ho, aur handle karte waqt ensures database sync.
-   */
   const handleDelete = async (commentId: string) => {
     const confirmDelete = window.confirm("Delete this comment permanently?");
     if (!confirmDelete) return;
 
-    // Turant UI se hatao (Optimistic UI update)
     const previousComments = [...comments];
     setComments(comments.filter(c => c.id !== commentId));
 
@@ -103,18 +105,13 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
         .eq('user_id', user?.id);
 
       if (error) {
-        // Agar error aaye toh wapas purane comments le aao
         setComments(previousComments);
         throw error;
       }
 
-      // Count kam karo
       await supabase.rpc('decrement_comments', { post_id: videoId });
       toast.success('Comment deleted');
-      
-      // Safety ke liye ek baar background mein fetch bhi kar lo
       fetchComments(); 
-
     } catch (error) {
       console.error('Delete error:', error);
       toast.error('Failed to delete');
