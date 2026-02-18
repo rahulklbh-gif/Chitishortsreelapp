@@ -8,17 +8,41 @@ export function InboxPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // 1. Fetch Notifications and Mark as Read
   useEffect(() => {
     if (user) {
       fetchNotifications();
       markNotificationsAsRead(); 
+
+      // 🔥 REAL-TIME LOGIC START: Bina refresh kiye naya notification aane ke liye
+      const channel = supabase
+        .channel(`public:notifications:receiver_id=eq.${user.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: 'INSERT',
+            schema: 'public',
+            table: 'notifications',
+            filter: `receiver_id=eq.${user.id}`,
+          },
+          (payload) => {
+            // Naya notification aate hi use fetch karke list mein sabse upar daal dena
+            fetchNotifications(); 
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+      // 🔥 REAL-TIME LOGIC END
     }
   }, [user]);
 
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      // BADLAV: post_id se posts table ka youtube_video_id bhi fetch kar rahe hain
+      // BADLAV: sender table se avatar_url aur username fetch ho raha hai
       const { data, error } = await supabase
         .from('notifications')
         .select(`
@@ -56,7 +80,7 @@ export function InboxPage() {
     }
   };
 
-  if (loading) return <div className="flex justify-center p-10 text-white"><Loader2 className="animate-spin" /></div>;
+  if (loading && notifications.length === 0) return <div className="flex justify-center p-10 text-white"><Loader2 className="animate-spin" /></div>;
 
   return (
     <div className="min-h-screen bg-black text-white p-4 pb-24">
@@ -71,12 +95,21 @@ export function InboxPage() {
         <div className="space-y-4">
           {notifications.map((n) => (
             <div key={n.id} className="flex items-center gap-3 bg-gray-900/60 p-4 rounded-xl border border-white/5">
-              {/* Sender Avatar */}
-              <img 
-                src={n.sender?.avatar_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
-                className="w-10 h-10 rounded-full border border-gray-700 object-cover"
-                alt="user"
-              />
+              {/* Sender Avatar: Fallback letter agar photo na ho */}
+              <div className="relative w-10 h-10 flex-shrink-0">
+                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs uppercase overflow-hidden">
+                  {n.sender?.avatar_url ? (
+                    <img 
+                      src={n.sender.avatar_url} 
+                      className="w-full h-full object-cover"
+                      alt="user"
+                      onError={(e) => (e.currentTarget.style.display = 'none')}
+                    />
+                  ) : (
+                    <span>{n.sender?.username?.[0] || 'U'}</span>
+                  )}
+                </div>
+              </div>
               
               <div className="flex-1">
                 <p className="text-sm">
