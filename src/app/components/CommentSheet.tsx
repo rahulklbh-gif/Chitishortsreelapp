@@ -11,14 +11,14 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // ✅ PURANA FUNCTION (Wapas wahi kar diya jo pehle tha)
   const fetchComments = useCallback(async () => {
     if (!videoId) return;
     setLoading(true);
     try {
-      // ✅ Badlav: Yahan select mein profiles ko add kiya hai (No line cut)
       const { data, error } = await supabase
         .from('comments')
-        .select('*, profiles:user_id(avatar_url)')
+        .select('*')
         .eq('video_id', videoId)
         .order('created_at', { ascending: false });
 
@@ -38,6 +38,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
     }
   }, [isOpen, fetchComments]);
 
+  // ✅ PURANA SUBMIT (Ekdum original)
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newComment.trim() || !user) return;
@@ -59,11 +60,10 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
         text: newComment
       };
 
-      // ✅ Badlav: Naya comment insert hone ke baad profiles data saath layega
       const { data: commentRes, error: commentError } = await supabase
         .from('comments')
         .insert([commentData])
-        .select('*, profiles:user_id(avatar_url)')
+        .select()
         .single();
 
       if (commentError) throw commentError;
@@ -94,27 +94,22 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
   const handleDelete = async (commentId: string) => {
     const confirmDelete = window.confirm("Delete this comment permanently?");
     if (!confirmDelete) return;
-
     const previousComments = [...comments];
     setComments(comments.filter(c => c.id !== commentId));
-
     try {
       const { error } = await supabase
         .from('comments')
         .delete()
         .eq('id', commentId)
         .eq('user_id', user?.id);
-
       if (error) {
         setComments(previousComments);
         throw error;
       }
-
       await supabase.rpc('decrement_comments', { post_id: videoId });
       toast.success('Comment deleted');
       fetchComments(); 
     } catch (error) {
-      console.error('Delete error:', error);
       toast.error('Failed to delete');
     }
   };
@@ -147,31 +142,28 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
               <div key={c.id} className="flex justify-between items-start">
                 <div className="flex gap-3 items-start">
                   
-                  {/* 🔥 PHOTO MAGIC AREA START */}
+                  {/* 🔥 SAFE PHOTO LOGIC: Database Join nahi kiya, direct R2 se check karega */}
                   <div className="relative w-9 h-9 flex-shrink-0">
-                    {/* Fallback Letter (Hamesha piche rahega) */}
-                    <div className="absolute inset-0 w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-xs uppercase">
+                    <div className="absolute inset-0 w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs uppercase">
                       {c.username ? c.username[0] : 'U'}
                     </div>
                     
-                    {/* ✅ Badlav: Ab ye direct profiles table se avatar_url uthayega */}
-                    {c.profiles?.avatar_url && (
-                      <img 
-                        src={c.profiles.avatar_url} 
-                        className="absolute inset-0 w-9 h-9 rounded-full object-cover border border-white/10"
-                        crossOrigin="anonymous"
-                        onError={(e) => (e.currentTarget.style.display = 'none')}
-                      />
-                    )}
+                    {/* Hum aapki profile photo fetch karne ke liye ek ProfileImage component bhi use kar sakte hain 
+                        lekin abhi ke liye main isey simple rakh raha hoon */}
+                    <img 
+                      src={`https://pub-6ed99329d86c4069a604b3418b584ca2.r2.dev/avatars/${c.user_id}`} 
+                      className="absolute inset-0 w-9 h-9 rounded-full object-cover border border-white/10"
+                      crossOrigin="anonymous"
+                      onLoad={(e) => (e.currentTarget.style.opacity = '1')}
+                      onError={(e) => (e.currentTarget.style.display = 'none')}
+                    />
                   </div>
-                  {/* 🔥 PHOTO MAGIC AREA END */}
                   
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-sm text-gray-200">@{c.username}</span>
                     </div>
                     <p className="text-sm text-gray-400 mt-0.5 leading-relaxed">{c.text}</p>
-                    
                     <button 
                       onClick={() => handleReply(c.username)}
                       className="flex items-center gap-1 text-[11px] text-gray-500 font-bold mt-2 hover:text-white transition-colors"
@@ -182,10 +174,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
                 </div>
 
                 {user?.id === c.user_id && (
-                  <button 
-                    onClick={() => handleDelete(c.id)}
-                    className="p-3 text-gray-600 hover:text-red-500 transition-colors"
-                  >
+                  <button onClick={() => handleDelete(c.id)} className="p-3 text-gray-600 hover:text-red-500">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 )}
@@ -197,18 +186,11 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
         <form onSubmit={handleSubmit} className="p-4 bg-[#121212] border-t border-white/5 pb-8">
           <div className="flex gap-2 bg-white/5 rounded-2xl p-2 items-center border border-white/10">
             <input
-              type="text"
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder={user ? "Add a comment..." : "Login to comment"}
-              disabled={!user}
+              type="text" value={newComment} onChange={(e) => setNewComment(e.target.value)}
+              placeholder={user ? "Add a comment..." : "Login to comment"} disabled={!user}
               className="flex-1 bg-transparent text-white px-3 py-1 focus:outline-none text-sm"
             />
-            <button 
-              type="submit" 
-              disabled={!newComment.trim() || submitting || !user} 
-              className="p-2 bg-blue-600 rounded-xl text-white disabled:opacity-30"
-            >
+            <button type="submit" disabled={!newComment.trim() || submitting || !user} className="p-2 bg-blue-600 rounded-xl text-white">
               {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             </button>
           </div>
