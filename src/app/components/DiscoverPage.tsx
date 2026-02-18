@@ -1,4 +1,4 @@
-import { Search, TrendingUp, Hash, Loader2, Play, Film, X } from 'lucide-react';
+import { Search, TrendingUp, Hash, Loader2, Play, Film, X, UserPlus } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useNavigate } from 'react-router-dom';
@@ -12,6 +12,7 @@ interface TrendingItem {
 export function DiscoverPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [userResults, setUserResults] = useState<any[]>([]); // 🔥 Naya state users ke liye
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
@@ -39,6 +40,7 @@ export function DiscoverPage() {
         performSearch();
       } else {
         setSearchResults([]);
+        setUserResults([]); // Reset users
       }
     }, 500); 
 
@@ -48,6 +50,14 @@ export function DiscoverPage() {
   const performSearch = async () => {
     setLoading(true);
     try {
+      // 1. Search Users (from profiles table)
+      const { data: userData } = await supabase
+        .from('profiles')
+        .select('*')
+        .ilike('username', `%${searchQuery}%`)
+        .limit(5);
+
+      // 2. Search Videos (from posts table)
       const { data, error } = await supabase
         .from('posts')
         .select('*')
@@ -56,6 +66,8 @@ export function DiscoverPage() {
         .limit(21);
 
       if (error) throw error;
+      
+      setUserResults(userData || []);
       setSearchResults(data || []);
     } catch (err) {
       console.error("Search error:", err);
@@ -103,57 +115,84 @@ export function DiscoverPage() {
               <div className="flex justify-center py-20">
                 <Loader2 className="animate-spin text-purple-500" size={40} />
               </div>
-            ) : searchResults.length > 0 ? (
-              <div className="grid grid-cols-3 gap-1 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                {searchResults.map((video) => (
-                  <div 
-                    key={video.id}
-                    onClick={() => handleVideoClick(video.id)}
-                    className="relative aspect-[9/16] bg-gray-900 rounded-md overflow-hidden active:scale-95 transition-transform cursor-pointer border border-white/5 group"
-                  >
-                    {/* FIXED: Added crossOrigin and better fallback handling */}
-                    {video.thumbnail_url ? (
-                      <img 
-                        src={video.thumbnail_url}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
-                        alt={video.caption || "video thumbnail"}
-                        loading="lazy"
-                        crossOrigin="anonymous" // 🔥 CORS Fix
-                        onError={(e) => {
-                          e.currentTarget.onerror = null;
-                          // Agar thumbnail link fail ho jaye, toh placeholder image
-                          e.currentTarget.src = 'https://placehold.co/400x600/1a1a1a/purple?text=Video';
-                        }}
-                      />
-                    ) : (
-                      // Fallback: Show Video if thumbnail is missing
-                      <video 
-                        src={video.video_url}
-                        className="w-full h-full object-cover pointer-events-none"
-                        muted
-                        preload="metadata"
-                        playsInline 
-                        crossOrigin="anonymous" // 🔥 CORS Fix for video
-                      />
-                    )}
-
-                    <div className="absolute inset-0 bg-black/10 group-hover:bg-black/30 transition-colors" />
-                    
-                    <div className="absolute bottom-1.5 left-1.5 flex items-center text-[10px] font-bold bg-black/60 backdrop-blur-md px-2 py-1 rounded-full shadow-lg border border-white/10 z-10">
-                      <Play size={10} className="mr-1 fill-white text-white" />
-                      {video.views_count >= 1000 
-                        ? `${(video.views_count / 1000).toFixed(1)}K` 
-                        : video.views_count || 0}
-                    </div>
-                  </div>
-                ))}
-              </div>
             ) : (
-              <div className="text-center py-20 bg-gray-900/50 rounded-3xl border border-dashed border-gray-800">
-                <Search className="mx-auto w-12 h-12 text-gray-700 mb-4" />
-                <p className="text-lg font-medium text-gray-400">No videos found</p>
-                <p className="text-sm text-gray-600 mt-1">Try different keywords or hashtags</p>
-              </div>
+              <>
+                {/* 🔥 NEW: USERS SECTION IN SEARCH */}
+                {userResults.length > 0 && (
+                  <div className="mb-6 space-y-3 animate-in fade-in slide-in-from-left-4 duration-500">
+                    <p className="text-xs font-bold text-gray-500 uppercase tracking-widest px-1">Profiles</p>
+                    {userResults.map((user) => (
+                      <div 
+                        key={user.id} 
+                        onClick={() => navigate(`/profile/${user.username}`)}
+                        className="flex items-center gap-3 p-3 bg-gray-900/50 rounded-2xl border border-white/5 active:scale-[0.98] transition-all cursor-pointer"
+                      >
+                        <img 
+                          src={user.avatar_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png'} 
+                          className="w-12 h-12 rounded-full object-cover border border-purple-500/20"
+                          crossOrigin="anonymous"
+                        />
+                        <div className="flex-1">
+                          <h3 className="font-bold text-sm text-white">@{user.username}</h3>
+                          <p className="text-xs text-gray-500">{user.full_name || 'Creator'}</p>
+                        </div>
+                        <button className="p-2 bg-white/10 hover:bg-purple-600 rounded-full transition-colors text-purple-400 hover:text-white">
+                          <UserPlus size={18} />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="h-px bg-gray-800/50 my-4 mx-2" />
+                  </div>
+                )}
+
+                {searchResults.length > 0 ? (
+                  <div className="grid grid-cols-3 gap-1 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                    {searchResults.map((video) => (
+                      <div 
+                        key={video.id}
+                        onClick={() => handleVideoClick(video.id)}
+                        className="relative aspect-[9/16] bg-gray-900 rounded-md overflow-hidden active:scale-95 transition-transform cursor-pointer border border-white/5 group"
+                      >
+                        {video.thumbnail_url ? (
+                          <img 
+                            src={video.thumbnail_url}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                            alt={video.caption || "video thumbnail"}
+                            loading="lazy"
+                            crossOrigin="anonymous" 
+                            onError={(e) => {
+                              e.currentTarget.onerror = null;
+                              e.currentTarget.src = 'https://placehold.co/400x600/1a1a1a/purple?text=Video';
+                            }}
+                          />
+                        ) : (
+                          <video 
+                            src={video.video_url}
+                            className="w-full h-full object-cover pointer-events-none"
+                            muted
+                            preload="metadata"
+                            playsInline 
+                            crossOrigin="anonymous" 
+                          />
+                        )}
+                        <div className="absolute inset-0 bg-black/10 group-hover:bg-black/30 transition-colors" />
+                        <div className="absolute bottom-1.5 left-1.5 flex items-center text-[10px] font-bold bg-black/60 backdrop-blur-md px-2 py-1 rounded-full shadow-lg border border-white/10 z-10">
+                          <Play size={10} className="mr-1 fill-white text-white" />
+                          {video.views_count >= 1000 
+                            ? `${(video.views_count / 1000).toFixed(1)}K` 
+                            : video.views_count || 0}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : userResults.length === 0 && (
+                  <div className="text-center py-20 bg-gray-900/50 rounded-3xl border border-dashed border-gray-800">
+                    <Search className="mx-auto w-12 h-12 text-gray-700 mb-4" />
+                    <p className="text-lg font-medium text-gray-400">No results found</p>
+                    <p className="text-sm text-gray-600 mt-1">Try searching for a name or video caption</p>
+                  </div>
+                )}
+              </>
             )}
           </section>
         ) : (
@@ -217,4 +256,4 @@ export function DiscoverPage() {
       </div>
     </div>
   );
-} 
+}
