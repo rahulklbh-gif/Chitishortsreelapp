@@ -1,169 +1,135 @@
-import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { 
-  ArrowLeft, Send, Camera, Image as ImageIcon, 
-  Mic, Smile, Loader2 
-} from 'lucide-react';
-import { toast } from 'sonner';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Search, UserPlus, Loader2 } from 'lucide-react';
 
-export function ChatRoom() {
-  const { roomId } = useParams();
-  const [searchParams] = useSearchParams();
-  const friendId = searchParams.get('friend');
+export function ChatListPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  
-  const [messages, setMessages] = useState<any[]>([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [friendProfile, setFriendProfile] = useState<any>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [rooms, setRooms] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
-    if (roomId) {
-      fetchFriendProfile();
-      fetchMessages();
-      subscribeToMessages();
+    if (user) fetchRooms();
+  }, [user]);
+
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    if (query.length < 2) {
+      setSearchResults([]);
+      return;
     }
-  }, [roomId]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const fetchFriendProfile = async () => {
-    const { data } = await supabase.from('profiles').select('*').eq('id', friendId).single();
-    if (data) setFriendProfile(data);
-  };
-
-  const fetchMessages = async () => {
+    setIsSearching(true);
     const { data } = await supabase
-      .from('chat_messages')
-      .select('*')
-      .eq('room_id', roomId)
-      .order('created_at', { ascending: true });
-    setMessages(data || []);
+      .from('profiles')
+      .select('id, username, avatar_url, full_name')
+      .ilike('username', `%${query}%`)
+      .not('id', 'eq', user?.id)
+      .limit(8);
+    setSearchResults(data || []);
+    setIsSearching(false);
   };
 
-  const subscribeToMessages = () => {
-    const channel = supabase
-      .channel(`room-${roomId}`)
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'chat_messages',
-        filter: `room_id=eq.${roomId}` 
-      }, (payload) => {
-        setMessages((prev) => [...prev, payload.new]);
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  };
-
-  const handleSendMessage = async (e?: React.FormEvent, mediaUrl?: string) => {
-    if (e) e.preventDefault();
-    if (!newMessage.trim() && !mediaUrl) return;
-
-    const { error } = await supabase.from('chat_messages').insert([{
-      room_id: roomId,
-      sender_id: user?.id,
-      content: newMessage,
-      media_url: mediaUrl || null
-    }]);
-
-    if (!error) {
-      setNewMessage('');
-      await supabase.from('chat_rooms').update({
-        last_message: mediaUrl ? '🎥 Video' : newMessage,
-        last_message_time: new Date()
-      }).eq('id', roomId);
-    }
-  };
-
-  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-    setIsUploading(true);
+  const fetchRooms = async () => {
     try {
-      const fileName = `chats/${roomId}/${Date.now()}-${file.name}`;
-      const { data, error } = await supabase.storage.from('chiti-videos').upload(fileName, file);
-      if (error) throw error;
-      const { data: { publicUrl } } = supabase.storage.from('chiti-videos').getPublicUrl(fileName);
-      await handleSendMessage(undefined, publicUrl);
-      toast.success("Sent!");
-    } catch (err) {
-      toast.error("Upload failed");
-    } finally { setIsUploading(false); }
+      const { data, error } = await supabase
+        .from('chat_rooms')
+        .select(`*, user1:profiles!chat_rooms_user1_id_fkey(*), user2:profiles!chat_rooms_user2_id_fkey(*)`)
+        .or(`user1_id.eq.${user?.id},user2_id.eq.${user?.id}`)
+        .order('last_message_time', { ascending: false });
+      if (!error) setRooms(data || []);
+    } catch (err) { console.error(err); } 
+    finally { setLoading(false); }
+  };
+
+  const startChat = async (friendId: string) => {
+    const { data: existingRoom } = await supabase
+      .from('chat_rooms')
+      .select('id')
+      .or(`and(user1_id.eq.${user?.id},user2_id.eq.${friendId}),and(user1_id.eq.${friendId},user2_id.eq.${user?.id})`)
+      .maybeSingle();
+
+    if (existingRoom) {
+      navigate(`/chat/${existingRoom.id}?friend=${friendId}`);
+    } else {
+      const { data: newRoom, error } = await supabase
+        .from('chat_rooms')
+        .insert([{ user1_id: user?.id, user2_id: friendId }])
+        .select().single();
+      if (!error) navigate(`/chat/${newRoom.id}?friend=${friendId}`);
+    }
   };
 
   return (
-    /* ✅ fixed inset-0 aur z-[100] se ye Bottom Nav ke upar aa jayega */
-    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black">
-      {/* Header (White Theme) */}
-      <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0">
-        <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer text-black" />
-        <div className="relative">
-          <img 
-            src={friendProfile?.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${friendProfile?.username || 'user'}`} 
-            className="w-10 h-10 rounded-full object-cover border border-gray-200"
-            alt="profile"
-            onError={(e) => {
-                (e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${friendProfile?.username || 'default'}`;
-            }}
-          />
-          <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
-        </div>
-        <div>
-          <h3 className="text-sm font-bold text-gray-900">{friendProfile?.full_name || friendProfile?.username || 'Chiti User'}</h3>
-          <p className="text-[10px] text-green-600 font-medium">Active now</p>
-        </div>
+    /* ✅ Pure White Theme & Full Screen (Hides Bottom Navigation) */
+    <div className="fixed inset-0 z-[110] bg-white text-black overflow-y-auto">
+      {/* Header */}
+      <div className="p-4 pt-10 flex items-center gap-6 sticky top-0 bg-white border-b border-gray-100">
+        <ArrowLeft onClick={() => navigate('/')} className="cursor-pointer text-black" />
+        <h1 className="text-xl font-extrabold tracking-tight">Messages</h1>
       </div>
 
-      {/* Messages Area (Light Gray/White) */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f9f9f9]">
-        {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[75%] px-4 py-2.5 shadow-sm ${
-              msg.sender_id === user?.id 
-              ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' 
-              : 'bg-white text-gray-800 rounded-2xl rounded-tl-none border border-gray-100'
-            }`}>
-              {msg.media_url && (
-                <video src={msg.media_url} className="rounded-lg mb-2 max-h-60 w-full object-cover" controls />
-              )}
-              <p className="text-sm leading-relaxed">{msg.content}</p>
-              <span className={`text-[8px] mt-1 block text-right ${msg.sender_id === user?.id ? 'text-blue-100' : 'text-gray-400'}`}>
-                {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-          </div>
-        ))}
-        <div ref={messagesEndRef} />
-      </div>
-
-      {/* Input Area (White Theme) */}
-      <div className="p-4 bg-white border-t border-gray-100 pb-8">
-        <form onSubmit={handleSendMessage} className="flex items-center gap-3 bg-gray-100 p-2 rounded-full px-4 border border-gray-200">
-          <button type="button" onClick={() => fileInputRef.current?.click()} className="text-blue-600">
-            {isUploading ? <Loader2 className="animate-spin" size={20} /> : <Camera size={22} />}
-          </button>
-          
-          <input type="file" ref={fileInputRef} className="hidden" accept="video/*" onChange={handleVideoUpload} />
-
+      {/* Search Section */}
+      <div className="p-4">
+        <div className="flex items-center gap-3 bg-gray-100 p-3 rounded-2xl border border-gray-200">
+          <Search size={18} className="text-gray-400" />
           <input 
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            className="flex-1 bg-transparent text-sm outline-none text-black placeholder:text-gray-400" 
-            placeholder="Message..." 
+            value={searchQuery}
+            onChange={(e) => handleSearch(e.target.value)}
+            placeholder="Search friends..." 
+            className="bg-transparent border-none outline-none text-sm w-full text-black placeholder:text-gray-400"
           />
+        </div>
+      </div>
 
-          <button type="submit" className="text-blue-600 font-bold text-sm px-2">
-            Send
-          </button>
-        </form>
+      {/* Results / List Area */}
+      <div className="px-4 space-y-1">
+        {searchQuery.length >= 2 ? (
+          <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+            <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Suggested People</h2>
+            {searchResults.map((person) => (
+              <div key={person.id} onClick={() => startChat(person.id)} className="flex items-center justify-between py-3">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full overflow-hidden border border-gray-100 bg-gray-200">
+                    <img 
+                      src={person.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${person.username}`} 
+                      className="w-full h-full object-cover"
+                      onError={(e) => {(e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${person.username}`}}
+                    />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold">@{person.username}</p>
+                    <p className="text-xs text-gray-500">{person.full_name}</p>
+                  </div>
+                </div>
+                <UserPlus size={18} className="text-blue-500" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          rooms.map((room) => {
+            const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
+            return (
+              <div key={room.id} onClick={() => navigate(`/chat/${room.id}?friend=${otherUser.id}`)} className="flex items-center gap-4 py-3 active:bg-gray-50 transition-colors">
+                <div className="w-14 h-14 rounded-full overflow-hidden border border-gray-100 bg-gray-200">
+                  <img 
+                    src={otherUser?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${otherUser?.username}`} 
+                    className="w-full h-full object-cover"
+                    onError={(e) => {(e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${otherUser?.username}`}}
+                  />
+                </div>
+                <div className="flex-1 border-b border-gray-50 pb-3">
+                  <h3 className="text-sm font-bold text-gray-900">{otherUser?.username}</h3>
+                  <p className="text-xs text-gray-500 truncate">{room.last_message || 'Tap to chat'}</p>
+                </div>
+              </div>
+            )
+          })
+        )}
       </div>
     </div>
   );
