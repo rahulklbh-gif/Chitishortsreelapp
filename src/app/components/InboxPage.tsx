@@ -8,15 +8,14 @@ export function InboxPage() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // 1. Fetch Notifications and Mark as Read
   useEffect(() => {
     if (user) {
       fetchNotifications();
       markNotificationsAsRead(); 
 
-      // 🔥 REAL-TIME LOGIC START: Bina refresh kiye naya notification aane ke liye
+      // 🔥 REAL-TIME LOGIC: Naya notification aate hi bina refresh kiye dikhega
       const channel = supabase
-        .channel(`public:notifications:receiver_id=eq.${user.id}`)
+        .channel(`inbox_realtime_${user.id}`)
         .on(
           'postgres_changes',
           {
@@ -25,9 +24,8 @@ export function InboxPage() {
             table: 'notifications',
             filter: `receiver_id=eq.${user.id}`,
           },
-          (payload) => {
-            // Naya notification aate hi use fetch karke list mein sabse upar daal dena
-            fetchNotifications(); 
+          () => {
+            fetchNotifications(); // Naya data aate hi fetch kar lo
           }
         )
         .subscribe();
@@ -35,14 +33,13 @@ export function InboxPage() {
       return () => {
         supabase.removeChannel(channel);
       };
-      // 🔥 REAL-TIME LOGIC END
     }
   }, [user]);
 
   const fetchNotifications = async () => {
     try {
       setLoading(true);
-      // BADLAV: sender table se avatar_url aur username fetch ho raha hai
+      // Aapka original query jisme sender join add kiya hai photo ke liye
       const { data, error } = await supabase
         .from('notifications')
         .select(`
@@ -95,33 +92,37 @@ export function InboxPage() {
         <div className="space-y-4">
           {notifications.map((n) => (
             <div key={n.id} className="flex items-center gap-3 bg-gray-900/60 p-4 rounded-xl border border-white/5">
-              {/* Sender Avatar: Fallback letter agar photo na ho */}
-              <div className="relative w-10 h-10 flex-shrink-0">
-                <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs uppercase overflow-hidden">
-                  {n.sender?.avatar_url ? (
-                    <img 
-                      src={n.sender.avatar_url} 
-                      className="w-full h-full object-cover"
-                      alt="user"
-                      onError={(e) => (e.currentTarget.style.display = 'none')}
-                    />
-                  ) : (
-                    <span>{n.sender?.username?.[0] || 'U'}</span>
-                  )}
-                </div>
+              
+              {/* ✅ PHOTO LOGIC: Direct avatar_url link from profiles */}
+              <div className="w-10 h-10 flex-shrink-0">
+                {n.sender?.avatar_url ? (
+                  <img 
+                    src={n.sender.avatar_url} 
+                    className="w-10 h-10 rounded-full border border-gray-700 object-cover"
+                    alt="user"
+                    onError={(e) => {
+                      // Agar photo load na ho toh fallback icon dikhao
+                      e.currentTarget.src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
+                    }}
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs">
+                    {n.sender?.username?.[0]?.toUpperCase() || 'U'}
+                  </div>
+                )}
               </div>
               
               <div className="flex-1">
                 <p className="text-sm">
                   <span className="font-black text-white">@{n.sender?.username || 'User'}</span>
-                  <span className="text-gray-300 ml-1">{n.content}</span>
+                  <span className="text-gray-300 ml-1">{n.content || (n.type === 'follow' ? 'started following you' : '')}</span>
                 </p>
                 <p className="text-[10px] text-gray-500 mt-1 uppercase tracking-tighter font-bold">
                   {n.type} • {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </p>
               </div>
 
-              {/* FIX: Video Thumbnail display on the right */}
+              {/* Video Thumbnail (Like/Comment ke liye) */}
               {n.post?.youtube_video_id && (
                 <div className="w-10 h-14 rounded overflow-hidden border border-white/10 bg-gray-800 flex-shrink-0">
                   <img 
@@ -140,4 +141,4 @@ export function InboxPage() {
       )}
     </div>
   );
-} 
+}
