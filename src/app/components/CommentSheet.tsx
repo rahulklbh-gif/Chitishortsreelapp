@@ -10,15 +10,18 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
   const [newComment, setNewComment] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [replyTo, setReplyTo] = useState<string | null>(null); // 🔥 Reply track karne ke liye
 
   const fetchComments = useCallback(async () => {
     if (!videoId) return;
     setLoading(true);
     try {
+      // Hum yahan profiles table se join karke photo laayenge bina comments table badle
       const { data, error } = await supabase
         .from('comments')
-        .select('*')
+        .select(`
+          *,
+          profiles:user_id (avatar_url)
+        `)
         .eq('video_id', videoId)
         .order('created_at', { ascending: false });
 
@@ -44,29 +47,30 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
 
     setSubmitting(true);
     try {
-      // Pehle profiles table se latest username aur avatar fetch karein
+      // 1. Profiles table se latest username lo
       const { data: profileData } = await supabase
         .from('profiles')
-        .select('username, avatar_url') // 🔥 avatar_url bhi mangwa liya
+        .select('username')
         .eq('id', user.id)
         .single();
 
       const latestUsername = profileData?.username || user.email?.split('@')[0] || 'User';
-      const latestAvatar = profileData?.avatar_url || null; // 🔥 Photo link
 
+      // 2. Sirf wahi data jo aapke table screenshot mein dikh raha hai
       const commentData = {
         video_id: videoId,
         user_id: user.id,
         username: latestUsername,
-        user_avatar: latestAvatar, // 🔥 Database mein photo save karne ke liye (ensure column exists)
-        text: newComment,
-        parent_id: replyTo // 🔥 Agar reply hai toh parent id save hogi
+        text: newComment
       };
 
       const { data: commentRes, error: commentError } = await supabase
         .from('comments')
         .insert([commentData])
-        .select()
+        .select(`
+          *,
+          profiles:user_id (avatar_url)
+        `)
         .single();
 
       if (commentError) throw commentError;
@@ -85,9 +89,9 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
 
       setComments(prev => [commentRes, ...prev]);
       setNewComment('');
-      setReplyTo(null); // Reset reply
       toast.success('Comment added!');
     } catch (error: any) {
+      console.error("Insert Error:", error);
       toast.error('Could not post comment');
     } finally {
       setSubmitting(false);
@@ -122,11 +126,8 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
     }
   };
 
-  // 🔥 Reply handle karne ka function
-  const handleReplyClick = (username: string) => {
+  const handleReply = (username: string) => {
     setNewComment(`@${username} `);
-    // Note: Agar aapka database nested replies support karta hai toh parent_id set karein
-    // Filhaal hum mention feature use kar rahe hain jo simple hai.
   };
 
   if (!isOpen) return null;
@@ -152,34 +153,30 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
             comments.map((c) => (
               <div key={c.id} className="flex justify-between items-start">
                 <div className="flex gap-3 items-start">
-                  {/* 🔥 Profile Photo Logic */}
-                  {c.user_avatar ? (
+                  {/* Photo profiles table se aa rahi hai automatically */}
+                  {c.profiles?.avatar_url ? (
                     <img 
-                      src={c.user_avatar} 
+                      src={c.profiles.avatar_url} 
                       className="w-9 h-9 rounded-full object-cover border border-white/10"
                       crossOrigin="anonymous"
                     />
                   ) : (
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
                       {c.username ? c.username[0].toUpperCase() : 'U'}
                     </div>
                   )}
                   
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-[13px] text-gray-200">@{c.username}</span>
-                      <span className="text-[10px] text-gray-500">
-                        {new Date(c.created_at).toLocaleDateString()}
-                      </span>
+                      <span className="font-bold text-sm text-gray-200">@{c.username}</span>
                     </div>
-                    <p className="text-sm text-gray-400 mt-0.5 leading-relaxed">{c.text}</p>
+                    <p className="text-sm text-gray-400 mt-0.5">{c.text}</p>
                     
-                    {/* 🔥 Reply Button */}
                     <button 
-                      onClick={() => handleReplyClick(c.username)}
-                      className="text-[11px] font-bold text-gray-500 mt-2 hover:text-white transition-colors flex items-center gap-1"
+                      onClick={() => handleReply(c.username)}
+                      className="flex items-center gap-1 text-[11px] text-gray-500 font-bold mt-2 hover:text-white"
                     >
-                      Reply
+                      <Reply size={12} /> Reply
                     </button>
                   </div>
                 </div>
@@ -187,7 +184,7 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
                 {user?.id === c.user_id && (
                   <button 
                     onClick={() => handleDelete(c.id)}
-                    className="p-2 text-gray-600 hover:text-red-500 transition-colors"
+                    className="p-3 text-red-500/70 hover:text-red-500 transition-colors"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -219,4 +216,4 @@ export function CommentSheet({ videoId, videoOwnerId, isOpen, onClose }: any) {
       </div>
     </>
   );
-}
+} 
