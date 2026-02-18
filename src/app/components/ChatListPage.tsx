@@ -4,6 +4,40 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, UserPlus, Loader2 } from 'lucide-react';
 
+// ✅ Wahi logic jo CommentSheet mein kaam kar raha hai
+function UserAvatar({ userId, username }: { userId: string, username: string }) {
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function getPhoto() {
+      if (!userId) return;
+      const { data } = await supabase
+        .from('profiles')
+        .select('avatar_url')
+        .eq('id', userId)
+        .single();
+      if (data?.avatar_url) setAvatarUrl(data.avatar_url);
+    }
+    getPhoto();
+  }, [userId]);
+
+  return (
+    <div className="relative w-12 h-12 flex-shrink-0">
+      <div className="absolute inset-0 w-12 h-12 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center text-gray-500 font-bold text-sm">
+        {username ? username[0].toUpperCase() : 'U'}
+      </div>
+      {avatarUrl && (
+        <img 
+          src={avatarUrl} 
+          className="absolute inset-0 w-12 h-12 rounded-full object-cover border border-gray-100"
+          crossOrigin="anonymous"
+          onError={(e) => (e.currentTarget.style.display = 'none')}
+        />
+      )}
+    </div>
+  );
+}
+
 export function ChatListPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -38,7 +72,7 @@ export function ChatListPage() {
     try {
       const { data, error } = await supabase
         .from('chat_rooms')
-        .select(`*, user1:profiles!chat_rooms_user1_id_fkey(*), user2:profiles!chat_rooms_user2_id_fkey(*)`)
+        .select(`*, user1:profiles!chat_rooms_user1_id_fkey(id, username), user2:profiles!chat_rooms_user2_id_fkey(id, username)`)
         .or(`user1_id.eq.${user?.id},user2_id.eq.${user?.id}`)
         .order('last_message_time', { ascending: false });
       if (!error) setRooms(data || []);
@@ -65,15 +99,12 @@ export function ChatListPage() {
   };
 
   return (
-    /* ✅ Pure White Theme & Full Screen (Hides Bottom Navigation) */
     <div className="fixed inset-0 z-[110] bg-white text-black overflow-y-auto">
-      {/* Header */}
       <div className="p-4 pt-10 flex items-center gap-6 sticky top-0 bg-white border-b border-gray-100">
         <ArrowLeft onClick={() => navigate('/')} className="cursor-pointer text-black" />
         <h1 className="text-xl font-extrabold tracking-tight">Messages</h1>
       </div>
 
-      {/* Search Section */}
       <div className="p-4">
         <div className="flex items-center gap-3 bg-gray-100 p-3 rounded-2xl border border-gray-200">
           <Search size={18} className="text-gray-400" />
@@ -86,21 +117,15 @@ export function ChatListPage() {
         </div>
       </div>
 
-      {/* Results / List Area */}
       <div className="px-4 space-y-1">
         {searchQuery.length >= 2 ? (
-          <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+          <div>
             <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Suggested People</h2>
             {searchResults.map((person) => (
               <div key={person.id} onClick={() => startChat(person.id)} className="flex items-center justify-between py-3">
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full overflow-hidden border border-gray-100 bg-gray-200">
-                    <img 
-                      src={person.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${person.username}`} 
-                      className="w-full h-full object-cover"
-                      onError={(e) => {(e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${person.username}`}}
-                    />
-                  </div>
+                  {/* ✅ Photo Fix implemented here */}
+                  <UserAvatar userId={person.id} username={person.username} />
                   <div>
                     <p className="text-sm font-bold">@{person.username}</p>
                     <p className="text-xs text-gray-500">{person.full_name}</p>
@@ -114,14 +139,9 @@ export function ChatListPage() {
           rooms.map((room) => {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
             return (
-              <div key={room.id} onClick={() => navigate(`/chat/${room.id}?friend=${otherUser.id}`)} className="flex items-center gap-4 py-3 active:bg-gray-50 transition-colors">
-                <div className="w-14 h-14 rounded-full overflow-hidden border border-gray-100 bg-gray-200">
-                  <img 
-                    src={otherUser?.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${otherUser?.username}`} 
-                    className="w-full h-full object-cover"
-                    onError={(e) => {(e.target as HTMLImageElement).src = `https://api.dicebear.com/7.x/initials/svg?seed=${otherUser?.username}`}}
-                  />
-                </div>
+              <div key={room.id} onClick={() => navigate(`/chat/${room.id}?friend=${otherUser?.id}`)} className="flex items-center gap-4 py-3 active:bg-gray-50 transition-colors">
+                {/* ✅ Photo Fix implemented here */}
+                <UserAvatar userId={otherUser?.id} username={otherUser?.username} />
                 <div className="flex-1 border-b border-gray-50 pb-3">
                   <h3 className="text-sm font-bold text-gray-900">{otherUser?.username}</h3>
                   <p className="text-xs text-gray-500 truncate">{room.last_message || 'Tap to chat'}</p>
@@ -133,4 +153,4 @@ export function ChatListPage() {
       </div>
     </div>
   );
-} 
+}
