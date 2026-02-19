@@ -1,10 +1,12 @@
+"use client";
+
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { X, Loader2, Share2, Copy, Send, Search } from 'lucide-react';
 import { toast } from 'sonner';
 
-// UserAvatar Logic
+// UserAvatar Logic (No Changes)
 function UserAvatar({ userId, username }: { userId: string, username: string }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   useEffect(() => {
@@ -32,6 +34,7 @@ interface ShareModalProps {
   videoUrl: string;
   isOpen: boolean;
   onClose: () => void;
+  videoId?: string; // Optional but good for tracking
 }
 
 export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
@@ -76,53 +79,53 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
     );
   }, [friends, searchQuery]);
 
-  // ✅ FIXED SHARING LOGIC (Validation added, no function removed)
+  // ✅ IMPROVED SHARING LOGIC (Fixed Room Error)
   const handleInternalShare = async (friendId: string) => {
-    // Check if videoUrl exists
     if (!videoUrl) {
-      console.error("DEBUG: videoUrl is missing!", { videoUrl });
-      toast.error("Video link not found!");
+      toast.error("Video link missing!");
+      return;
+    }
+    if (!currentUser) {
+      toast.error("Please login first");
       return;
     }
 
     setSendingId(friendId);
-    console.log("DEBUG: Attempting to share...", { to: friendId, url: videoUrl });
     
     try {
-      // 1. Get or Create Room ID
+      // 1. Get or Create Room ID via RPC
+      // 🔥 Tip: Ensure your Supabase RPC 'get_or_create_chat_room' is correctly named and takes these params
       const { data: roomId, error: roomError } = await supabase.rpc('get_or_create_chat_room', { 
-        user1: currentUser?.id, 
+        user1: currentUser.id, 
         user2: friendId 
       });
 
       if (roomError || !roomId) {
-        console.error("Room RPC Error:", roomError);
-        throw new Error("Room Error");
+        console.error("RPC Room Error:", roomError);
+        // Fallback: If RPC fails, try to find room manually if you have a participant table
+        throw new Error("Chat connection failed. Please try again.");
       }
 
-      // 2. Insert message (Ensuring room_id and media_url are NOT null)
+      // 2. Insert message
       const { error: msgError } = await supabase.from('chat_messages').insert([{ 
         room_id: roomId, 
-        sender_id: currentUser?.id, 
+        sender_id: currentUser.id, 
         content: "Shared a video 🎥", 
-        media_url: videoUrl // Actual video URL passed here
+        media_url: videoUrl 
       }]);
 
-      if (msgError) {
-        console.error("Insert Message Error:", msgError);
-        throw msgError;
-      }
+      if (msgError) throw msgError;
 
-      // 3. Update room for last message preview
-      await supabase.from('chat_rooms').update({
+      // 3. Update room preview (Silent update, no need to wait)
+      supabase.from('chat_rooms').update({
         last_message: '🎥 Video Shared',
         last_message_time: new Date().toISOString()
-      }).eq('id', roomId);
+      }).eq('id', roomId).then();
 
-      toast.success("Sent!");
+      toast.success("Sent successfully!");
     } catch (err: any) { 
       console.error("Full Share Process Error:", err);
-      toast.error("Failed to send: " + (err.message || "Unknown error")); 
+      toast.error(err.message || "Failed to send"); 
     } finally { 
       setSendingId(null); 
     }
@@ -161,7 +164,14 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
               <div key={friend.id} className="flex flex-col items-center gap-2 min-w-[80px]">
                 <div className="relative">
                    <UserAvatar userId={friend.id} username={friend.username} />
-                   <button onClick={() => handleInternalShare(friend.id)} disabled={!!sendingId} className="absolute -bottom-1 -right-1 bg-blue-600 text-white rounded-full p-2 border-2 border-white shadow-lg active:scale-90 transition-transform">
+                   <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleInternalShare(friend.id);
+                    }} 
+                    disabled={!!sendingId} 
+                    className="absolute -bottom-1 -right-1 bg-blue-600 text-white rounded-full p-2 border-2 border-white shadow-lg active:scale-90 transition-transform"
+                   >
                     {sendingId === friend.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
                   </button>
                 </div>
@@ -184,7 +194,6 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
           </button>
         </div>
       </div>
-      <style jsx global>{` .no-scrollbar::-webkit-scrollbar { display: none; } `}</style>
     </div>
   );
 } 
