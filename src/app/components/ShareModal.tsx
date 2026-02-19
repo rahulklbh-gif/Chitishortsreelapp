@@ -78,45 +78,47 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
     );
   }, [friends, searchQuery]);
 
+  // 🔥 FIXED Logic: Explicit Parameter Passing
   const handleInternalShare = async (friendId: string) => {
-    if (!videoUrl || !currentUser) {
-      toast.error("Process initialized but data missing.");
-      return;
-    }
+    if (!videoUrl || !currentUser) return;
 
     setSendingId(friendId);
     
     try {
-      // 1. Get Room (Yahan error aa raha tha kyunki SQL function missing tha)
+      // 1. Get Room (Param names matched with SQL: user1, user2)
       const { data: roomId, error: roomError } = await supabase.rpc('get_or_create_chat_room', { 
         user1: currentUser.id, 
         user2: friendId 
       });
 
       if (roomError || !roomId) {
-        console.error("RPC Error details:", roomError);
-        throw new Error("Chat connection failed. Did you run the SQL script?");
+        console.error("RPC Error:", roomError);
+        // Agar RPC fail ho raha hai, toh directly error throw karein
+        throw new Error("Database connection failed. Please check SQL setup.");
       }
 
-      // 2. Insert message
-      const { error: msgError } = await supabase.from('chat_messages').insert([{ 
+      // 2. Insert message (Table names and Column names check)
+      const { error: msgError } = await supabase.from('chat_messages').insert({ 
         room_id: roomId, 
         sender_id: currentUser.id, 
         content: "Shared a video 🎥", 
         media_url: videoUrl 
-      }]);
+      });
 
-      if (msgError) throw msgError;
+      if (msgError) {
+        console.error("Message Error:", msgError);
+        throw new Error("Message could not be sent.");
+      }
 
-      // 3. Update room preview
-      supabase.from('chat_rooms').update({
+      // 3. Update room preview (Silent)
+      await supabase.from('chat_rooms').update({
         last_message: '🎥 Video Shared',
         last_message_time: new Date().toISOString()
-      }).eq('id', roomId).then();
+      }).eq('id', roomId);
 
-      toast.success("Video shared in chat!");
+      toast.success("Sent!");
     } catch (err: any) { 
-      console.error("Final Share Error:", err);
+      console.error("Full Error:", err);
       toast.error(err.message || "Failed to send"); 
     } finally { 
       setSendingId(null); 
