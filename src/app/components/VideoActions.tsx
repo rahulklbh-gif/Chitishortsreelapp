@@ -113,16 +113,18 @@ export function VideoActions({
     onComment(videoId, videoOwnerId);
   };
 
-  // --- 3. HANDLE SHARE (Original + Modal Logic) ---
+  // --- 3. HANDLE SHARE (Updated to prevent double layers) ---
   const handleShareInternal = async () => {
     try {
-      // Modal open karo (Add kiya gaya)
+      // 1. Modal open karo
       setIsShareModalOpen(true);
 
+      // 2. UI count update karo
       setShareCount(prev => prev + 1);
-      if (onShare) {
-        await onShare();
-      }
+      
+      // ✅ Note: onShare() yahan se hata diya hai taaki double menu na khule.
+      // Ab "Share Other" wala button ShareModal.tsx ke andar kaam karega.
+      
     } catch (err) {
       console.error("Share DB error:", err);
       setShareCount(prev => Math.max(0, prev - 1));
@@ -170,7 +172,7 @@ export function VideoActions({
         </span>
       </button>
 
-      {/* ✅ Share Modal Integration (Add kiya gaya) */}
+      {/* ✅ Share Modal Integration */}
       <ShareModal 
         isOpen={isShareModalOpen} 
         onClose={() => setIsShareModalOpen(false)} 
@@ -186,4 +188,4 @@ export function VideoActions({
       `}</style>
     </div>
   );
-} 
+}
