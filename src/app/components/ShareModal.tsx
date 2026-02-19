@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { X, Loader2, Share2, Copy, Send } from 'lucide-react';
 import { toast } from 'sonner';
 
-// ✅ Wahi UserAvatar logic jo ChatListPage mein hai
+// ✅ UserAvatar logic (No changes here)
 function UserAvatar({ userId, username }: { userId: string, username: string }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
@@ -50,23 +50,14 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
   const [loading, setLoading] = useState(true);
   const [sendingId, setSendingId] = useState<string | null>(null);
 
-  // ✅ NAVIGATION HIDE LOGIC (Add kiya gaya)
   useEffect(() => {
     if (isOpen) {
       fetchFriends();
-      // Navigation bar ko hide karne ke liye
-      const navBar = document.querySelector('nav') || document.querySelector('footer') || document.querySelector('[class*="nav"]');
-      if (navBar) {
-        (navBar as HTMLElement).style.display = 'none';
-      }
+      // ✅ CreatePage jaisa extra precaution: Body scroll lock
+      document.body.style.overflow = 'hidden';
     }
-
-    // Modal band hote hi wapas dikhao
     return () => {
-      const navBar = document.querySelector('nav') || document.querySelector('footer') || document.querySelector('[class*="nav"]');
-      if (navBar) {
-        (navBar as HTMLElement).style.display = 'flex';
-      }
+      document.body.style.overflow = 'unset';
     };
   }, [isOpen]);
 
@@ -79,7 +70,6 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
         .select('id, username')
         .neq('id', currentUser.id)
         .limit(15);
-      
       if (!error) setFriends(data || []);
     } catch (err) {
       console.error(err);
@@ -95,14 +85,12 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
         user1: currentUser?.id, 
         user2: friendId 
       });
-
       await supabase.from('chat_messages').insert([{
         room_id: roomId,
         sender_id: currentUser?.id,
         content: "Shared a video 🎥",
         media_url: videoUrl
       }]);
-
       toast.success("Sent to friend!");
     } catch (err) {
       toast.error("Failed");
@@ -114,79 +102,79 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
   if (!isOpen) return null;
 
   return (
-    /* ✅ FIXED: 'z-[9999]' taaki ye navigation bar ke upar rahe */
-    <div className="fixed inset-0 z-[9999] bg-black/60 flex items-end justify-center">
+    /* ✅ LOGIC: CreatePage ki tarah 'fixed inset-0' use kiya hai.
+       z-[99999] itna zyada hai ki ye aapke navigation bar ko peeche dhakel dega.
+    */
+    <div className="fixed inset-0 z-[99999] bg-black/70 flex items-end justify-center animate-in fade-in duration-200">
+      
+      {/* Background overlay pe click karne se modal band hoga */}
       <div className="absolute inset-0" onClick={onClose}></div>
       
-      <div className="relative bg-white w-full rounded-t-[32px] p-6 animate-in slide-in-from-bottom duration-300 max-w-lg shadow-2xl overflow-hidden">
-        {/* Mobile Handle */}
-        <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
+      <div className="relative bg-white w-full rounded-t-[40px] p-6 pb-10 animate-in slide-in-from-bottom duration-300 max-w-lg shadow-[0_-20px_50px_rgba(0,0,0,0.3)]">
         
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xl font-extrabold text-black">Send to</h3>
-          <button onClick={onClose} className="p-2 bg-gray-100 rounded-full text-black">
-            <X size={20} />
+        {/* Handle bar */}
+        <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-8"></div>
+        
+        <div className="flex justify-between items-center mb-8 px-2">
+          <h3 className="text-2xl font-black italic uppercase tracking-tighter text-black">Send to</h3>
+          <button onClick={onClose} className="p-2.5 bg-gray-100 rounded-full text-black hover:bg-gray-200 transition-colors">
+            <X size={24} />
           </button>
         </div>
 
-        {/* Friends Horizontal List */}
-        <div className="flex gap-4 overflow-x-auto pb-8 no-scrollbar">
+        {/* Friends List */}
+        <div className="flex gap-5 overflow-x-auto pb-8 no-scrollbar px-2">
           {loading ? (
-            <div className="w-full flex justify-center py-4">
-              <Loader2 className="animate-spin text-blue-600" />
+            <div className="w-full flex justify-center py-6">
+              <Loader2 className="animate-spin text-blue-600" size={30} />
             </div>
           ) : friends.map(friend => (
-            <div key={friend.id} className="flex flex-col items-center gap-2 min-w-[80px]">
-              <div className="relative">
+            <div key={friend.id} className="flex flex-col items-center gap-3 min-w-[85px]">
+              <div className="relative group">
                  <UserAvatar userId={friend.id} username={friend.username} />
-                 
                  <button 
                   onClick={() => handleInternalShare(friend.id)}
                   disabled={!!sendingId}
-                  className="absolute -bottom-1 -right-1 bg-blue-600 text-white rounded-full p-2 border-2 border-white shadow-lg active:scale-90 transition-transform"
+                  className="absolute -bottom-1 -right-1 bg-blue-600 text-white rounded-full p-2.5 border-[3px] border-white shadow-xl active:scale-90 transition-transform"
                 >
-                  {sendingId === friend.id ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                  {sendingId === friend.id ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
                 </button>
               </div>
-
-              <span className="text-[11px] text-gray-700 font-bold truncate w-20 text-center">
+              <span className="text-[11px] text-gray-800 font-extrabold truncate w-20 text-center uppercase tracking-tighter">
                 @{friend.username}
               </span>
             </div>
           ))}
         </div>
 
-        {/* Bottom Options */}
-        <div className="pt-6 border-t border-gray-100 flex justify-around items-center">
+        {/* Action Buttons */}
+        <div className="pt-8 border-t border-gray-100 flex justify-around items-center">
           <button 
             onClick={() => { navigator.clipboard.writeText(videoUrl); toast.success("Copied!"); }} 
-            className="flex flex-col items-center gap-2"
+            className="flex flex-col items-center gap-3 group"
           >
-            <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-black active:bg-gray-200 transition-colors">
-              <include Copy size={20} />
-              <Copy size={20} />
+            <div className="w-14 h-14 bg-gray-50 rounded-[22px] flex items-center justify-center text-black group-active:bg-gray-200 transition-all border border-gray-100">
+              <Copy size={24} />
             </div>
-            <span className="text-[10px] text-gray-500 font-bold uppercase">Copy Link</span>
+            <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Link</span>
           </button>
 
           <button 
-            onClick={() => {
-              if (navigator.share) {
-                navigator.share({ url: videoUrl }).catch(() => {});
-              } else {
-                navigator.clipboard.writeText(videoUrl);
-                toast.success("Link Copied!");
-              }
-            }} 
-            className="flex flex-col items-center gap-2"
+            onClick={() => navigator.share?.({ url: videoUrl })} 
+            className="flex flex-col items-center gap-3 group"
           >
-            <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 border border-blue-100 active:bg-blue-100 transition-colors">
-              <Share2 size={20} />
+            <div className="w-14 h-14 bg-blue-50 rounded-[22px] flex items-center justify-center text-blue-600 group-active:bg-blue-100 transition-all border border-blue-100/50">
+              <Share2 size={24} />
             </div>
-            <span className="text-[10px] text-gray-500 font-bold uppercase">Other</span>
+            <span className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Other</span>
           </button>
         </div>
       </div>
+
+      <style jsx>{`
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      `}</style>
     </div>
   );
 } 
