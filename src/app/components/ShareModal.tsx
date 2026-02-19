@@ -39,7 +39,7 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
   const [friends, setFriends] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [sendingId, setSendingId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState(''); // ✅ Search state
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const navSelectors = ['nav', '.bottom-nav', 'footer'];
@@ -47,7 +47,7 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
       fetchFriends();
       navSelectors.forEach(s => {
         const el = document.querySelector(s);
-        if (el) (el as HTMLElement).style.display = 'none'; // Force hide
+        if (el) (el as HTMLElement).style.display = 'none';
       });
       document.body.style.overflow = 'hidden';
     }
@@ -70,21 +70,49 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
     finally { setLoading(false); }
   };
 
-  // ✅ Search Filter Logic
   const filteredFriends = useMemo(() => {
     return friends.filter(f => 
       f.username?.toLowerCase().includes(searchQuery.toLowerCase())
     );
   }, [friends, searchQuery]);
 
+  // ✅ FIXED SHARING LOGIC (Room ID aur Media URL fix kiya hai)
   const handleInternalShare = async (friendId: string) => {
+    if (!currentUser || !videoUrl) return;
     setSendingId(friendId);
+    
     try {
-      const { data: roomId } = await supabase.rpc('get_or_create_chat_room', { user1: currentUser?.id, user2: friendId });
-      await supabase.from('chat_messages').insert([{ room_id: roomId, sender_id: currentUser?.id, content: "Shared a video 🎥", media_url: videoUrl }]);
+      // 1. Get or Create Room ID (Pehle ye check karega)
+      const { data: roomId, error: roomError } = await supabase.rpc('get_or_create_chat_room', { 
+        user1: currentUser.id, 
+        user2: friendId 
+      });
+
+      if (roomError || !roomId) throw new Error("Room Error");
+
+      // 2. Insert message with correct room_id and media_url
+      const { error: msgError } = await supabase.from('chat_messages').insert([{ 
+        room_id: roomId, 
+        sender_id: currentUser.id, 
+        content: "Shared a video 🎥", 
+        media_url: videoUrl 
+      }]);
+
+      if (msgError) throw msgError;
+
+      // 3. Update room for last message preview
+      await supabase.from('chat_rooms').update({
+        last_message: '🎥 Video Shared',
+        last_message_time: new Date().toISOString()
+      }).eq('id', roomId);
+
       toast.success("Sent!");
-    } catch (err) { toast.error("Failed"); } 
-    finally { setSendingId(null); }
+    } catch (err) { 
+      console.error(err);
+      toast.error("Failed to send"); 
+    } finally { 
+      setSendingId(null); 
+    }
   };
 
   if (!isOpen) return null;
@@ -101,7 +129,6 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
           <button onClick={onClose} className="p-2 bg-gray-100 rounded-full text-black"><X size={20} /></button>
         </div>
 
-        {/* ✅ Search Bar Added */}
         <div className="relative mb-6 shrink-0">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input 
@@ -113,7 +140,6 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
           />
         </div>
 
-        {/* Friends Horizontal List */}
         <div className="flex gap-4 overflow-x-auto pb-8 no-scrollbar px-1 min-h-[130px]">
           {loading ? (
             <div className="w-full flex justify-center py-4"><Loader2 className="animate-spin text-blue-600" /></div>
@@ -134,7 +160,6 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
           )}
         </div>
 
-        {/* Bottom Options */}
         <div className="pt-6 border-t border-gray-100 flex justify-around items-center shrink-0">
           <button onClick={() => { navigator.clipboard.writeText(videoUrl); toast.success("Copied!"); }} className="flex flex-col items-center gap-2">
             <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-black active:bg-gray-200 transition-colors"><Copy size={20} /></div>
@@ -149,4 +174,4 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
       <style jsx global>{` .no-scrollbar::-webkit-scrollbar { display: none; } `}</style>
     </div>
   );
-}
+} 
