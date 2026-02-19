@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { ArrowLeft, Send, Camera, Loader2 } from 'lucide-react';
+import { ArrowLeft, Send, Camera, Loader2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 
 // --- Cloudflare R2 Config ---
@@ -25,14 +25,13 @@ const s3Client = new S3Client({
   forcePathStyle: true,
 });
 
-// ✅ Helper: Behtar Time Ago logic
 function getTimeAgo(lastSeen: string | null) {
   if (!lastSeen) return "Offline";
   const now = new Date();
   const last = new Date(lastSeen);
   const diffInSecs = Math.floor((now.getTime() - last.getTime()) / 1000);
 
-  if (diffInSecs < 40) return "Online"; // 40s se kam toh Online dikhao
+  if (diffInSecs < 40) return "Online";
   if (diffInSecs < 3600) return `${Math.floor(diffInSecs / 60)}m ago`;
   if (diffInSecs < 86400) return `${Math.floor(diffInSecs / 3600)}h ago`;
   return `${Math.floor(diffInSecs / 86400)}d ago`;
@@ -72,33 +71,41 @@ export function ChatRoom() {
   const [newMessage, setNewMessage] = useState('');
   const [friendProfile, setFriendProfile] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [now, setNow] = useState(new Date()); // ✅ UI Refresh ke liye
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // ✅ Status update interval ref
   const statusInterval = useRef<any>(null);
 
   useEffect(() => {
     if (roomId) {
       fetchFriendProfile();
       fetchMessages();
-      subscribeToMessages();
       
-      // Heartbeat: Har 20 second mein online status update karo
-      updateMyStatus();
-      statusInterval.current = setInterval(updateMyStatus, 20000);
-      
-      // Dost ka status real-time update karne ke liye ek aur subscription
-      const profileSubscription = supabase
-        .channel(`profile-${friendId}`)
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${friendId}` }, 
-        (payload) => {
-          setFriendProfile(payload.new);
+      // ✅ Message Subscription (Insert AND Delete handle karne ke liye)
+      const messageChannel = supabase.channel(`room-${roomId}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${roomId}` }, (payload) => {
+          setMessages((prev) => [...prev, payload.new]);
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages' }, (payload) => {
+          setMessages((prev) => prev.filter(m => m.id !== payload.old.id));
         })
         .subscribe();
 
+      updateMyStatus();
+      statusInterval.current = setInterval(updateMyStatus, 20000);
+      
+      // UI refresh timer (Status change dikhane ke liye)
+      const uiTimer = setInterval(() => setNow(new Date()), 30000);
+
+      const profileSubscription = supabase.channel(`profile-${friendId}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${friendId}` }, (payload) => {
+          setFriendProfile(payload.new);
+        }).subscribe();
+
       return () => {
         clearInterval(statusInterval.current);
+        clearInterval(uiTimer);
+        supabase.removeChannel(messageChannel);
         supabase.removeChannel(profileSubscription);
       };
     }
@@ -124,13 +131,6 @@ export function ChatRoom() {
     setMessages(data || []);
   };
 
-  const subscribeToMessages = () => {
-    const channel = supabase.channel(`room-${roomId}`).on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${roomId}` }, (payload) => {
-        setMessages((prev) => [...prev, payload.new]);
-      }).subscribe();
-    return () => { supabase.removeChannel(channel); };
-  };
-
   const handleSendMessage = async (e?: React.FormEvent, mediaUrl?: string) => {
     if (e) e.preventDefault();
     if (!newMessage.trim() && !mediaUrl) return;
@@ -151,15 +151,25 @@ export function ChatRoom() {
     }
   };
 
+  // ✅ Message Delete Logic
+  const handleDeleteMessage = async (messageId: string, senderId: string) => {
+    if (senderId !== user?.id) return; // Sirf apne message delete kar sakte hain
+
+    const confirmDelete = window.confirm("Delete this message?");
+    if (!confirmDelete) return;
+
+    const { error } = await supabase.from('chat_messages').delete().eq('id', messageId);
+    if (error) toast.error("Delete failed");
+    else toast.success("Message deleted");
+  };
+
   const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
-
     setIsUploading(true);
     try {
       const fileName = `chats/${user.id}/${Date.now()}.mp4`;
       const arrayBuffer = await file.arrayBuffer();
-
       await s3Client.send(new PutObjectCommand({
         Bucket: R2_CONFIG.bucketName,
         Key: fileName,
@@ -167,11 +177,9 @@ export function ChatRoom() {
         ContentType: 'video/mp4',
         ContentDisposition: 'inline',
       }));
-
       const finalUrl = `${R2_CONFIG.publicDomain}/${fileName}`;
       await handleSendMessage(undefined, finalUrl);
-      toast.success("Video sent!");
-    } catch (err: any) {
+    } catch (err) {
       toast.error("Upload failed");
     } finally {
       setIsUploading(false);
@@ -182,13 +190,12 @@ export function ChatRoom() {
 
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black">
+      {/* Header */}
       <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0 shadow-sm">
         <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer text-black" />
         <div className="relative">
           <UserAvatar userId={friendId || ''} username={friendProfile?.username || 'U'} />
-          {status === "Online" && (
-            <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
-          )}
+          {status === "Online" && <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>}
         </div>
         <div>
           <h3 className="text-sm font-bold text-gray-900">{friendProfile?.full_name || friendProfile?.username || 'User'}</h3>
@@ -198,44 +205,54 @@ export function ChatRoom() {
         </div>
       </div>
 
+      {/* Chat Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f9f9f9]">
         {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[75%] px-4 py-2.5 shadow-sm overflow-hidden ${
+          <div 
+            key={msg.id} 
+            className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
+            onLongPress={() => handleDeleteMessage(msg.id, msg.sender_id)} // Mobile
+            onContextMenu={(e) => { e.preventDefault(); handleDeleteMessage(msg.id, msg.sender_id); }} // Desktop right click
+          >
+            <div className={`group relative max-w-[75%] px-4 py-2.5 shadow-sm overflow-hidden ${
               msg.sender_id === user?.id ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none border border-gray-100'
             }`}>
               {msg.media_url && (
-                <div className="relative rounded-lg overflow-hidden bg-black mb-2 border border-white/10 aspect-video">
-                  <video 
-                    src={msg.media_url} 
-                    className="w-full h-full object-cover" 
-                    controls 
-                    playsInline 
-                    preload="auto"
-                    crossOrigin="anonymous" // 🔥 R2 playback fix
-                  />
+                <div className="relative rounded-lg overflow-hidden bg-black mb-2 aspect-video">
+                  <video src={msg.media_url} className="w-full h-full object-cover" controls playsInline preload="auto" crossOrigin="anonymous" />
                 </div>
               )}
               {msg.content && <p className="text-sm leading-relaxed">{msg.content}</p>}
               <span className={`text-[8px] mt-1 block text-right ${msg.sender_id === user?.id ? 'text-blue-100' : 'text-gray-400'}`}>
                 {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
+              
+              {/* Delete Icon (Sirf sender ko dikhega on hover) */}
+              {msg.sender_id === user?.id && (
+                <button 
+                  onClick={() => handleDeleteMessage(msg.id, msg.sender_id)}
+                  className="absolute top-1 right-1 p-1 bg-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Trash2 size={10} className="text-white" />
+                </button>
+              )}
             </div>
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Input Form */}
       <div className="p-4 bg-white border-t border-gray-100 pb-8">
-        <form onSubmit={handleSendMessage} className="flex items-center gap-3 bg-gray-100 p-2 rounded-full px-4 border border-gray-200 shadow-inner">
-          <button type="button" onClick={() => fileInputRef.current?.click()} className="text-blue-600 active:scale-90 transition-transform">
+        <form onSubmit={handleSendMessage} className="flex items-center gap-3 bg-gray-100 p-2 rounded-full px-4 border border-gray-200">
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="text-blue-600">
             {isUploading ? <Loader2 className="animate-spin" size={20} /> : <Camera size={22} />}
           </button>
           <input type="file" ref={fileInputRef} className="hidden" accept="video/*" onChange={handleVideoUpload} />
           <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} className="flex-1 bg-transparent text-sm outline-none text-black placeholder:text-gray-400" placeholder="Message..." />
-          <button type="submit" className="text-blue-600 font-bold text-sm px-2 active:scale-95">Send</button>
+          <button type="submit" className="text-blue-600 font-bold text-sm px-2">Send</button>
         </form>
       </div>
     </div>
   );
-}
+} 
