@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { ArrowLeft, Send, Camera, Loader2, Trash2 } from 'lucide-react';
+import { ArrowLeft, Send, Camera, Loader2, Trash2, Play } from 'lucide-react'; // ✅ Play icon added
 import { toast } from 'sonner';
 
 // --- Cloudflare R2 Config ---
@@ -71,7 +71,7 @@ export function ChatRoom() {
   const [newMessage, setNewMessage] = useState('');
   const [friendProfile, setFriendProfile] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [now, setNow] = useState(new Date()); // ✅ UI Refresh ke liye
+  const [now, setNow] = useState(new Date()); 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const statusInterval = useRef<any>(null);
@@ -81,7 +81,6 @@ export function ChatRoom() {
       fetchFriendProfile();
       fetchMessages();
       
-      // ✅ Message Subscription (Insert AND Delete handle karne ke liye)
       const messageChannel = supabase.channel(`room-${roomId}`)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${roomId}` }, (payload) => {
           setMessages((prev) => [...prev, payload.new]);
@@ -94,7 +93,6 @@ export function ChatRoom() {
       updateMyStatus();
       statusInterval.current = setInterval(updateMyStatus, 20000);
       
-      // UI refresh timer (Status change dikhane ke liye)
       const uiTimer = setInterval(() => setNow(new Date()), 30000);
 
       const profileSubscription = supabase.channel(`profile-${friendId}`)
@@ -151,9 +149,8 @@ export function ChatRoom() {
     }
   };
 
-  // ✅ Message Delete Logic
   const handleDeleteMessage = async (messageId: string, senderId: string) => {
-    if (senderId !== user?.id) return; // Sirf apne message delete kar sakte hain
+    if (senderId !== user?.id) return;
 
     const confirmDelete = window.confirm("Delete this message?");
     if (!confirmDelete) return;
@@ -211,29 +208,50 @@ export function ChatRoom() {
           <div 
             key={msg.id} 
             className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
-            onLongPress={() => handleDeleteMessage(msg.id, msg.sender_id)} // Mobile
-            onContextMenu={(e) => { e.preventDefault(); handleDeleteMessage(msg.id, msg.sender_id); }} // Desktop right click
+            onContextMenu={(e) => { e.preventDefault(); handleDeleteMessage(msg.id, msg.sender_id); }}
           >
-            <div className={`group relative max-w-[75%] px-4 py-2.5 shadow-sm overflow-hidden ${
+            <div className={`group relative max-w-[75%] shadow-sm overflow-hidden ${
               msg.sender_id === user?.id ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none border border-gray-100'
-            }`}>
+            } ${msg.media_url ? 'p-1' : 'px-4 py-2.5'}`}> {/* ✅ Media hone par padding kam ki hai */}
+              
+              {/* ✅ SHARED VIDEO THUMBNAIL LOGIC - FIXED RENDERING */}
               {msg.media_url && (
-                <div className="relative rounded-lg overflow-hidden bg-black mb-2 aspect-video">
-                  <video src={msg.media_url} className="w-full h-full object-cover" controls playsInline preload="auto" crossOrigin="anonymous" />
+                <div className="relative rounded-xl overflow-hidden bg-black mb-1 w-48 aspect-[9/16] shadow-inner group/vid">
+                  <video 
+                    src={msg.media_url} 
+                    className="w-full h-full object-cover" 
+                    playsInline 
+                    preload="metadata" 
+                    crossOrigin="anonymous" 
+                  />
+                  {/* Overlay for better look */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center">
+                    <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30">
+                      <Play size={20} className="text-white fill-white ml-1" />
+                    </div>
+                  </div>
+                  {/* Label */}
+                  <div className="absolute bottom-2 left-2 flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                    <span className="text-[9px] font-black tracking-widest text-white uppercase">Chiti Short</span>
+                  </div>
                 </div>
               )}
-              {msg.content && <p className="text-sm leading-relaxed">{msg.content}</p>}
-              <span className={`text-[8px] mt-1 block text-right ${msg.sender_id === user?.id ? 'text-blue-100' : 'text-gray-400'}`}>
-                {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
+
+              {msg.content && <p className={`text-sm leading-relaxed ${msg.media_url ? 'px-2 pb-1 pt-1 font-medium' : ''}`}>{msg.content}</p>}
               
-              {/* Delete Icon (Sirf sender ko dikhega on hover) */}
+              <div className={`flex items-center justify-end gap-1 px-2 pb-1 ${msg.media_url ? 'mt-0' : 'mt-1'}`}>
+                 <span className={`text-[8px] block ${msg.sender_id === user?.id ? 'text-blue-100' : 'text-gray-400'}`}>
+                  {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              
               {msg.sender_id === user?.id && (
                 <button 
                   onClick={() => handleDeleteMessage(msg.id, msg.sender_id)}
-                  className="absolute top-1 right-1 p-1 bg-red-500 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-2 right-2 p-1.5 bg-black/40 backdrop-blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
                 >
-                  <Trash2 size={10} className="text-white" />
+                  <Trash2 size={12} className="text-white" />
                 </button>
               )}
             </div>
@@ -255,4 +273,4 @@ export function ChatRoom() {
       </div>
     </div>
   );
-} 
+}
