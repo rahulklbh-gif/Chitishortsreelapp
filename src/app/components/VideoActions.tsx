@@ -5,6 +5,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+// ✅ Modal Import (Add kiya gaya)
+import { ShareModal } from '@/app/components/ShareModal';
 
 export function VideoActions({ 
   videoId, 
@@ -13,7 +15,8 @@ export function VideoActions({
   initialShares, 
   videoOwnerId, 
   onComment, 
-  onShare 
+  onShare,
+  videoUrl // ✅ Parent se URL lene ke liye (Add kiya gaya)
 }: any) {
   const { user } = useAuth(); 
   const [isLiked, setIsLiked] = useState(false);
@@ -25,6 +28,9 @@ export function VideoActions({
   
   const [isUpdating, setIsUpdating] = useState(false);
   const [hearts, setHearts] = useState<any[]>([]);
+
+  // ✅ Modal State (Add kiya gaya)
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
   // Like check logic (Unchanged as per your request)
   const checkIfLiked = useCallback(async () => {
@@ -43,7 +49,6 @@ export function VideoActions({
   // 🔥 FIX: Syncing initial props with local state properly
   useEffect(() => {
     checkIfLiked();
-    // Jab database se fresh data aaye, toh state update karo
     setLikeCount(initialLikes ?? 0);
     setCommentCount(initialComments ?? 0);
     setShareCount(initialShares ?? 0);
@@ -105,31 +110,21 @@ export function VideoActions({
 
   // --- 2. HANDLE COMMENT (Enhanced with DB Increment) ---
   const handleCommentClick = async () => {
-    // Comment modal kholne ka logic jo parent se aa raha hai
     onComment(videoId, videoOwnerId);
-    
-    // Note: Comment count tab badhna chahiye jab user actual comment post kare.
-    // Agar aap modal khulte hi count badhana chahte hain (Sirf test ke liye), 
-    // toh niche wala RPC logic yahan bhi use kar sakte hain.
   };
 
-  // --- 3. HANDLE SHARE (Enhanced with DB Increment) ---
+  // --- 3. HANDLE SHARE (Original + Modal Logic) ---
   const handleShareInternal = async () => {
     try {
-      // Optimistically update UI
-      setShareCount(prev => prev + 1);
+      // Modal open karo (Add kiya gaya)
+      setIsShareModalOpen(true);
 
-      // Call the parent sharing function (Navigator or Clipboard)
+      setShareCount(prev => prev + 1);
       if (onShare) {
         await onShare();
       }
-
-      // Note: Backend increment RealVideoFeed ke handleVideoShare mein pehle se ho raha hai.
-      // Isliye yahan dubara RPC call karne ki zarurat nahi hai warna count double badhega.
-
     } catch (err) {
       console.error("Share DB error:", err);
-      // Rollback if fail
       setShareCount(prev => Math.max(0, prev - 1));
     }
   };
@@ -175,6 +170,13 @@ export function VideoActions({
         </span>
       </button>
 
+      {/* ✅ Share Modal Integration (Add kiya gaya) */}
+      <ShareModal 
+        isOpen={isShareModalOpen} 
+        onClose={() => setIsShareModalOpen(false)} 
+        videoUrl={videoUrl || ""} 
+      />
+
       <style>{`
         @keyframes bounce-up {
           0% { transform: translateY(0) scale(1); opacity: 1; }
@@ -184,4 +186,4 @@ export function VideoActions({
       `}</style>
     </div>
   );
-}
+} 
