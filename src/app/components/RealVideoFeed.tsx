@@ -111,10 +111,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       
       if (data) {
         let updatedVideos = data.map((video: any) => {
-          // ⚡ Yahan logic change kiya hai: Hamesha profiles se pehle data uthayega
           const freshName = video.profiles?.username || video.profiles?.full_name || video.user_name || 'user';
           
-          // Agar profiles.avatar_url hai toh wo, warna posts.user_avatar, warna default
           const freshAvatar = video.profiles?.avatar_url || 
                              video.user_avatar || 
                              'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
@@ -283,7 +281,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                   src={video.user_avatar} 
                   className="w-11 h-11 rounded-full border-2 border-white object-cover" 
                   alt="avatar"
-                  // 🔥 CORS aur Cloudflare policy ke liye ye line add ki gayi hai
                   crossOrigin="anonymous"
                   onError={(e) => { 
                     e.currentTarget.onerror = null;
@@ -312,6 +309,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 initialComments={video.comments_count || 0}
                 initialShares={video.shares_count || 0}
                 videoOwnerId={video.user_id} 
+                videoUrl={video.video_url} // ✅ Fixed: Passed video_url to fix "Video link not found"
                 onComment={() => onComment(video.id, video.user_id)} 
                 onShare={() => handleVideoShare(video)} 
               />
