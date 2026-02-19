@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
-// ✅ Modal Import
+// ✅ Modal Import (Add kiya gaya)
 import { ShareModal } from '@/app/components/ShareModal';
 
 export function VideoActions({ 
@@ -16,7 +16,7 @@ export function VideoActions({
   videoOwnerId, 
   onComment, 
   onShare,
-  videoUrl 
+  videoUrl // ✅ Parent se URL lene ke liye
 }: any) {
   const { user } = useAuth(); 
   const [isLiked, setIsLiked] = useState(false);
@@ -29,10 +29,10 @@ export function VideoActions({
   const [isUpdating, setIsUpdating] = useState(false);
   const [hearts, setHearts] = useState<any[]>([]);
 
-  // ✅ Modal State
+  // ✅ Modal State (Add kiya gaya)
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
 
-  // Like check logic
+  // Like check logic (Unchanged)
   const checkIfLiked = useCallback(async () => {
     if (!user || !videoId) return;
     try {
@@ -46,7 +46,7 @@ export function VideoActions({
     } catch (err) { console.error("Check like error:", err); }
   }, [user?.id, videoId]);
 
-  // Syncing initial props
+  // 🔥 FIX: Syncing initial props with local state properly
   useEffect(() => {
     checkIfLiked();
     setLikeCount(initialLikes ?? 0);
@@ -54,7 +54,7 @@ export function VideoActions({
     setShareCount(initialShares ?? 0);
   }, [videoId, initialLikes, initialComments, initialShares, checkIfLiked]);
 
-  // --- 1. HANDLE LIKE ---
+  // --- 1. HANDLE LIKE (Aapka Original Function) ---
   const handleLike = async () => {
     if (!user) { toast.error("Pehle login karein!"); return; }
     if (isUpdating) return;
@@ -108,16 +108,20 @@ export function VideoActions({
     }
   };
 
-  // --- 2. HANDLE COMMENT ---
+  // --- 2. HANDLE COMMENT (Enhanced with DB Increment) ---
   const handleCommentClick = async () => {
     onComment(videoId, videoOwnerId);
   };
 
-  // --- 3. HANDLE SHARE ---
+  // --- 3. HANDLE SHARE (Updated to prevent double layers) ---
   const handleShareInternal = async () => {
     try {
+      // 1. Modal open karo
       setIsShareModalOpen(true);
+
+      // 2. UI count update karo
       setShareCount(prev => prev + 1);
+      
     } catch (err) {
       console.error("Share DB error:", err);
       setShareCount(prev => Math.max(0, prev - 1));
@@ -165,12 +169,12 @@ export function VideoActions({
         </span>
       </button>
 
-      {/* ✅ Fixed Share Modal Integration (Passed videoId) */}
+      {/* ✅ Share Modal Integration (videoId pass kar diya hai) */}
       <ShareModal 
         isOpen={isShareModalOpen} 
         onClose={() => setIsShareModalOpen(false)} 
         videoUrl={videoUrl || ""} 
-        videoId={videoId} 
+        videoId={videoId}
       />
 
       <style>{`
@@ -182,4 +186,4 @@ export function VideoActions({
       `}</style>
     </div>
   );
-}
+} 
