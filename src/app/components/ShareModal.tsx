@@ -50,8 +50,24 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
   const [loading, setLoading] = useState(true);
   const [sendingId, setSendingId] = useState<string | null>(null);
 
+  // ✅ NAVIGATION HIDE LOGIC (Add kiya gaya)
   useEffect(() => {
-    if (isOpen) fetchFriends();
+    if (isOpen) {
+      fetchFriends();
+      // Navigation bar ko hide karne ke liye
+      const navBar = document.querySelector('nav') || document.querySelector('footer') || document.querySelector('[class*="nav"]');
+      if (navBar) {
+        (navBar as HTMLElement).style.display = 'none';
+      }
+    }
+
+    // Modal band hote hi wapas dikhao
+    return () => {
+      const navBar = document.querySelector('nav') || document.querySelector('footer') || document.querySelector('[class*="nav"]');
+      if (navBar) {
+        (navBar as HTMLElement).style.display = 'flex';
+      }
+    };
   }, [isOpen]);
 
   const fetchFriends = async () => {
@@ -98,8 +114,8 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
   if (!isOpen) return null;
 
   return (
-    /* ✅ FIXED: 'fixed inset-0 z-[150]' Navigation Bar ko apne aap picche chhipa dega */
-    <div className="fixed inset-0 z-[150] bg-black/60 flex items-end justify-center">
+    /* ✅ FIXED: 'z-[9999]' taaki ye navigation bar ke upar rahe */
+    <div className="fixed inset-0 z-[9999] bg-black/60 flex items-end justify-center">
       <div className="absolute inset-0" onClick={onClose}></div>
       
       <div className="relative bg-white w-full rounded-t-[32px] p-6 animate-in slide-in-from-bottom duration-300 max-w-lg shadow-2xl overflow-hidden">
@@ -121,11 +137,9 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
             </div>
           ) : friends.map(friend => (
             <div key={friend.id} className="flex flex-col items-center gap-2 min-w-[80px]">
-              {/* ✅ Profile Photo Fix logic from ChatListPage */}
               <div className="relative">
                  <UserAvatar userId={friend.id} username={friend.username} />
                  
-                 {/* Send Overlay Button */}
                  <button 
                   onClick={() => handleInternalShare(friend.id)}
                   disabled={!!sendingId}
@@ -149,13 +163,21 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
             className="flex flex-col items-center gap-2"
           >
             <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center text-black active:bg-gray-200 transition-colors">
+              <include Copy size={20} />
               <Copy size={20} />
             </div>
             <span className="text-[10px] text-gray-500 font-bold uppercase">Copy Link</span>
           </button>
 
           <button 
-            onClick={() => navigator.share?.({ url: videoUrl })} 
+            onClick={() => {
+              if (navigator.share) {
+                navigator.share({ url: videoUrl }).catch(() => {});
+              } else {
+                navigator.clipboard.writeText(videoUrl);
+                toast.success("Link Copied!");
+              }
+            }} 
             className="flex flex-col items-center gap-2"
           >
             <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 border border-blue-100 active:bg-blue-100 transition-colors">
@@ -167,4 +189,4 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
       </div>
     </div>
   );
-}
+} 
