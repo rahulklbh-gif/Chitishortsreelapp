@@ -76,29 +76,42 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
     );
   }, [friends, searchQuery]);
 
-  // ✅ FIXED SHARING LOGIC (Room ID aur Media URL fix kiya hai)
+  // ✅ FIXED SHARING LOGIC (Validation added, no function removed)
   const handleInternalShare = async (friendId: string) => {
-    if (!currentUser || !videoUrl) return;
+    // Check if videoUrl exists
+    if (!videoUrl) {
+      console.error("DEBUG: videoUrl is missing!", { videoUrl });
+      toast.error("Video link not found!");
+      return;
+    }
+
     setSendingId(friendId);
+    console.log("DEBUG: Attempting to share...", { to: friendId, url: videoUrl });
     
     try {
-      // 1. Get or Create Room ID (Pehle ye check karega)
+      // 1. Get or Create Room ID
       const { data: roomId, error: roomError } = await supabase.rpc('get_or_create_chat_room', { 
-        user1: currentUser.id, 
+        user1: currentUser?.id, 
         user2: friendId 
       });
 
-      if (roomError || !roomId) throw new Error("Room Error");
+      if (roomError || !roomId) {
+        console.error("Room RPC Error:", roomError);
+        throw new Error("Room Error");
+      }
 
-      // 2. Insert message with correct room_id and media_url
+      // 2. Insert message (Ensuring room_id and media_url are NOT null)
       const { error: msgError } = await supabase.from('chat_messages').insert([{ 
         room_id: roomId, 
-        sender_id: currentUser.id, 
+        sender_id: currentUser?.id, 
         content: "Shared a video 🎥", 
-        media_url: videoUrl 
+        media_url: videoUrl // Actual video URL passed here
       }]);
 
-      if (msgError) throw msgError;
+      if (msgError) {
+        console.error("Insert Message Error:", msgError);
+        throw msgError;
+      }
 
       // 3. Update room for last message preview
       await supabase.from('chat_rooms').update({
@@ -107,9 +120,9 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
       }).eq('id', roomId);
 
       toast.success("Sent!");
-    } catch (err) { 
-      console.error(err);
-      toast.error("Failed to send"); 
+    } catch (err: any) { 
+      console.error("Full Share Process Error:", err);
+      toast.error("Failed to send: " + (err.message || "Unknown error")); 
     } finally { 
       setSendingId(null); 
     }
