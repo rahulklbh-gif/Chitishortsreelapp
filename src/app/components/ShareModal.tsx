@@ -78,47 +78,72 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
     );
   }, [friends, searchQuery]);
 
-  // 🔥 FIXED Logic: Explicit Parameter Passing
+  // 🔥 POWERFUL SHARING LOGIC (With Manual Fallback)
   const handleInternalShare = async (friendId: string) => {
     if (!videoUrl || !currentUser) return;
-
     setSendingId(friendId);
     
     try {
-      // 1. Get Room (Param names matched with SQL: user1, user2)
-      const { data: roomId, error: roomError } = await supabase.rpc('get_or_create_chat_room', { 
+      let finalRoomId = null;
+
+      // STEP 1: Try RPC (Database Function)
+      const { data: rpcRoomId, error: rpcError } = await supabase.rpc('get_or_create_chat_room', { 
         user1: currentUser.id, 
         user2: friendId 
       });
 
-      if (roomError || !roomId) {
-        console.error("RPC Error:", roomError);
-        // Agar RPC fail ho raha hai, toh directly error throw karein
-        throw new Error("Database connection failed. Please check SQL setup.");
+      if (!rpcError && rpcRoomId) {
+        finalRoomId = rpcRoomId;
+      } else {
+        // STEP 2: MANUAL FALLBACK (Agar RPC fail ho jaye)
+        console.log("RPC failed, trying manual room lookup...");
+        
+        const { data: existingRoom } = await supabase
+          .from('chat_rooms')
+          .select('id')
+          .or(`and(participant1_id.eq.${currentUser.id},participant2_id.eq.${friendId}),and(participant1_id.eq.${friendId},participant2_id.eq.${currentUser.id})`)
+          .maybeSingle();
+
+        if (existingRoom) {
+          finalRoomId = existingRoom.id;
+        } else {
+          // Room nahi mila toh naya banao
+          const { data: newRoom, error: createError } = await supabase
+            .from('chat_rooms')
+            .insert({ 
+              participant1_id: currentUser.id, 
+              participant2_id: friendId,
+              last_message: 'Shared a video 🎥'
+            })
+            .select('id')
+            .single();
+          
+          if (createError) throw createError;
+          finalRoomId = newRoom.id;
+        }
       }
 
-      // 2. Insert message (Table names and Column names check)
+      if (!finalRoomId) throw new Error("Could not connect to chat room.");
+
+      // STEP 3: Insert message
       const { error: msgError } = await supabase.from('chat_messages').insert({ 
-        room_id: roomId, 
+        room_id: finalRoomId, 
         sender_id: currentUser.id, 
         content: "Shared a video 🎥", 
         media_url: videoUrl 
       });
 
-      if (msgError) {
-        console.error("Message Error:", msgError);
-        throw new Error("Message could not be sent.");
-      }
+      if (msgError) throw msgError;
 
-      // 3. Update room preview (Silent)
+      // STEP 4: Update room last message
       await supabase.from('chat_rooms').update({
         last_message: '🎥 Video Shared',
         last_message_time: new Date().toISOString()
-      }).eq('id', roomId);
+      }).eq('id', finalRoomId);
 
-      toast.success("Sent!");
+      toast.success("Sent successfully!");
     } catch (err: any) { 
-      console.error("Full Error:", err);
+      console.error("Share Error:", err);
       toast.error(err.message || "Failed to send"); 
     } finally { 
       setSendingId(null); 
