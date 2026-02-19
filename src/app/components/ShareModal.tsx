@@ -22,7 +22,6 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
 
   const fetchFriends = async () => {
     setLoading(true);
-    // Profiles fetch kar rahe hain share karne ke liye
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
@@ -36,7 +35,6 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
   const handleInternalShare = async (friendId: string) => {
     setSendingId(friendId);
     try {
-      // 1. Room ID lao ya banao (Iske liye SQL wala function zaroori hai)
       const { data: roomId, error: roomError } = await supabase.rpc('get_or_create_chat_room', { 
         user1: user?.id, 
         user2: friendId 
@@ -44,7 +42,6 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
 
       if (roomError) throw roomError;
 
-      // 2. Chat mein message bhejo
       const { error: msgError } = await supabase.from('chat_messages').insert([{
         room_id: roomId,
         sender_id: user?.id,
@@ -54,7 +51,7 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
 
       if (msgError) throw msgError;
       toast.success("Sent to friend!");
-      setTimeout(onClose, 500); // Bhejne ke baad modal band ho jaye
+      setTimeout(onClose, 500);
     } catch (err) {
       toast.error("Failed to send");
     } finally {
@@ -62,15 +59,30 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
     }
   };
 
+  // ✅ External Share Function (Naya Add Kiya)
+  const handleExternalShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Check out this video',
+          url: videoUrl,
+        });
+      } catch (err) {
+        console.log("Share cancelled");
+      }
+    } else {
+      navigator.clipboard.writeText(videoUrl);
+      toast.success("Link copied to clipboard!");
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-[200] bg-black/70 flex items-end justify-center p-0">
-      {/* Background click se band karne ke liye */}
       <div className="absolute inset-0" onClick={onClose}></div>
       
       <div className="relative bg-white w-full rounded-t-[32px] p-6 animate-in slide-in-from-bottom duration-300 max-w-lg shadow-2xl">
-        {/* Handle bar for mobile look */}
         <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6"></div>
         
         <div className="flex justify-between items-center mb-6">
@@ -80,7 +92,6 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
           </button>
         </div>
 
-        {/* Friends Horizontal List */}
         <div className="flex gap-4 overflow-x-auto pb-8 no-scrollbar min-h-[100px]">
           {loading ? (
             <div className="w-full flex justify-center items-center">
@@ -92,6 +103,8 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
                 <div className="relative">
                   <img 
                     src={friend.avatar_url || `https://ui-avatars.com/api/?name=${friend.username}`} 
+                    // ✅ Broken photo fix
+                    onError={(e) => { (e.target as HTMLImageElement).src = `https://ui-avatars.com/api/?name=${friend.username}`; }}
                     className="w-16 h-16 rounded-full object-cover border-2 border-blue-500 p-0.5 shadow-md" 
                   />
                   <button 
@@ -112,8 +125,9 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
           )}
         </div>
 
-        {/* Copy Link Option */}
-        <div className="pt-4 border-t border-gray-100 flex justify-center">
+        {/* ✅ Bottom Options Section (Updated) */}
+        <div className="pt-6 border-t border-gray-100 flex justify-center gap-12">
+          {/* Copy Link Button */}
           <button 
             onClick={() => { 
               navigator.clipboard.writeText(videoUrl); 
@@ -125,6 +139,17 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
               <Copy size={20} />
             </div>
             <span className="text-[11px] text-gray-500 font-medium">Copy Link</span>
+          </button>
+
+          {/* Naya Share Other Button */}
+          <button 
+            onClick={handleExternalShare} 
+            className="flex flex-col items-center gap-2 active:scale-95 transition-transform"
+          >
+            <div className="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-blue-600 shadow-inner border border-blue-100">
+              <Share2 size={20} />
+            </div>
+            <span className="text-[11px] text-gray-500 font-medium">Share Other</span>
           </button>
         </div>
       </div>
