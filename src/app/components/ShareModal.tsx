@@ -130,4 +130,4 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
       </div>
     </div>
   );
-} 
+}
