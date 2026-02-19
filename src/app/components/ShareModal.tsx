@@ -78,73 +78,40 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
     );
   }, [friends, searchQuery]);
 
-  // 🔥 POWERFUL SHARING LOGIC (With Manual Fallback)
   const handleInternalShare = async (friendId: string) => {
     if (!videoUrl || !currentUser) return;
     setSendingId(friendId);
     
     try {
-      let finalRoomId = null;
-
-      // STEP 1: Try RPC (Database Function)
-      const { data: rpcRoomId, error: rpcError } = await supabase.rpc('get_or_create_chat_room', { 
+      // 1. Get/Create Room via RPC (Now matching your screenshot columns)
+      const { data: roomId, error: rpcError } = await supabase.rpc('get_or_create_chat_room', { 
         user1: currentUser.id, 
         user2: friendId 
       });
 
-      if (!rpcError && rpcRoomId) {
-        finalRoomId = rpcRoomId;
-      } else {
-        // STEP 2: MANUAL FALLBACK (Agar RPC fail ho jaye)
-        console.log("RPC failed, trying manual room lookup...");
-        
-        const { data: existingRoom } = await supabase
-          .from('chat_rooms')
-          .select('id')
-          .or(`and(participant1_id.eq.${currentUser.id},participant2_id.eq.${friendId}),and(participant1_id.eq.${friendId},participant2_id.eq.${currentUser.id})`)
-          .maybeSingle();
+      if (rpcError || !roomId) throw new Error("Room Error: " + rpcError?.message);
 
-        if (existingRoom) {
-          finalRoomId = existingRoom.id;
-        } else {
-          // Room nahi mila toh naya banao
-          const { data: newRoom, error: createError } = await supabase
-            .from('chat_rooms')
-            .insert({ 
-              participant1_id: currentUser.id, 
-              participant2_id: friendId,
-              last_message: 'Shared a video 🎥'
-            })
-            .select('id')
-            .single();
-          
-          if (createError) throw createError;
-          finalRoomId = newRoom.id;
-        }
-      }
-
-      if (!finalRoomId) throw new Error("Could not connect to chat room.");
-
-      // STEP 3: Insert message
+      // 2. Insert message (Matches your chat_messages screenshot)
       const { error: msgError } = await supabase.from('chat_messages').insert({ 
-        room_id: finalRoomId, 
+        room_id: roomId, 
         sender_id: currentUser.id, 
         content: "Shared a video 🎥", 
-        media_url: videoUrl 
+        media_url: videoUrl,
+        media_type: 'video' // Screenshot mein media_type column bhi dikh raha hai
       });
 
       if (msgError) throw msgError;
 
-      // STEP 4: Update room last message
+      // 3. Update room preview
       await supabase.from('chat_rooms').update({
         last_message: '🎥 Video Shared',
         last_message_time: new Date().toISOString()
-      }).eq('id', finalRoomId);
+      }).eq('id', roomId);
 
-      toast.success("Sent successfully!");
+      toast.success("Sent!");
     } catch (err: any) { 
       console.error("Share Error:", err);
-      toast.error(err.message || "Failed to send"); 
+      toast.error("Failed: " + (err.message || "Unknown error")); 
     } finally { 
       setSendingId(null); 
     }
@@ -158,7 +125,7 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
       <div className="relative bg-white w-full rounded-t-[32px] p-6 pb-10 animate-in slide-in-from-bottom duration-300 max-w-lg shadow-2xl flex flex-col max-h-[80vh]">
         <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-6 shrink-0"></div>
         <div className="flex justify-between items-center mb-6 shrink-0">
-          <h3 className="text-xl font-black text-black uppercase italic">Send to</h3>
+          <h3 className="text-xl font-black text-black uppercase italic text-sm">Send to</h3>
           <button onClick={onClose} className="p-2 bg-gray-100 rounded-full text-black"><X size={20} /></button>
         </div>
         <div className="relative mb-6 shrink-0">
@@ -168,7 +135,7 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search friends..."
-            className="w-full bg-gray-100 rounded-2xl py-3 pl-12 pr-4 text-sm font-bold text-black outline-none border border-transparent focus:border-blue-500/30 transition-all"
+            className="w-full bg-gray-100 rounded-2xl py-3 pl-12 pr-4 text-xs font-bold text-black outline-none border border-transparent focus:border-blue-500/30 transition-all"
           />
         </div>
         <div className="flex gap-4 overflow-x-auto pb-8 no-scrollbar px-1 min-h-[130px]">
@@ -191,7 +158,7 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
               </div>
             ))
           ) : (
-            <div className="w-full text-center py-4 text-gray-400 text-xs font-bold uppercase italic">No friends found</div>
+            <div className="w-full text-center py-4 text-gray-400 text-[10px] font-bold uppercase italic tracking-tighter">No friends found</div>
           )}
         </div>
         <div className="pt-6 border-t border-gray-100 flex justify-around items-center shrink-0">
@@ -207,4 +174,4 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
       </div>
     </div>
   );
-} 
+}
