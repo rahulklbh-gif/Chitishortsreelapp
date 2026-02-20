@@ -214,9 +214,12 @@ export function ChatRoom() {
               msg.sender_id === user?.id ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none border border-gray-100'
             } ${msg.media_url ? 'p-1' : 'px-4 py-2.5'}`}> {/* ✅ Media hone par padding kam ki hai */}
               
-              {/* ✅ SHARED VIDEO THUMBNAIL LOGIC - FIXED RENDERING */}
+              {/* ✅ SHARED VIDEO THUMBNAIL LOGIC - FIXED RENDERING WITH NAVIGATION */}
               {msg.media_url && (
-                <div className="relative rounded-xl overflow-hidden bg-black mb-1 w-48 aspect-[9/16] shadow-inner group/vid">
+                <div 
+                  onClick={() => msg.post_id && navigate(`/?video=${msg.post_id}`)}
+                  className="relative rounded-xl overflow-hidden bg-black mb-1 w-48 aspect-[9/16] shadow-inner group/vid cursor-pointer active:scale-95 transition-transform"
+                >
                   <video 
                     src={msg.media_url} 
                     className="w-full h-full object-cover" 
@@ -273,4 +276,4 @@ export function ChatRoom() {
       </div>
     </div>
   );
-} 
+}
