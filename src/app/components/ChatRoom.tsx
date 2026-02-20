@@ -75,29 +75,27 @@ export function ChatRoom() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const statusInterval = useRef<any>(null);
 
-  // ✅ 1. SOUND REFS (Standard HTML5 Audio Fix)
-  const sentAudioRef = useRef<HTMLAudioElement>(null);
-  const receivedAudioRef = useRef<HTMLAudioElement>(null);
+  // ✅ 1. Pakka Sound Logic (Using Refs for Audio Objects)
+  const sentSound = useRef<HTMLAudioElement | null>(null);
+  const receivedSound = useRef<HTMLAudioElement | null>(null);
 
-  // ✅ 2. SOUND PLAY FUNCTION
+  useEffect(() => {
+    sentSound.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3");
+    receivedSound.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3");
+    
+    // Pre-load sounds
+    sentSound.current.load();
+    receivedSound.current.load();
+  }, []);
+
   const playSound = (type: 'sent' | 'received') => {
-    const audio = type === 'sent' ? sentAudioRef.current : receivedAudioRef.current;
+    const audio = type === 'sent' ? sentSound.current : receivedSound.current;
     if (audio) {
-      audio.pause(); // Resetting
       audio.currentTime = 0;
       const playPromise = audio.play();
       if (playPromise !== undefined) {
-        playPromise.catch(e => console.error("Sound play failed:", e));
+        playPromise.catch(error => console.log("Playback prevented:", error));
       }
-    }
-  };
-
-  // ✅ 3. UNLOCK SOUND (Runs once user interacts with UI)
-  const unlockSounds = () => {
-    if (sentAudioRef.current && receivedAudioRef.current) {
-        // Play and immediately pause to "warm up" the audio engine
-        sentAudioRef.current.play().then(() => sentAudioRef.current?.pause()).catch(() => {});
-        receivedAudioRef.current.play().then(() => receivedAudioRef.current?.pause()).catch(() => {});
     }
   };
 
@@ -176,7 +174,7 @@ export function ChatRoom() {
   const handleSendMessage = async (e?: React.FormEvent, mediaUrl?: string, mediaType?: 'video' | 'photo') => {
     if (e) e.preventDefault();
     
-    // ✅ TRIGGER SOUND IMMEDIATELY
+    // ✅ TRICK: Play sound immediately on user interaction to bypass browser lock
     playSound('sent'); 
 
     if (!newMessage.trim() && !mediaUrl) return;
@@ -214,6 +212,15 @@ export function ChatRoom() {
     const file = e.target.files?.[0];
     if (!file || !user) return;
     
+    // Unlock sound on upload click too
+    playSound('sent');
+
+    const isVideo = file.type.startsWith('video/');
+    const isPhoto = file.type.startsWith('image/');
+    if (!isVideo && !isPhoto) {
+      toast.error("Format not supported");
+      return;
+    }
     setIsUploading(true);
     try {
       const fileExt = file.name.split('.').pop();
@@ -227,7 +234,7 @@ export function ChatRoom() {
         ContentDisposition: 'inline',
       }));
       const finalUrl = `${R2_CONFIG.publicDomain}/${fileName}`;
-      await handleSendMessage(undefined, finalUrl, file.type.startsWith('video/') ? 'video' : 'photo');
+      await handleSendMessage(undefined, finalUrl, isVideo ? 'video' : 'photo');
     } catch (err) {
       toast.error("Upload failed");
     } finally {
@@ -239,15 +246,8 @@ export function ChatRoom() {
   const status = getTimeAgo(friendProfile?.last_seen);
   
   return (
-    <div 
-        className="fixed inset-0 z-[100] flex flex-col bg-white text-black"
-        onMouseDown={unlockSounds} // ✅ Sound unlock for PC
-        onTouchStart={unlockSounds} // ✅ Sound unlock for Mobile
-    >
-      {/* ✅ INVISIBLE SOUNDS */}
-      <audio ref={sentAudioRef} src="https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3" preload="auto" />
-      <audio ref={receivedAudioRef} src="https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3" preload="auto" />
-
+    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black">
+      
       {/* Header */}
       <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0 shadow-sm z-10">
         <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer text-black" />
@@ -266,26 +266,66 @@ export function ChatRoom() {
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f9f9f9]">
         {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}>
-            <div className={`relative max-w-[75%] shadow-sm ${
+          <div 
+            key={msg.id} 
+            className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
+            onContextMenu={(e) => { e.preventDefault(); handleDeleteMessage(msg.id, msg.sender_id); }}
+          >
+            <div className={`group relative max-w-[75%] shadow-sm overflow-hidden ${
               msg.sender_id === user?.id ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none border border-gray-100'
             } ${msg.media_url ? 'p-1' : 'px-4 py-2.5'}`}>
               
               {msg.media_url && (
-                <div className="relative rounded-xl overflow-hidden bg-black mb-1 w-48 aspect-[9/16]">
+                <div className="relative rounded-xl overflow-hidden bg-black mb-1 w-48 aspect-[9/16] shadow-inner group/vid cursor-pointer active:scale-95 transition-transform">
                   {msg.media_type === 'photo' ? (
-                    <img src={msg.media_url} className="w-full h-full object-cover" crossOrigin="anonymous" />
+                    <img 
+                       src={msg.media_url} 
+                       className="w-full h-full object-cover" 
+                       crossOrigin="anonymous" 
+                       onClick={() => window.open(msg.media_url, '_blank')}
+                    />
                   ) : (
-                    <video src={msg.media_url} className="w-full h-full object-cover" playsInline controls preload="metadata" crossOrigin="anonymous" />
+                    <div className="w-full h-full relative" onClick={() => msg.post_id ? navigate(`/?video=${msg.post_id}`) : null}>
+                      <video 
+                        src={msg.media_url} 
+                        className="w-full h-full object-cover" 
+                        playsInline 
+                        controls={!msg.post_id}
+                        preload="metadata" 
+                        crossOrigin="anonymous" 
+                      />
+                      {msg.post_id && (
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center">
+                          <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30">
+                            <Play size={20} className="text-white fill-white ml-1" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
+                  <div className="absolute bottom-2 left-2 flex items-center gap-1.5 pointer-events-none">
+                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                    <span className="text-[9px] font-black tracking-widest text-white uppercase">Chiti Short</span>
+                  </div>
                 </div>
               )}
-              {msg.content && <p className="text-sm leading-relaxed">{msg.content}</p>}
-              <div className="flex justify-end mt-1">
-                 <span className="text-[8px] opacity-70">
+
+              {msg.content && <p className={`text-sm leading-relaxed ${msg.media_url ? 'px-2 pb-1 pt-1 font-medium' : ''}`}>{msg.content}</p>}
+              
+              <div className={`flex items-center justify-end gap-1 px-2 pb-1 ${msg.media_url ? 'mt-0' : 'mt-1'}`}>
+                 <span className={`text-[8px] block ${msg.sender_id === user?.id ? 'text-blue-100' : 'text-gray-400'}`}>
                   {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
+              
+              {msg.sender_id === user?.id && (
+                <button 
+                  onClick={() => handleDeleteMessage(msg.id, msg.sender_id)}
+                  className="absolute top-2 right-2 p-1.5 bg-black/40 backdrop-blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                >
+                  <Trash2 size={12} className="text-white" />
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -294,20 +334,32 @@ export function ChatRoom() {
 
       {/* Input Form */}
       <div className="p-4 bg-white border-t border-gray-100 pb-8">
-        <form onSubmit={handleSendMessage} className="flex items-center gap-3 bg-gray-100 p-2 rounded-full px-4">
+        <form onSubmit={handleSendMessage} className="flex items-center gap-3 bg-gray-100 p-2 rounded-full px-4 border border-gray-200">
           <button type="button" onClick={() => fileInputRef.current?.click()} className="text-blue-600">
             {isUploading ? <Loader2 className="animate-spin" size={20} /> : <Camera size={22} />}
           </button>
-          <input type="file" ref={fileInputRef} className="hidden" accept="video/*,image/*" onChange={handleMediaUpload} />
+          <input 
+             type="file" 
+             ref={fileInputRef} 
+             className="hidden" 
+             accept="video/*,image/*" 
+             onChange={handleMediaUpload} 
+          />
           <input 
             value={newMessage} 
             onChange={(e) => setNewMessage(e.target.value)} 
-            className="flex-1 bg-transparent text-sm outline-none text-black" 
+            className="flex-1 bg-transparent text-sm outline-none text-black placeholder:text-gray-400" 
             placeholder="Message..." 
           />
-          <button type="submit" className="text-blue-600 font-bold text-sm px-2">Send</button>
+          {/* Send Button directly triggers playSound on mousedown or touch */}
+          <button 
+            type="submit" 
+            className="text-blue-600 font-bold text-sm px-2"
+          >
+            Send
+          </button>
         </form>
       </div>
     </div>
   );
-}
+} 
