@@ -25,9 +25,15 @@ const s3Client = new S3Client({
   forcePathStyle: true,
 });
 
-// ✅ SOUND EFFECTS
-const playSentSound = () => new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3').play().catch(() => {});
-const playReceivedSound = () => new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3').play().catch(() => {});
+// ✅ SOUND EFFECTS (Added Audio object correctly)
+const playSentSound = () => {
+  const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
+  audio.play().catch(e => console.log("Sound error:", e));
+};
+const playReceivedSound = () => {
+  const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
+  audio.play().catch(e => console.log("Sound error:", e));
+};
 
 function getTimeAgo(lastSeen: string | null) {
   if (!lastSeen) return "Offline";
@@ -84,6 +90,9 @@ export function ChatRoom() {
   const markAsRead = async () => {
     if (!roomId || !user) return;
     await supabase.from('chat_messages').update({ is_read: true }).eq('room_id', roomId).neq('sender_id', user.id).eq('is_read', false);
+    
+    // Update chat_rooms to show read status in list
+    await supabase.from('chat_rooms').update({ is_read: true }).eq('id', roomId).neq('last_sender_id', user.id);
   };
 
   useEffect(() => {
@@ -153,7 +162,7 @@ export function ChatRoom() {
       sender_id: user?.id,
       content: newMessage.trim(),
       media_url: mediaUrl || null,
-      media_type: mediaType || (mediaUrl ? 'video' : null) // Default to video for safety
+      media_type: mediaType || (mediaUrl ? 'video' : null)
     }]);
 
     if (!error) {
@@ -161,7 +170,9 @@ export function ChatRoom() {
       playSentSound(); // ✅ Sound for sending
       await supabase.from('chat_rooms').update({
         last_message: mediaUrl ? (mediaType === 'photo' ? '📷 Photo' : '🎥 Video') : newMessage.trim(),
-        last_message_time: new Date().toISOString()
+        last_message_time: new Date().toISOString(),
+        last_sender_id: user?.id,
+        is_read: false
       }).eq('id', roomId);
     }
   };
@@ -177,7 +188,7 @@ export function ChatRoom() {
     else toast.success("Message deleted");
   };
 
-  // ✅ UPDATED MULTIMEDIA UPLOAD (PHOTO + VIDEO)
+  // ✅ UPDATED MULTIMEDIA UPLOAD (FIXED VIDEO PLAY ISSUE)
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -192,15 +203,16 @@ export function ChatRoom() {
 
     setIsUploading(true);
     try {
-      const ext = isVideo ? '.mp4' : '.jpg';
-      const fileName = `chats/${user.id}/${Date.now()}${ext}`;
+      // Use original extension for better compatibility
+      const fileExt = file.name.split('.').pop();
+      const fileName = `chats/${user.id}/${Date.now()}.${fileExt}`;
       const arrayBuffer = await file.arrayBuffer();
       
       await s3Client.send(new PutObjectCommand({
         Bucket: R2_CONFIG.bucketName,
         Key: fileName,
         Body: new Uint8Array(arrayBuffer),
-        ContentType: file.type,
+        ContentType: file.type, // Explicitly set the original content type
         ContentDisposition: 'inline',
       }));
 
@@ -210,6 +222,7 @@ export function ChatRoom() {
       toast.error("Upload failed");
     } finally {
       setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = ''; // Reset input
     }
   };
 
@@ -247,23 +260,36 @@ export function ChatRoom() {
               {/* ✅ SHARED MULTIMEDIA LOGIC (PHOTO/VIDEO) */}
               {msg.media_url && (
                 <div 
-                  onClick={() => msg.media_type !== 'photo' && msg.post_id && navigate(`/?video=${msg.post_id}`)}
                   className="relative rounded-xl overflow-hidden bg-black mb-1 w-48 aspect-[9/16] shadow-inner group/vid cursor-pointer active:scale-95 transition-transform"
                 >
                   {msg.media_type === 'photo' ? (
-                    <img src={msg.media_url} className="w-full h-full object-cover" crossOrigin="anonymous" />
+                    <img 
+                       src={msg.media_url} 
+                       className="w-full h-full object-cover" 
+                       crossOrigin="anonymous" 
+                       onClick={() => window.open(msg.media_url, '_blank')}
+                    />
                   ) : (
-                    <>
-                      <video src={msg.media_url} className="w-full h-full object-cover" playsInline preload="metadata" crossOrigin="anonymous" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center">
-                        <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30">
-                          <Play size={20} className="text-white fill-white ml-1" />
+                    <div className="w-full h-full relative" onClick={() => msg.post_id ? navigate(`/?video=${msg.post_id}`) : null}>
+                      <video 
+                        src={msg.media_url} 
+                        className="w-full h-full object-cover" 
+                        playsInline 
+                        controls={!msg.post_id} // Show controls for gallery videos
+                        preload="metadata" 
+                        crossOrigin="anonymous" 
+                      />
+                      {msg.post_id && (
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center">
+                          <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30">
+                            <Play size={20} className="text-white fill-white ml-1" />
+                          </div>
                         </div>
-                      </div>
-                    </>
+                      )}
+                    </div>
                   )}
                   {/* Label */}
-                  <div className="absolute bottom-2 left-2 flex items-center gap-1.5">
+                  <div className="absolute bottom-2 left-2 flex items-center gap-1.5 pointer-events-none">
                     <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
                     <span className="text-[9px] font-black tracking-widest text-white uppercase">Chiti Short</span>
                   </div>
@@ -298,8 +324,19 @@ export function ChatRoom() {
           <button type="button" onClick={() => fileInputRef.current?.click()} className="text-blue-600">
             {isUploading ? <Loader2 className="animate-spin" size={20} /> : <Camera size={22} />}
           </button>
-          <input type="file" ref={fileInputRef} className="hidden" accept="video/*,image/*" onChange={handleMediaUpload} />
-          <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} className="flex-1 bg-transparent text-sm outline-none text-black placeholder:text-gray-400" placeholder="Message..." />
+          <input 
+             type="file" 
+             ref={fileInputRef} 
+             className="hidden" 
+             accept="video/*,image/*" 
+             onChange={handleMediaUpload} 
+          />
+          <input 
+            value={newMessage} 
+            onChange={(e) => setNewMessage(e.target.value)} 
+            className="flex-1 bg-transparent text-sm outline-none text-black placeholder:text-gray-400" 
+            placeholder="Message..." 
+          />
           <button type="submit" className="text-blue-600 font-bold text-sm px-2">Send</button>
         </form>
       </div>
