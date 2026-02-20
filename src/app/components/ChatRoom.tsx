@@ -25,14 +25,22 @@ const s3Client = new S3Client({
   forcePathStyle: true,
 });
 
-// ✅ SOUND EFFECTS (Added Audio object correctly)
+// ✅ SOUNDS SYSTEM (Pre-loaded outside component to avoid browser block)
+const sentSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
+const receivedSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
+
+// Preload sounds
+sentSound.load();
+receivedSound.load();
+
 const playSentSound = () => {
-  const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3');
-  audio.play().catch(e => console.log("Sound error:", e));
+  sentSound.currentTime = 0;
+  sentSound.play().catch(e => console.log("Sent sound blocked:", e));
 };
+
 const playReceivedSound = () => {
-  const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3');
-  audio.play().catch(e => console.log("Sound error:", e));
+  receivedSound.currentTime = 0;
+  receivedSound.play().catch(e => console.log("Received sound blocked:", e));
 };
 
 function getTimeAgo(lastSeen: string | null) {
@@ -105,7 +113,7 @@ export function ChatRoom() {
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `room_id=eq.${roomId}` }, (payload) => {
           setMessages((prev) => [...prev, payload.new]);
           if (payload.new.sender_id !== user?.id) {
-            playReceivedSound(); // ✅ Sound for new message
+            playReceivedSound(); // ✅ Correct Sound Trigger
             markAsRead(); // Mark incoming as read
           }
         })
@@ -167,7 +175,7 @@ export function ChatRoom() {
 
     if (!error) {
       setNewMessage('');
-      playSentSound(); // ✅ Sound for sending
+      playSentSound(); // ✅ Correct Sound Trigger
       await supabase.from('chat_rooms').update({
         last_message: mediaUrl ? (mediaType === 'photo' ? '📷 Photo' : '🎥 Video') : newMessage.trim(),
         last_message_time: new Date().toISOString(),
@@ -188,7 +196,6 @@ export function ChatRoom() {
     else toast.success("Message deleted");
   };
 
-  // ✅ UPDATED MULTIMEDIA UPLOAD (FIXED VIDEO PLAY ISSUE)
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -203,7 +210,6 @@ export function ChatRoom() {
 
     setIsUploading(true);
     try {
-      // Use original extension for better compatibility
       const fileExt = file.name.split('.').pop();
       const fileName = `chats/${user.id}/${Date.now()}.${fileExt}`;
       const arrayBuffer = await file.arrayBuffer();
@@ -212,7 +218,7 @@ export function ChatRoom() {
         Bucket: R2_CONFIG.bucketName,
         Key: fileName,
         Body: new Uint8Array(arrayBuffer),
-        ContentType: file.type, // Explicitly set the original content type
+        ContentType: file.type,
         ContentDisposition: 'inline',
       }));
 
@@ -222,7 +228,7 @@ export function ChatRoom() {
       toast.error("Upload failed");
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = ''; // Reset input
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -257,11 +263,8 @@ export function ChatRoom() {
               msg.sender_id === user?.id ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none border border-gray-100'
             } ${msg.media_url ? 'p-1' : 'px-4 py-2.5'}`}>
               
-              {/* ✅ SHARED MULTIMEDIA LOGIC (PHOTO/VIDEO) */}
               {msg.media_url && (
-                <div 
-                  className="relative rounded-xl overflow-hidden bg-black mb-1 w-48 aspect-[9/16] shadow-inner group/vid cursor-pointer active:scale-95 transition-transform"
-                >
+                <div className="relative rounded-xl overflow-hidden bg-black mb-1 w-48 aspect-[9/16] shadow-inner group/vid cursor-pointer active:scale-95 transition-transform">
                   {msg.media_type === 'photo' ? (
                     <img 
                        src={msg.media_url} 
@@ -270,25 +273,17 @@ export function ChatRoom() {
                        onClick={() => window.open(msg.media_url, '_blank')}
                     />
                   ) : (
-                    <div className="w-full h-full relative" onClick={() => msg.post_id ? navigate(`/?video=${msg.post_id}`) : null}>
+                    <div className="w-full h-full relative">
                       <video 
                         src={msg.media_url} 
                         className="w-full h-full object-cover" 
                         playsInline 
-                        controls={!msg.post_id} // Show controls for gallery videos
+                        controls 
                         preload="metadata" 
                         crossOrigin="anonymous" 
                       />
-                      {msg.post_id && (
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center">
-                          <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30">
-                            <Play size={20} className="text-white fill-white ml-1" />
-                          </div>
-                        </div>
-                      )}
                     </div>
                   )}
-                  {/* Label */}
                   <div className="absolute bottom-2 left-2 flex items-center gap-1.5 pointer-events-none">
                     <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
                     <span className="text-[9px] font-black tracking-widest text-white uppercase">Chiti Short</span>
