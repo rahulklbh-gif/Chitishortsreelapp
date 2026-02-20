@@ -70,36 +70,32 @@ export function ChatRoom() {
   const [newMessage, setNewMessage] = useState('');
   const [friendProfile, setFriendProfile] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false); // ✅ Audio Fix
   const [now, setNow] = useState(new Date()); 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const statusInterval = useRef<any>(null);
 
-  // ✅ 1. SOUND OBJECTS (Using direct Audio for better mobile support)
-  const sentSound = useRef(new Audio("https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3"));
-  const receivedSound = useRef(new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3"));
+  // ✅ 1. Pakka Sound Logic (Using Refs for Audio Objects)
+  const sentSound = useRef<HTMLAudioElement | null>(null);
+  const receivedSound = useRef<HTMLAudioElement | null>(null);
 
-  // ✅ 2. IMPROVED PLAY FUNCTION
+  useEffect(() => {
+    sentSound.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3");
+    receivedSound.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3");
+    
+    // Pre-load sounds
+    sentSound.current.load();
+    receivedSound.current.load();
+  }, []);
+
   const playSound = (type: 'sent' | 'received') => {
     const audio = type === 'sent' ? sentSound.current : receivedSound.current;
     if (audio) {
       audio.currentTime = 0;
-      audio.play().catch(e => console.log("Sound blocked by browser. Click screen to unlock.", e));
-    }
-  };
-
-  // ✅ 3. AUDIO UNLOCKER (Crucial for Browsers)
-  const unlockAudio = () => {
-    if (!isAudioUnlocked) {
-      sentSound.current.play().then(() => {
-        sentSound.current.pause();
-        receivedSound.current.play().then(() => {
-          receivedSound.current.pause();
-          setIsAudioUnlocked(true);
-          console.log("Audio Unlocked Successfully");
-        });
-      }).catch(() => {});
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => console.log("Playback prevented:", error));
+      }
     }
   };
 
@@ -128,7 +124,7 @@ export function ChatRoom() {
           });
           
           if (payload.new.sender_id !== user.id) {
-            playSound('received'); // ✅ Trigger Receive Sound
+            playSound('received'); 
             markAsRead();
           }
         })
@@ -177,6 +173,10 @@ export function ChatRoom() {
 
   const handleSendMessage = async (e?: React.FormEvent, mediaUrl?: string, mediaType?: 'video' | 'photo') => {
     if (e) e.preventDefault();
+    
+    // ✅ TRICK: Play sound immediately on user interaction to bypass browser lock
+    playSound('sent'); 
+
     if (!newMessage.trim() && !mediaUrl) return;
     const currentMsg = newMessage.trim();
     setNewMessage(''); 
@@ -190,7 +190,6 @@ export function ChatRoom() {
     }]);
 
     if (!error) {
-      playSound('sent'); // ✅ Trigger Sent Sound
       await supabase.from('chat_rooms').update({
         last_message: mediaUrl ? (mediaType === 'photo' ? '📷 Photo' : '🎥 Video') : currentMsg,
         last_message_time: new Date().toISOString(),
@@ -212,6 +211,10 @@ export function ChatRoom() {
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
+    
+    // Unlock sound on upload click too
+    playSound('sent');
+
     const isVideo = file.type.startsWith('video/');
     const isPhoto = file.type.startsWith('image/');
     if (!isVideo && !isPhoto) {
@@ -243,7 +246,7 @@ export function ChatRoom() {
   const status = getTimeAgo(friendProfile?.last_seen);
   
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black" onClick={unlockAudio}>
+    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black">
       
       {/* Header */}
       <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0 shadow-sm z-10">
@@ -348,7 +351,13 @@ export function ChatRoom() {
             className="flex-1 bg-transparent text-sm outline-none text-black placeholder:text-gray-400" 
             placeholder="Message..." 
           />
-          <button type="submit" className="text-blue-600 font-bold text-sm px-2">Send</button>
+          {/* Send Button directly triggers playSound on mousedown or touch */}
+          <button 
+            type="submit" 
+            className="text-blue-600 font-bold text-sm px-2"
+          >
+            Send
+          </button>
         </form>
       </div>
     </div>
