@@ -3,13 +3,10 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { ArrowLeft, Send, Camera, Loader2, Trash2, Play } from 'lucide-react'; 
+import { ArrowLeft, Send, Camera, Loader2, Trash2, Play, Volume2 } from 'lucide-react'; 
 import { toast } from 'sonner';
 
-// --- Sound Files (Direct URLs) ---
-const SEND_SOUND = "https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3";
-const RECEIVE_SOUND = "https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3";
-
+// --- Cloudflare R2 Config ---
 const R2_CONFIG = {
   endpoint: "https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com",
   accessKeyId: "bace896e3eba07cdbcb983394bd20da1", 
@@ -21,7 +18,10 @@ const R2_CONFIG = {
 const s3Client = new S3Client({
   region: "auto",
   endpoint: R2_CONFIG.endpoint,
-  credentials: { accessKeyId: R2_CONFIG.accessKeyId, secretAccessKey: R2_CONFIG.secretAccessKey },
+  credentials: { 
+    accessKeyId: R2_CONFIG.accessKeyId, 
+    secretAccessKey: R2_CONFIG.secretAccessKey 
+  },
   forcePathStyle: true,
 });
 
@@ -46,10 +46,15 @@ function UserAvatar({ userId, username }: { userId: string, username: string }) 
     }
     getPhoto();
   }, [userId]);
+
   return (
     <div className="relative w-10 h-10 flex-shrink-0">
-      <div className="absolute inset-0 w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 font-bold text-xs">{username ? username[0].toUpperCase() : 'U'}</div>
-      {avatarUrl && <img src={avatarUrl} className="absolute inset-0 w-10 h-10 rounded-full object-cover border border-gray-100" crossOrigin="anonymous" />}
+      <div className="absolute inset-0 w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center text-gray-500 font-bold text-xs">
+        {username ? username[0].toUpperCase() : 'U'}
+      </div>
+      {avatarUrl && (
+        <img src={avatarUrl} className="absolute inset-0 w-10 h-10 rounded-full object-cover border border-gray-100" crossOrigin="anonymous" />
+      )}
     </div>
   );
 }
@@ -65,18 +70,33 @@ export function ChatRoom() {
   const [newMessage, setNewMessage] = useState('');
   const [friendProfile, setFriendProfile] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [now, setNow] = useState(new Date()); 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const statusInterval = useRef<any>(null);
 
-  // ✅ NEW SIMPLE SOUND LOGIC
-  const playSentSound = () => {
-    const audio = new Audio(SEND_SOUND);
-    audio.play().catch(() => {});
-  };
+  // ✅ 1. Pakka Sound Logic (Using Refs for Audio Objects)
+  const sentSound = useRef<HTMLAudioElement | null>(null);
+  const receivedSound = useRef<HTMLAudioElement | null>(null);
 
-  const playReceivedSound = () => {
-    const audio = new Audio(RECEIVE_SOUND);
-    audio.play().catch(() => {});
+  useEffect(() => {
+    sentSound.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3");
+    receivedSound.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3");
+    
+    // Pre-load sounds
+    sentSound.current.load();
+    receivedSound.current.load();
+  }, []);
+
+  const playSound = (type: 'sent' | 'received') => {
+    const audio = type === 'sent' ? sentSound.current : receivedSound.current;
+    if (audio) {
+      audio.currentTime = 0;
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(error => console.log("Playback prevented:", error));
+      }
+    }
   };
 
   const markAsRead = async () => {
@@ -100,23 +120,46 @@ export function ChatRoom() {
         }, (payload) => {
           setMessages((prev) => {
             if (prev.find(m => m.id === payload.new.id)) return prev;
-            // ✅ Sound check for received message
-            if (payload.new.sender_id !== user.id) {
-                playReceivedSound();
-            }
             return [...prev, payload.new];
           });
-          if (payload.new.sender_id !== user.id) markAsRead();
+          
+          if (payload.new.sender_id !== user.id) {
+            playSound('received'); 
+            markAsRead();
+          }
+        })
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages' }, (payload) => {
+          setMessages((prev) => prev.filter(m => m.id !== payload.old.id));
         })
         .subscribe();
 
-      return () => { supabase.removeChannel(messageChannel); };
+      updateMyStatus();
+      statusInterval.current = setInterval(updateMyStatus, 20000);
+      const uiTimer = setInterval(() => setNow(new Date()), 30000);
+
+      const profileSubscription = supabase.channel(`profile-${friendId}`)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${friendId}` }, (payload) => {
+          setFriendProfile(payload.new);
+        }).subscribe();
+
+      return () => {
+        clearInterval(statusInterval.current);
+        clearInterval(uiTimer);
+        supabase.removeChannel(messageChannel);
+        supabase.removeChannel(profileSubscription);
+      };
     }
-  }, [roomId, user?.id]);
+  }, [roomId, friendId, user?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  const updateMyStatus = async () => {
+    if (user?.id) {
+      await supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', user.id);
+    }
+  };
 
   const fetchFriendProfile = async () => {
     const { data } = await supabase.from('profiles').select('*').eq('id', friendId).single();
@@ -128,25 +171,27 @@ export function ChatRoom() {
     setMessages(data || []);
   };
 
-  const handleSendMessage = async (e?: React.FormEvent) => {
+  const handleSendMessage = async (e?: React.FormEvent, mediaUrl?: string, mediaType?: 'video' | 'photo') => {
     if (e) e.preventDefault();
-    if (!newMessage.trim()) return;
     
-    // ✅ Instant Sound on Click
-    playSentSound();
+    // ✅ TRICK: Play sound immediately on user interaction to bypass browser lock
+    playSound('sent'); 
 
-    const msgToSend = newMessage;
+    if (!newMessage.trim() && !mediaUrl) return;
+    const currentMsg = newMessage.trim();
     setNewMessage(''); 
-
+    
     const { error } = await supabase.from('chat_messages').insert([{
       room_id: roomId,
       sender_id: user?.id,
-      content: msgToSend
+      content: currentMsg,
+      media_url: mediaUrl || null,
+      media_type: mediaType || (mediaUrl ? 'video' : null)
     }]);
 
     if (!error) {
       await supabase.from('chat_rooms').update({
-        last_message: msgToSend,
+        last_message: mediaUrl ? (mediaType === 'photo' ? '📷 Photo' : '🎥 Video') : currentMsg,
         last_message_time: new Date().toISOString(),
         last_sender_id: user?.id,
         is_read: false
@@ -154,43 +199,167 @@ export function ChatRoom() {
     }
   };
 
-  // ... (handleMediaUpload and rest of the UI stays same as your original)
-  // Maine code chhota kiya hai taaki aapko main logic dikhe
+  const handleDeleteMessage = async (messageId: string, senderId: string) => {
+    if (senderId !== user?.id) return;
+    const confirmDelete = window.confirm("Delete this message?");
+    if (!confirmDelete) return;
+    const { error } = await supabase.from('chat_messages').delete().eq('id', messageId);
+    if (error) toast.error("Delete failed");
+    else toast.success("Message deleted");
+  };
 
+  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+    
+    // Unlock sound on upload click too
+    playSound('sent');
+
+    const isVideo = file.type.startsWith('video/');
+    const isPhoto = file.type.startsWith('image/');
+    if (!isVideo && !isPhoto) {
+      toast.error("Format not supported");
+      return;
+    }
+    setIsUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `chats/${user.id}/${Date.now()}.${fileExt}`;
+      const arrayBuffer = await file.arrayBuffer();
+      await s3Client.send(new PutObjectCommand({
+        Bucket: R2_CONFIG.bucketName,
+        Key: fileName,
+        Body: new Uint8Array(arrayBuffer),
+        ContentType: file.type,
+        ContentDisposition: 'inline',
+      }));
+      const finalUrl = `${R2_CONFIG.publicDomain}/${fileName}`;
+      await handleSendMessage(undefined, finalUrl, isVideo ? 'video' : 'photo');
+    } catch (err) {
+      toast.error("Upload failed");
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const status = getTimeAgo(friendProfile?.last_seen);
+  
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black" onClick={() => {
-        // Unlock browser audio on first touch
-        const a = new Audio(SEND_SOUND); a.volume = 0; a.play().catch(()=>{});
-    }}>
+    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black">
+      
       {/* Header */}
-      <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0 shadow-sm">
-        <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer" />
-        <UserAvatar userId={friendId || ''} username={friendProfile?.username || 'U'} />
+      <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0 shadow-sm z-10">
+        <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer text-black" />
+        <div className="relative">
+          <UserAvatar userId={friendId || ''} username={friendProfile?.username || 'U'} />
+          {status === "Online" && <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>}
+        </div>
         <div>
-          <h3 className="text-sm font-bold">{friendProfile?.username || 'User'}</h3>
-          <p className="text-[10px] text-green-600 font-bold">{getTimeAgo(friendProfile?.last_seen)}</p>
+          <h3 className="text-sm font-bold text-gray-900">{friendProfile?.full_name || friendProfile?.username || 'User'}</h3>
+          <p className={`text-[10px] font-bold ${status === "Online" ? 'text-green-600' : 'text-gray-400'}`}>
+            {status === "Online" ? "Online" : `Active ${status}`}
+          </p>
         </div>
       </div>
 
-      {/* Messages */}
+      {/* Chat Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f9f9f9]">
         {messages.map((msg) => (
-          <div key={msg.id} className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[75%] px-4 py-2 rounded-2xl ${msg.sender_id === user?.id ? 'bg-blue-600 text-white' : 'bg-white border border-gray-100'}`}>
-              <p className="text-sm">{msg.content}</p>
+          <div 
+            key={msg.id} 
+            className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
+            onContextMenu={(e) => { e.preventDefault(); handleDeleteMessage(msg.id, msg.sender_id); }}
+          >
+            <div className={`group relative max-w-[75%] shadow-sm overflow-hidden ${
+              msg.sender_id === user?.id ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none border border-gray-100'
+            } ${msg.media_url ? 'p-1' : 'px-4 py-2.5'}`}>
+              
+              {msg.media_url && (
+                <div className="relative rounded-xl overflow-hidden bg-black mb-1 w-48 aspect-[9/16] shadow-inner group/vid cursor-pointer active:scale-95 transition-transform">
+                  {msg.media_type === 'photo' ? (
+                    <img 
+                       src={msg.media_url} 
+                       className="w-full h-full object-cover" 
+                       crossOrigin="anonymous" 
+                       onClick={() => window.open(msg.media_url, '_blank')}
+                    />
+                  ) : (
+                    <div className="w-full h-full relative" onClick={() => msg.post_id ? navigate(`/?video=${msg.post_id}`) : null}>
+                      <video 
+                        src={msg.media_url} 
+                        className="w-full h-full object-cover" 
+                        playsInline 
+                        controls={!msg.post_id}
+                        preload="metadata" 
+                        crossOrigin="anonymous" 
+                      />
+                      {msg.post_id && (
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center">
+                          <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30">
+                            <Play size={20} className="text-white fill-white ml-1" />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div className="absolute bottom-2 left-2 flex items-center gap-1.5 pointer-events-none">
+                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                    <span className="text-[9px] font-black tracking-widest text-white uppercase">Chiti Short</span>
+                  </div>
+                </div>
+              )}
+
+              {msg.content && <p className={`text-sm leading-relaxed ${msg.media_url ? 'px-2 pb-1 pt-1 font-medium' : ''}`}>{msg.content}</p>}
+              
+              <div className={`flex items-center justify-end gap-1 px-2 pb-1 ${msg.media_url ? 'mt-0' : 'mt-1'}`}>
+                 <span className={`text-[8px] block ${msg.sender_id === user?.id ? 'text-blue-100' : 'text-gray-400'}`}>
+                  {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              
+              {msg.sender_id === user?.id && (
+                <button 
+                  onClick={() => handleDeleteMessage(msg.id, msg.sender_id)}
+                  className="absolute top-2 right-2 p-1.5 bg-black/40 backdrop-blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                >
+                  <Trash2 size={12} className="text-white" />
+                </button>
+              )}
             </div>
           </div>
         ))}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Input */}
-      <div className="p-4 bg-white border-t pb-8">
-        <form onSubmit={handleSendMessage} className="flex gap-3 bg-gray-100 p-2 rounded-full px-4">
-          <input value={newMessage} onChange={(e) => setNewMessage(e.target.value)} className="flex-1 bg-transparent outline-none text-sm" placeholder="Message..." />
-          <button type="submit" className="text-blue-600 font-bold">Send</button>
+      {/* Input Form */}
+      <div className="p-4 bg-white border-t border-gray-100 pb-8">
+        <form onSubmit={handleSendMessage} className="flex items-center gap-3 bg-gray-100 p-2 rounded-full px-4 border border-gray-200">
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="text-blue-600">
+            {isUploading ? <Loader2 className="animate-spin" size={20} /> : <Camera size={22} />}
+          </button>
+          <input 
+             type="file" 
+             ref={fileInputRef} 
+             className="hidden" 
+             accept="video/*,image/*" 
+             onChange={handleMediaUpload} 
+          />
+          <input 
+            value={newMessage} 
+            onChange={(e) => setNewMessage(e.target.value)} 
+            className="flex-1 bg-transparent text-sm outline-none text-black placeholder:text-gray-400" 
+            placeholder="Message..." 
+          />
+          {/* Send Button directly triggers playSound on mousedown or touch */}
+          <button 
+            type="submit" 
+            className="text-blue-600 font-bold text-sm px-2"
+          >
+            Send
+          </button>
         </form>
       </div>
     </div>
   );
-}
+} 
