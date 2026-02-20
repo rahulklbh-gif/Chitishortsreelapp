@@ -76,24 +76,29 @@ export function ChatRoom() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const statusInterval = useRef<any>(null);
 
-  // ✅ SOUND REFS FOR FIXING AUDIO
-  const sentAudioRef = useRef<HTMLAudioElement>(null);
-  const receivedAudioRef = useRef<HTMLAudioElement>(null);
+  // ✅ 1. SOUND OBJECTS (Using direct Audio for better mobile support)
+  const sentSound = useRef(new Audio("https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3"));
+  const receivedSound = useRef(new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3"));
 
+  // ✅ 2. IMPROVED PLAY FUNCTION
   const playSound = (type: 'sent' | 'received') => {
-    const audio = type === 'sent' ? sentAudioRef.current : receivedAudioRef.current;
+    const audio = type === 'sent' ? sentSound.current : receivedSound.current;
     if (audio) {
       audio.currentTime = 0;
-      audio.play().catch(e => console.log("Sound error:", e));
+      audio.play().catch(e => console.log("Sound blocked by browser. Click screen to unlock.", e));
     }
   };
 
-  // ✅ Unlock audio on first interaction
+  // ✅ 3. AUDIO UNLOCKER (Crucial for Browsers)
   const unlockAudio = () => {
-    if (!isAudioUnlocked && sentAudioRef.current && receivedAudioRef.current) {
-      sentAudioRef.current.play().then(() => {
-        sentAudioRef.current?.pause();
-        setIsAudioUnlocked(true);
+    if (!isAudioUnlocked) {
+      sentSound.current.play().then(() => {
+        sentSound.current.pause();
+        receivedSound.current.play().then(() => {
+          receivedSound.current.pause();
+          setIsAudioUnlocked(true);
+          console.log("Audio Unlocked Successfully");
+        });
       }).catch(() => {});
     }
   };
@@ -123,7 +128,7 @@ export function ChatRoom() {
           });
           
           if (payload.new.sender_id !== user.id) {
-            playSound('received'); 
+            playSound('received'); // ✅ Trigger Receive Sound
             markAsRead();
           }
         })
@@ -185,7 +190,7 @@ export function ChatRoom() {
     }]);
 
     if (!error) {
-      playSound('sent'); 
+      playSound('sent'); // ✅ Trigger Sent Sound
       await supabase.from('chat_rooms').update({
         last_message: mediaUrl ? (mediaType === 'photo' ? '📷 Photo' : '🎥 Video') : currentMsg,
         last_message_time: new Date().toISOString(),
@@ -239,10 +244,7 @@ export function ChatRoom() {
   
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black" onClick={unlockAudio}>
-      {/* ✅ AUDIO ELEMENTS */}
-      <audio ref={sentAudioRef} src="https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3" preload="auto" />
-      <audio ref={receivedAudioRef} src="https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3" preload="auto" />
-
+      
       {/* Header */}
       <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0 shadow-sm z-10">
         <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer text-black" />
@@ -351,4 +353,4 @@ export function ChatRoom() {
       </div>
     </div>
   );
-}
+} 
