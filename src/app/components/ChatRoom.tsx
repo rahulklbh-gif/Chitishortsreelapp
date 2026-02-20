@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { ArrowLeft, Send, Camera, Loader2, Trash2, Play, Volume2 } from 'lucide-react'; 
+import { ArrowLeft, Send, Camera, Loader2, Trash2, Play, Volume2, Heart, Check, CheckCheck } from 'lucide-react'; 
 import { toast } from 'sonner';
 
 // --- Cloudflare R2 Config ---
@@ -70,38 +70,41 @@ export function ChatRoom() {
   const [newMessage, setNewMessage] = useState('');
   const [friendProfile, setFriendProfile] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false); 
+  const [isTyping, setIsTyping] = useState(false); // ✅ Typing Logic
   const [now, setNow] = useState(new Date()); 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const statusInterval = useRef<any>(null);
 
-  // ✅ 1. Pakka Sound Logic (Using Refs for Audio Objects)
-  const sentSound = useRef<HTMLAudioElement | null>(null);
-  const receivedSound = useRef<HTMLAudioElement | null>(null);
+  const sentAudioRef = useRef<HTMLAudioElement>(null);
+  const receivedAudioRef = useRef<HTMLAudioElement>(null);
 
-  useEffect(() => {
-    sentSound.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3");
-    receivedSound.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3");
-    
-    // Pre-load sounds
-    sentSound.current.load();
-    receivedSound.current.load();
-  }, []);
-
+  // ✅ VIBRATION & SOUND LOGIC
   const playSound = (type: 'sent' | 'received') => {
-    const audio = type === 'sent' ? sentSound.current : receivedSound.current;
+    const audio = type === 'sent' ? sentAudioRef.current : receivedAudioRef.current;
     if (audio) {
       audio.currentTime = 0;
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch(error => console.log("Playback prevented:", error));
-      }
+      audio.play().catch(() => {
+        // Agar sound block hua toh vibrate karega
+        if (navigator.vibrate) navigator.vibrate(50);
+      });
+    }
+    if (navigator.vibrate) navigator.vibrate(type === 'sent' ? 30 : 60);
+  };
+
+  const unlockAudio = () => {
+    if (!isAudioUnlocked && sentAudioRef.current && receivedAudioRef.current) {
+      sentAudioRef.current.play().then(() => {
+        sentAudioRef.current?.pause();
+        setIsAudioUnlocked(true);
+      }).catch(() => {});
     }
   };
 
   const markAsRead = async () => {
     if (!roomId || !user) return;
-    await supabase.from('chat_messages').update({ is_read: true }).eq('room_id', roomId).neq('sender_id', user.id).eq('is_read', false);
+    await supabase.from('chat_messages').update({ is_read: true, read_at: new Date().toISOString() }).eq('room_id', roomId).neq('sender_id', user.id).eq('is_read', false);
     await supabase.from('chat_rooms').update({ is_read: true }).eq('id', roomId).neq('last_sender_id', user.id);
   };
 
@@ -111,25 +114,40 @@ export function ChatRoom() {
       fetchMessages();
       markAsRead();
       
+      // ✅ TYPING INDICATOR (PRESENCE)
+      const typingChannel = supabase.channel(`typing-${roomId}`)
+        .on('presence', { event: 'sync' }, () => {
+          const state: any = typingChannel.presenceState();
+          const typingUsers = Object.values(state).flat();
+          setIsTyping(typingUsers.some((u: any) => u.user_id === friendId && u.is_typing));
+        })
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            await typingChannel.track({ user_id: user.id, is_typing: false });
+          }
+        });
+
       const messageChannel = supabase.channel(`room-${roomId}`)
         .on('postgres_changes', { 
-          event: 'INSERT', 
+          event: '*', // Listen for Inserts, Updates (Likes) and Deletes
           schema: 'public', 
           table: 'chat_messages', 
           filter: `room_id=eq.${roomId}` 
         }, (payload) => {
-          setMessages((prev) => {
-            if (prev.find(m => m.id === payload.new.id)) return prev;
-            return [...prev, payload.new];
-          });
-          
-          if (payload.new.sender_id !== user.id) {
-            playSound('received'); 
-            markAsRead();
+          if (payload.eventType === 'INSERT') {
+            setMessages((prev) => {
+              if (prev.find(m => m.id === payload.new.id)) return prev;
+              return [...prev, payload.new];
+            });
+            if (payload.new.sender_id !== user.id) {
+              playSound('received'); 
+              markAsRead();
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            setMessages((prev) => prev.map(m => m.id === payload.new.id ? payload.new : m));
+          } else if (payload.eventType === 'DELETE') {
+            setMessages((prev) => prev.filter(m => m.id !== payload.old.id));
           }
-        })
-        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'chat_messages' }, (payload) => {
-          setMessages((prev) => prev.filter(m => m.id !== payload.old.id));
         })
         .subscribe();
 
@@ -147,6 +165,7 @@ export function ChatRoom() {
         clearInterval(uiTimer);
         supabase.removeChannel(messageChannel);
         supabase.removeChannel(profileSubscription);
+        supabase.removeChannel(typingChannel);
       };
     }
   }, [roomId, friendId, user?.id]);
@@ -171,25 +190,35 @@ export function ChatRoom() {
     setMessages(data || []);
   };
 
+  // ✅ LIKE MESSAGE LOGIC
+  const handleLikeMessage = async (msgId: string, currentLikes: boolean) => {
+    await supabase.from('chat_messages').update({ is_liked: !currentLikes }).eq('id', msgId);
+    if (navigator.vibrate) navigator.vibrate(20);
+  };
+
+  const handleTypingStatus = (val: string) => {
+    setNewMessage(val);
+    supabase.channel(`typing-${roomId}`).track({ user_id: user?.id, is_typing: val.length > 0 });
+  };
+
   const handleSendMessage = async (e?: React.FormEvent, mediaUrl?: string, mediaType?: 'video' | 'photo') => {
     if (e) e.preventDefault();
-    
-    // ✅ TRICK: Play sound immediately on user interaction to bypass browser lock
-    playSound('sent'); 
-
     if (!newMessage.trim() && !mediaUrl) return;
     const currentMsg = newMessage.trim();
     setNewMessage(''); 
+    supabase.channel(`typing-${roomId}`).track({ user_id: user?.id, is_typing: false });
     
     const { error } = await supabase.from('chat_messages').insert([{
       room_id: roomId,
       sender_id: user?.id,
       content: currentMsg,
       media_url: mediaUrl || null,
-      media_type: mediaType || (mediaUrl ? 'video' : null)
+      media_type: mediaType || (mediaUrl ? 'video' : null),
+      is_read: false
     }]);
 
     if (!error) {
+      playSound('sent'); 
       await supabase.from('chat_rooms').update({
         last_message: mediaUrl ? (mediaType === 'photo' ? '📷 Photo' : '🎥 Video') : currentMsg,
         last_message_time: new Date().toISOString(),
@@ -211,10 +240,6 @@ export function ChatRoom() {
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
-    
-    // Unlock sound on upload click too
-    playSound('sent');
-
     const isVideo = file.type.startsWith('video/');
     const isPhoto = file.type.startsWith('image/');
     if (!isVideo && !isPhoto) {
@@ -246,8 +271,10 @@ export function ChatRoom() {
   const status = getTimeAgo(friendProfile?.last_seen);
   
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black">
-      
+    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black" onClick={unlockAudio}>
+      <audio ref={sentAudioRef} src="https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3" preload="auto" />
+      <audio ref={receivedAudioRef} src="https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3" preload="auto" />
+
       {/* Header */}
       <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0 shadow-sm z-10">
         <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer text-black" />
@@ -255,10 +282,10 @@ export function ChatRoom() {
           <UserAvatar userId={friendId || ''} username={friendProfile?.username || 'U'} />
           {status === "Online" && <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>}
         </div>
-        <div>
+        <div className="flex-1">
           <h3 className="text-sm font-bold text-gray-900">{friendProfile?.full_name || friendProfile?.username || 'User'}</h3>
-          <p className={`text-[10px] font-bold ${status === "Online" ? 'text-green-600' : 'text-gray-400'}`}>
-            {status === "Online" ? "Online" : `Active ${status}`}
+          <p className={`text-[10px] font-bold ${isTyping ? 'text-blue-500 animate-pulse' : (status === "Online" ? 'text-green-600' : 'text-gray-400')}`}>
+            {isTyping ? "typing..." : (status === "Online" ? "Online" : `Active ${status}`)}
           </p>
         </div>
       </div>
@@ -271,29 +298,17 @@ export function ChatRoom() {
             className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
             onContextMenu={(e) => { e.preventDefault(); handleDeleteMessage(msg.id, msg.sender_id); }}
           >
-            <div className={`group relative max-w-[75%] shadow-sm overflow-hidden ${
+            <div className={`group relative max-w-[75%] shadow-sm overflow-visible ${
               msg.sender_id === user?.id ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none border border-gray-100'
             } ${msg.media_url ? 'p-1' : 'px-4 py-2.5'}`}>
               
               {msg.media_url && (
                 <div className="relative rounded-xl overflow-hidden bg-black mb-1 w-48 aspect-[9/16] shadow-inner group/vid cursor-pointer active:scale-95 transition-transform">
                   {msg.media_type === 'photo' ? (
-                    <img 
-                       src={msg.media_url} 
-                       className="w-full h-full object-cover" 
-                       crossOrigin="anonymous" 
-                       onClick={() => window.open(msg.media_url, '_blank')}
-                    />
+                    <img src={msg.media_url} className="w-full h-full object-cover" crossOrigin="anonymous" onClick={() => window.open(msg.media_url, '_blank')} />
                   ) : (
                     <div className="w-full h-full relative" onClick={() => msg.post_id ? navigate(`/?video=${msg.post_id}`) : null}>
-                      <video 
-                        src={msg.media_url} 
-                        className="w-full h-full object-cover" 
-                        playsInline 
-                        controls={!msg.post_id}
-                        preload="metadata" 
-                        crossOrigin="anonymous" 
-                      />
+                      <video src={msg.media_url} className="w-full h-full object-cover" playsInline controls={!msg.post_id} preload="metadata" crossOrigin="anonymous" />
                       {msg.post_id && (
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center">
                           <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30">
@@ -303,10 +318,6 @@ export function ChatRoom() {
                       )}
                     </div>
                   )}
-                  <div className="absolute bottom-2 left-2 flex items-center gap-1.5 pointer-events-none">
-                    <div className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
-                    <span className="text-[9px] font-black tracking-widest text-white uppercase">Chiti Short</span>
-                  </div>
                 </div>
               )}
 
@@ -316,13 +327,32 @@ export function ChatRoom() {
                  <span className={`text-[8px] block ${msg.sender_id === user?.id ? 'text-blue-100' : 'text-gray-400'}`}>
                   {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </span>
+                
+                {/* ✅ DOUBLE TICK LOGIC */}
+                {msg.sender_id === user?.id && (
+                  <span className="ml-1">
+                    {msg.is_read ? <CheckCheck size={12} className="text-blue-200" /> : <Check size={12} className="text-blue-100 opacity-70" />}
+                  </span>
+                )}
               </div>
+
+              {/* ✅ READ TIME LOGIC (Seen 2m ago) */}
+              {msg.sender_id === user?.id && msg.is_read && msg.read_at && (
+                <p className="text-[7px] text-right px-2 text-blue-200 opacity-80 -mt-1 pb-1">
+                  Seen {getTimeAgo(msg.read_at)}
+                </p>
+              )}
+
+              {/* ✅ LIKE ICON LOGIC */}
+              <button 
+                onClick={() => handleLikeMessage(msg.id, msg.is_liked)}
+                className={`absolute -bottom-2 ${msg.sender_id === user?.id ? '-left-2' : '-right-2'} p-1 rounded-full bg-white shadow-md border border-gray-100 transition-transform active:scale-125`}
+              >
+                <Heart size={12} className={`${msg.is_liked ? 'fill-red-500 text-red-500' : 'text-gray-300'}`} />
+              </button>
               
               {msg.sender_id === user?.id && (
-                <button 
-                  onClick={() => handleDeleteMessage(msg.id, msg.sender_id)}
-                  className="absolute top-2 right-2 p-1.5 bg-black/40 backdrop-blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
-                >
+                <button onClick={() => handleDeleteMessage(msg.id, msg.sender_id)} className="absolute top-2 right-2 p-1.5 bg-black/40 backdrop-blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10">
                   <Trash2 size={12} className="text-white" />
                 </button>
               )}
@@ -338,26 +368,14 @@ export function ChatRoom() {
           <button type="button" onClick={() => fileInputRef.current?.click()} className="text-blue-600">
             {isUploading ? <Loader2 className="animate-spin" size={20} /> : <Camera size={22} />}
           </button>
-          <input 
-             type="file" 
-             ref={fileInputRef} 
-             className="hidden" 
-             accept="video/*,image/*" 
-             onChange={handleMediaUpload} 
-          />
+          <input type="file" ref={fileInputRef} className="hidden" accept="video/*,image/*" onChange={handleMediaUpload} />
           <input 
             value={newMessage} 
-            onChange={(e) => setNewMessage(e.target.value)} 
+            onChange={(e) => handleTypingStatus(e.target.value)} 
             className="flex-1 bg-transparent text-sm outline-none text-black placeholder:text-gray-400" 
             placeholder="Message..." 
           />
-          {/* Send Button directly triggers playSound on mousedown or touch */}
-          <button 
-            type="submit" 
-            className="text-blue-600 font-bold text-sm px-2"
-          >
-            Send
-          </button>
+          <button type="submit" className="text-blue-600 font-bold text-sm px-2">Send</button>
         </form>
       </div>
     </div>
