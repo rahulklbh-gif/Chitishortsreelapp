@@ -48,7 +48,21 @@ export function ChatListPage() {
   const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
-    if (user) fetchRooms();
+    if (user) {
+      fetchRooms();
+
+      // ✅ Real-time subscription for unread highlights
+      const channel = supabase
+        .channel('room-updates')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_rooms' }, () => {
+          fetchRooms();
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }
   }, [user]);
 
   const handleSearch = async (query: string) => {
@@ -124,7 +138,6 @@ export function ChatListPage() {
             {searchResults.map((person) => (
               <div key={person.id} onClick={() => startChat(person.id)} className="flex items-center justify-between py-3">
                 <div className="flex items-center gap-4">
-                  {/* ✅ Photo Fix implemented here */}
                   <UserAvatar userId={person.id} username={person.username} />
                   <div>
                     <p className="text-sm font-bold">@{person.username}</p>
@@ -138,13 +151,31 @@ export function ChatListPage() {
         ) : (
           rooms.map((room) => {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
+            
+            // ✅ Highlight Logic: Agar last message kisi aur ne bheja aur read nahi hua
+            const isUnread = room.last_sender_id !== user?.id && room.is_read === false;
+
             return (
-              <div key={room.id} onClick={() => navigate(`/chat/${room.id}?friend=${otherUser?.id}`)} className="flex items-center gap-4 py-3 active:bg-gray-50 transition-colors">
-                {/* ✅ Photo Fix implemented here */}
+              <div 
+                key={room.id} 
+                onClick={() => navigate(`/chat/${room.id}?friend=${otherUser?.id}`)} 
+                className={`flex items-center gap-4 py-3 active:bg-gray-50 transition-colors cursor-pointer ${isUnread ? 'bg-blue-50/30' : ''}`}
+              >
                 <UserAvatar userId={otherUser?.id} username={otherUser?.username} />
-                <div className="flex-1 border-b border-gray-50 pb-3">
-                  <h3 className="text-sm font-bold text-gray-900">{otherUser?.username}</h3>
-                  <p className="text-xs text-gray-500 truncate">{room.last_message || 'Tap to chat'}</p>
+                <div className="flex-1 border-b border-gray-50 pb-3 flex items-center justify-between pr-2">
+                  <div className="flex-1 min-w-0">
+                    <h3 className={`text-sm ${isUnread ? 'font-black text-black' : 'font-bold text-gray-900'}`}>
+                      {otherUser?.username}
+                    </h3>
+                    <p className={`text-xs truncate ${isUnread ? 'font-bold text-blue-600' : 'text-gray-500'}`}>
+                      {room.last_message || 'Tap to chat'}
+                    </p>
+                  </div>
+                  
+                  {/* ✅ Instagram Blue Dot */}
+                  {isUnread && (
+                    <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.4)]" />
+                  )}
                 </div>
               </div>
             )
@@ -153,4 +184,4 @@ export function ChatListPage() {
       </div>
     </div>
   );
-}
+} 
