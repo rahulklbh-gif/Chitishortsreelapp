@@ -36,7 +36,7 @@ interface ShareModalProps {
   videoId?: string;
 }
 
-export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
+export function ShareModal({ videoUrl, isOpen, onClose, videoId }: ShareModalProps) {
   const { user: currentUser } = useAuth();
   const [friends, setFriends] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,6 +97,7 @@ export function ShareModal({ videoUrl, isOpen, onClose }: ShareModalProps) {
         sender_id: currentUser.id, 
         content: "Shared a video 🎥", 
         media_url: videoUrl,
+        post_id: videoId, // ✅ Yahan post_id add kiya hai jaisa aapne kaha tha
         media_type: 'video' // Screenshot mein media_type column bhi dikh raha hai
       });
 
