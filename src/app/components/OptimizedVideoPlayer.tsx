@@ -28,8 +28,7 @@ const FILTERS_DATA: any = {
 };
 
 export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive, filterName = 'none' }: any) {
- // ✅ SMART LINK FIX + FAST START TRICK
- // #t=0.001 browser ko metadata aur pehla frame jaldi fetch karne pe majboor karta hai
+ // ✅ CDN Link + Fast Start Trick
  const videoUrl = rawVideoUrl?.replace(
    /pub-[a-zA-Z0-9]+\.r2\.dev/g, 
    'cdn.chitishort.store'
@@ -43,7 +42,7 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
  const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
  const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
 
- // 🚀 JUGAR 1: Resource Pre-connection (Preload optimized for CDN)
+ // 🚀 JUGAR 1: Preload Optimization
  useEffect(() => {
   if (videoUrl) {
     const link = document.createElement('link');
@@ -63,26 +62,22 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
   }
  }, [videoUrl]);
 
- // 🚀 JUGAR 2: Aggressive Buffer & Sound Management
+ // 🚀 JUGAR 2: Fast Playback Logic
  useEffect(() => {
   const video = videoRef.current;
   if (!video) return;
   
   if (isActive) {
-    // Ultra-fast start ke liye pehle mute rakhte hain
     video.muted = true; 
-    
     const playPromise = video.play();
     
     if (playPromise !== undefined) {
      playPromise.then(() => {
       setIsLoaded(true);
       setIsBuffering(false);
-      
-      // Successfully play hone ke baad unmute
       video.muted = false;
 
-      // Sync secondary grid videos
+      // Grids sync logic
       secondaryRefs.current.forEach(v => {
        if(v) { 
          v.currentTime = video.currentTime; 
@@ -90,7 +85,6 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
        }
       });
      }).catch((error) => {
-      console.log("Autoplay check failed, forcing muted play...");
       video.muted = true;
       video.play().then(() => setIsLoaded(true));
      });
@@ -104,14 +98,14 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
  return (
   <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
     
-    {/* 🔥 ULTRA FAST LOADER UI */}
+    {/* 🔥 BUFFER LOADER UI */}
     {(!isLoaded || isBuffering) && (
      <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-20">
       <div className="flex flex-col items-center gap-3">
        <div className="w-12 h-12 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
        <div className="flex items-center gap-2">
         <Zap size={16} className="text-blue-500 animate-pulse"/>
-        <span className="text-blue-500 text-[10px] font-black uppercase tracking-widest">Boosted Speed...</span>
+        <span className="text-blue-500 text-[10px] font-black uppercase tracking-widest">Streaming Speed...</span>
        </div>
       </div>
      </div>
@@ -137,13 +131,12 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
         autoPlay={isActive}
         muted={i !== 0 || !isActive}
         
-        // 🔥 PRELOAD METADATA FIX (Isse video jaldi kickstart hogi)
+        // 🔥 PRELOAD METADATA: Browser ko bolta hai poora file mat uthao
         preload="metadata"
         
         // @ts-ignore
         fetchpriority={isActive ? "high" : "low"}
         
-        // Event handling (Purane functions intact hain)
         onLoadedMetadata={() => i === 0 && setIsLoaded(true)}
         onWaiting={() => i === 0 && setIsBuffering(true)}
         onPlaying={() => i === 0 && (setIsBuffering(false), setIsLoaded(true))}
@@ -155,7 +148,7 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
       </div>
      ))}
 
-     {/* VFX Overlay (Purana logic) */}
+     {/* VFX Logic intact */}
      {isActive && currentFilter.vfxType === 'lightning' && (
       <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
      )}
