@@ -33,8 +33,8 @@ const FILTERS_STYLE: any = {
 
 export interface Video {
   id: string;
-  video_url: string; // FIX: matching handlePublish field name
-  url?: string;     // Added as fallback
+  video_url: string; 
+  url?: string;     
   thumbnail: string;
   username: string;
   avatar: string;
@@ -59,8 +59,14 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
   const { user: currentUser } = useAuth(); 
   const [isMuted, setIsMuted] = useState(true);
 
-  // FIX: Support both video_url and url properties
-  const actualVideoUrl = video.video_url || video.url;
+  // ✅ SMART LINK FIX: Ensuring CDN domain is used here too
+  const actualVideoUrl = useMemo(() => {
+    const rawUrl = video.video_url || video.url || "";
+    return rawUrl.replace(
+      /pub-[a-zA-Z0-9]+\.r2\.dev/g, 
+      'cdn.chitishort.store'
+    );
+  }, [video.video_url, video.url]);
 
   const currentFilter = useMemo(() => {
     return FILTERS_STYLE[video.filter_name || 'none'] || FILTERS_STYLE.none;
@@ -113,14 +119,33 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
         <div className="w-full h-full grid" style={{ gridTemplateColumns: `repeat(${currentFilter.cols}, 1fr)`, gridTemplateRows: `repeat(${currentFilter.rows}, 1fr)` }}>
           {[...Array(currentFilter.count)].map((_, i) => (
             <div key={i} className="relative w-full h-full border-[0.2px] border-white/5">
-              <video ref={i === 0 ? videoRef : null} src={actualVideoUrl} loop muted={isMuted || i !== 0} playsInline className="w-full h-full object-cover" style={{ filter: currentFilter.style }} />
+              <video 
+                ref={i === 0 ? videoRef : null} 
+                src={actualVideoUrl} 
+                loop 
+                muted={isMuted || i !== 0} 
+                playsInline 
+                className="w-full h-full object-cover" 
+                style={{ filter: currentFilter.style }} 
+              />
             </div>
           ))}
         </div>
       );
     }
     return (
-      <video ref={videoRef} src={actualVideoUrl} poster={video.thumbnail} loop muted={isMuted} playsInline preload="auto" className="relative z-10 w-full h-full object-contain md:object-cover" style={{ filter: currentFilter.style }} onClick={toggleMute} />
+      <video 
+        ref={videoRef} 
+        src={actualVideoUrl} 
+        poster={video.thumbnail} 
+        loop 
+        muted={isMuted} 
+        playsInline 
+        preload="auto" 
+        className="relative z-10 w-full h-full object-contain md:object-cover" 
+        style={{ filter: currentFilter.style }} 
+        onClick={toggleMute} 
+      />
     );
   };
 
@@ -137,7 +162,6 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
       <div className="absolute bottom-24 left-3 right-20 z-20 pointer-events-none">
         <div className="space-y-3 pointer-events-auto">
           <div className="flex items-center gap-2">
-            {/* FIX: Profile image fallback to prevent empty circles */}
             <img 
               src={video.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${video.username}`} 
               className="w-10 h-10 rounded-full border border-white object-cover shadow-lg" 
@@ -151,7 +175,15 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
           </div>
         </div>
       </div>
-      <VideoActions videoId={video.id} initialLikes={video.likes} videoOwnerId={video.user_id} onComment={onComment} onShare={handleShare} onFollow={handleFollow} />
+      <VideoActions 
+        videoId={video.id} 
+        initialLikes={video.likes} 
+        videoOwnerId={video.user_id} 
+        videoUrl={actualVideoUrl} 
+        onComment={onComment} 
+        onShare={handleShare} 
+        onFollow={handleFollow} 
+      />
     </div>
   );
-} 
+}
