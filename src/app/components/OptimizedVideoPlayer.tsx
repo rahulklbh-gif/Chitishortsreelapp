@@ -28,11 +28,12 @@ const FILTERS_DATA: any = {
 };
 
 export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive, filterName = 'none' }: any) {
- // ✅ SMART LINK FIX: Ensuring CDN domain is used for fast loading
+ // ✅ SMART LINK FIX + FAST START TRICK
+ // #t=0.001 browser ko metadata aur pehla frame jaldi fetch karne pe majboor karta hai
  const videoUrl = rawVideoUrl?.replace(
    /pub-[a-zA-Z0-9]+\.r2\.dev/g, 
    'cdn.chitishort.store'
- );
+ ) + "#t=0.001";
 
  const videoRef = useRef<HTMLVideoElement>(null);
  const secondaryRefs = useRef<(HTMLVideoElement | null)[]>([]);
@@ -42,7 +43,7 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
  const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
  const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
 
- // 🚀 JUGAR 1: Resource Pre-connection (Browser ko pehle hi alert karna)
+ // 🚀 JUGAR 1: Resource Pre-connection (Preload optimized for CDN)
  useEffect(() => {
   if (videoUrl) {
     const link = document.createElement('link');
@@ -68,7 +69,7 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
   if (!video) return;
   
   if (isActive) {
-    // Force mute on start for ultra-fast playback (Auto-play policy bypass)
+    // Ultra-fast start ke liye pehle mute rakhte hain
     video.muted = true; 
     
     const playPromise = video.play();
@@ -78,10 +79,10 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
       setIsLoaded(true);
       setIsBuffering(false);
       
-      // ⚡ Unmute only after successful play
+      // Successfully play hone ke baad unmute
       video.muted = false;
 
-      // Sync grids
+      // Sync secondary grid videos
       secondaryRefs.current.forEach(v => {
        if(v) { 
          v.currentTime = video.currentTime; 
@@ -89,7 +90,7 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
        }
       });
      }).catch((error) => {
-      console.log("Autoplay blocked, playing muted...");
+      console.log("Autoplay check failed, forcing muted play...");
       video.muted = true;
       video.play().then(() => setIsLoaded(true));
      });
@@ -110,7 +111,7 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
        <div className="w-12 h-12 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
        <div className="flex items-center gap-2">
         <Zap size={16} className="text-blue-500 animate-pulse"/>
-        <span className="text-blue-500 text-[10px] font-black uppercase tracking-widest">Streaming...</span>
+        <span className="text-blue-500 text-[10px] font-black uppercase tracking-widest">Boosted Speed...</span>
        </div>
       </div>
      </div>
@@ -133,14 +134,13 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
         src={videoUrl}
         loop
         playsInline
-        // Force play even if JS is slow
         autoPlay={isActive}
         muted={i !== 0 || !isActive}
-        // 🔥 PRELOAD SETTINGS
+        // 🔥 OPTIMIZED PRELOAD
         preload="auto"
         // @ts-ignore
         fetchpriority={isActive ? "high" : "low"}
-        // Sabse important events - Metadata milte hi show kardo
+        // Event handling (Purane functions intact hain)
         onLoadedMetadata={() => i === 0 && setIsLoaded(true)}
         onWaiting={() => i === 0 && setIsBuffering(true)}
         onPlaying={() => i === 0 && (setIsBuffering(false), setIsLoaded(true))}
@@ -152,10 +152,11 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
       </div>
      ))}
 
+     {/* VFX Overlay (Purana logic) */}
      {isActive && currentFilter.vfxType === 'lightning' && (
       <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
      )}
     </div>
   </div>
  );
-}
+} 
