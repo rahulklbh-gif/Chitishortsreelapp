@@ -136,10 +136,13 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
         playsInline
         autoPlay={isActive}
         muted={i !== 0 || !isActive}
-        // 🔥 OPTIMIZED PRELOAD
-        preload="auto"
+        
+        // 🔥 PRELOAD METADATA FIX (Isse video jaldi kickstart hogi)
+        preload="metadata"
+        
         // @ts-ignore
         fetchpriority={isActive ? "high" : "low"}
+        
         // Event handling (Purane functions intact hain)
         onLoadedMetadata={() => i === 0 && setIsLoaded(true)}
         onWaiting={() => i === 0 && setIsBuffering(true)}
@@ -159,4 +162,4 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
     </div>
   </div>
  );
-} 
+}
