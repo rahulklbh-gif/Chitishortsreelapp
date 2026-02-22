@@ -27,7 +27,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
   // 🚀 PERFORMANCE: Pre-warm domains
   useEffect(() => {
-    const domains = ['https://cdnjs.cloudflare.com'];
+    const domains = ['https://cdnjs.cloudflare.com', 'https://cdn.chitishort.store'];
     domains.forEach(domain => {
       const link = document.createElement('link');
       link.rel = 'preconnect';
@@ -114,10 +114,15 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           const freshName = video.profiles?.username || video.profiles?.full_name || video.user_name || 'user';
           
           const freshAvatar = video.profiles?.avatar_url || 
-                             video.user_avatar || 
-                             'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
+                               video.user_avatar || 
+                               'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
           
-          const finalUrl = video.video_url || video.url || "";
+          // ✅ LINK FIX: Automatically use fast CDN domain
+          const rawUrl = video.video_url || video.url || "";
+          const finalUrl = rawUrl.replace(
+            /pub-[a-zA-Z0-9]+\.r2\.dev/g, 
+            'cdn.chitishort.store'
+          );
 
           return {
             ...video,
@@ -309,7 +314,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 initialComments={video.comments_count || 0}
                 initialShares={video.shares_count || 0}
                 videoOwnerId={video.user_id} 
-                videoUrl={video.video_url} // ✅ Fixed: Passed video_url to fix "Video link not found"
+                videoUrl={video.video_url}
                 onComment={() => onComment(video.id, video.user_id)} 
                 onShare={() => handleVideoShare(video)} 
               />
