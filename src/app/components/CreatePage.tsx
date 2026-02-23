@@ -2,7 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.6.3 (Optimized Compression & Auto-Music Sync)
+ * VERSION: 4.6.4 (Instant Play Fix & Auto-Music DB Sync)
  * VAADA: No functions removed, Original logic preserved.
  */
 
@@ -121,6 +121,12 @@ export default function CreatePage() {
 
   const playAudio = async (url: string, id: string) => {
     if (!audioRef.current) return;
+
+    // 🔥 FIX: Resume AudioContext on user interaction
+    if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+      await audioCtxRef.current.resume();
+    }
+
     try {
         if (audioPlayId === id) {
             audioRef.current.pause();
@@ -128,6 +134,8 @@ export default function CreatePage() {
         } else {
             audioRef.current.pause();
             audioRef.current.src = url;
+            // 🔥 FIX: Enable CORS for playback
+            audioRef.current.crossOrigin = "anonymous";
             audioRef.current.load();
             const playPromise = audioRef.current.play();
             if (playPromise !== undefined) {
@@ -135,7 +143,7 @@ export default function CreatePage() {
                     setAudioPlayId(id);
                 }).catch(error => {
                     console.error("Playback failed:", error);
-                    toast.error("Click anywhere on screen first to enable audio");
+                    toast.error("Tap screen once to enable audio!");
                 });
             }
         }
@@ -225,7 +233,6 @@ export default function CreatePage() {
     }
   };
 
-  // 🔥 UPDATED PUBLISH WITH Uint8Array FIX (NO getReader ERROR)
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
@@ -235,11 +242,9 @@ export default function CreatePage() {
     try {
       let fileToUpload: any = selectedFile;
 
-      // 1. VIDEO COMPRESSION (Optimized for Fast Streaming)
       try {
         setStatusText("Optimizing for Fast Start...");
         const optimized = await compressVideoTo480p(selectedFile, (p) => {
-          // Progress mapping: 10% to 60% during compression
           setUploadProgress(10 + Math.floor(p.progress * 50));
           setStatusText(p.message || "Compressing...");
         });
@@ -270,12 +275,12 @@ export default function CreatePage() {
 
       const finalUrl = `${R2_CONFIG.publicDomain}/${path}`;
 
-      // 2. AUTO-ADD TO MUSIC LIBRARY (User's caption/title as music name)
-      // Logic: Music save logic added here without removing post logic
+      // 🔥 FIX: Music automatically adds to library with caption as title
       if (!activeMusic) {
+        const musicTitle = caption ? caption.substring(0, 30) : `Original Sound by ${user.user_metadata?.full_name || 'Creator'}`;
         await supabase.from('music_library').insert([{
-          title: caption ? caption.substring(0, 30) : `Sound by ${user.user_metadata?.full_name || 'Creator'}`,
-          audio_url: finalUrl, // Using video url as audio source
+          title: musicTitle,
+          audio_url: finalUrl,
           artist: user.user_metadata?.full_name || 'Creator',
           user_id: user.id
         }]);
@@ -330,7 +335,10 @@ export default function CreatePage() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden font-sans">
+    <div 
+      className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden font-sans"
+      onClick={() => { if(audioCtxRef.current) audioCtxRef.current.resume(); }}
+    >
       {!isFinalStep && (
         <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[200] bg-gradient-to-b from-black/60 to-transparent">
           <button onClick={() => {
@@ -424,7 +432,7 @@ export default function CreatePage() {
                     </div>
                   </>
                 ) : (
-                  <div className="flex gap-4 w-full max-w-sm">
+                  <div className="flex gap-4 w-full max-sm">
                     <button onClick={() => {setPreviewUrl(''); setIsCameraMode(true);}} className="flex-1 py-4 bg-zinc-900 rounded-2xl font-black uppercase text-[10px] border border-white/10">Discard</button>
                     <button onClick={() => setIsFinalStep(true)} className="flex-1 py-4 bg-red-600 rounded-2xl font-black uppercase text-[10px]">Next</button>
                   </div>
