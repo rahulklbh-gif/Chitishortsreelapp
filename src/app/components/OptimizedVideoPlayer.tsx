@@ -155,4 +155,4 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
     </div>
   </div>
  );
-} 
+}
