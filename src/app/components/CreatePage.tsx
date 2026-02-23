@@ -2,8 +2,8 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.6.2 (Uint8Array Fix for R2 & Android Compatibility)
- * VAADA: No functions removed, Code remains full length.
+ * VERSION: 4.6.3 (Optimized Compression & Auto-Music Sync)
+ * VAADA: No functions removed, Original logic preserved.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -235,31 +235,31 @@ export default function CreatePage() {
     try {
       let fileToUpload: any = selectedFile;
 
-      // Compression logic
+      // 1. VIDEO COMPRESSION (Optimized for Fast Streaming)
       try {
+        setStatusText("Optimizing for Fast Start...");
         const optimized = await compressVideoTo480p(selectedFile, (p) => {
+          // Progress mapping: 10% to 60% during compression
           setUploadProgress(10 + Math.floor(p.progress * 50));
-          setStatusText(p.message);
+          setStatusText(p.message || "Compressing...");
         });
         fileToUpload = optimized;
       } catch (compressionError) {
-        console.warn("Compression skipped");
+        console.warn("Compression skipped, using original file");
         fileToUpload = selectedFile;
       }
 
-      // 🚀 FINAL PATH & R2 FIX
       const fileName = `${Date.now()}.mp4`;
       const path = `chiti_vids/${user.id}/${fileName}`;
       
       setStatusText("Uploading to Chiti Cloud...");
 
-      // 🔥 Uint8Array Fix for R2 SDK Compatibility
       const arrayBuffer = await fileToUpload.arrayBuffer();
 
       await s3Client.send(new PutObjectCommand({
         Bucket: R2_CONFIG.bucketName,
         Key: path,
-        Body: new Uint8Array(arrayBuffer), // Fixes t.getReader is not a function
+        Body: new Uint8Array(arrayBuffer), 
         ContentType: 'video/mp4', 
         ContentDisposition: 'inline',
         CacheControl: "public, max-age=31536000, immutable"
@@ -269,6 +269,17 @@ export default function CreatePage() {
       setStatusText("Finishing post...");
 
       const finalUrl = `${R2_CONFIG.publicDomain}/${path}`;
+
+      // 2. AUTO-ADD TO MUSIC LIBRARY (User's caption/title as music name)
+      // Logic: Music save logic added here without removing post logic
+      if (!activeMusic) {
+        await supabase.from('music_library').insert([{
+          title: caption ? caption.substring(0, 30) : `Sound by ${user.user_metadata?.full_name || 'Creator'}`,
+          audio_url: finalUrl, // Using video url as audio source
+          artist: user.user_metadata?.full_name || 'Creator',
+          user_id: user.id
+        }]);
+      }
 
       const { error: dbError } = await supabase.from('posts').insert([{
         video_url: finalUrl, 
