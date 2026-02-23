@@ -2,7 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.6.6 (Branded Domain & Unique Sync)
+ * VERSION: 4.6.5 (Music Unique Sync & Duration Fix)
  * VAADA: No functions removed, Original logic preserved.
  */
 
@@ -19,14 +19,13 @@ import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { compressVideoTo480p } from '@/lib/videoCompression';
 
-// --- Cloudflare R2 + Branded Domain Config ---
+// --- Cloudflare R2 Config ---
 const R2_CONFIG = {
   endpoint: "https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com",
   accessKeyId: "bace896e3eba07cdbcb983394bd20da1", 
   secretAccessKey: "c38a89622fd343226dba534eedc26b8e8f3674c270651aba75e89206799a0acf",
   bucketName: "chiti-videos",
-  // 🔥 UPDATED: Ab aapka apna branded domain use hoga
-  publicDomain: "https://chitishort.store" 
+  publicDomain: "https://chitishort.store"
 };
 
 const FILTERS_DATA: any = {
@@ -122,6 +121,8 @@ export default function CreatePage() {
 
   const playAudio = async (url: string, id: string) => {
     if (!audioRef.current) return;
+
+    // 🔥 FIX: Resume AudioContext on user interaction
     if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
       await audioCtxRef.current.resume();
     }
@@ -134,7 +135,7 @@ export default function CreatePage() {
             audioRef.current.pause();
             audioRef.current.crossOrigin = "anonymous";
             audioRef.current.src = url;
-            audioRef.current.load();
+            audioRef.current.load(); // Refresh source
             const playPromise = audioRef.current.play();
             if (playPromise !== undefined) {
                 playPromise.then(() => {
@@ -239,6 +240,7 @@ export default function CreatePage() {
     
     try {
       let fileToUpload: any = selectedFile;
+
       try {
         setStatusText("Optimizing for Fast Start...");
         const optimized = await compressVideoTo480p(selectedFile, (p) => {
@@ -247,13 +249,16 @@ export default function CreatePage() {
         });
         fileToUpload = optimized;
       } catch (compressionError) {
+        console.warn("Compression skipped, using original file");
         fileToUpload = selectedFile;
       }
 
+      // 🔥 FIXED: Generate UNIQUE filename using timestamp and random string
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.mp4`;
       const path = `chiti_vids/${user.id}/${fileName}`;
       
       setStatusText("Uploading to Chiti Cloud...");
+
       const arrayBuffer = await fileToUpload.arrayBuffer();
 
       await s3Client.send(new PutObjectCommand({
@@ -268,17 +273,17 @@ export default function CreatePage() {
       setUploadProgress(90);
       setStatusText("Finishing post...");
 
-      // 🔥 FIXED: Naya branded domain use ho raha hai
       const finalUrl = `${R2_CONFIG.publicDomain}/${path}`;
 
+      // 🔥 FIXED: Music automatically adds to library with UNIQUE URL and DURATION
       if (!activeMusic) {
         const musicTitle = caption ? caption.substring(0, 30) : `Original Sound by ${user.user_metadata?.full_name || 'Creator'}`;
         await supabase.from('music_library').insert([{
           title: musicTitle,
-          audio_url: finalUrl, 
+          audio_url: finalUrl, // Now unique per video
           artist: user.user_metadata?.full_name || 'Creator',
           user_id: user.id,
-          duration: durationLimit
+          duration: durationLimit // Duration added to fix NULL issue
         }]);
       }
 
@@ -298,7 +303,7 @@ export default function CreatePage() {
       setTimeout(() => { window.location.href = '/'; }, 1000);
     } catch (e: any) {
       console.error("Upload Error:", e);
-      toast.error(`Upload failed: ${e.message}`);
+      toast.error(`Upload failed: ${e.message || 'Check Connection'}`);
       setIsUploading(false);
       setUploadProgress(0);
     }
@@ -307,6 +312,7 @@ export default function CreatePage() {
   const renderContent = (isLive: boolean) => {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
+    
     const videoStyle = {
       filter: filter.style,
       transform: (isLive && facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
@@ -330,10 +336,16 @@ export default function CreatePage() {
   };
 
   return (
-    <div className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden font-sans" onClick={() => audioCtxRef.current?.resume()}>
+    <div 
+      className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden font-sans"
+      onClick={() => { if(audioCtxRef.current) audioCtxRef.current.resume(); }}
+    >
       {!isFinalStep && (
         <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[200] bg-gradient-to-b from-black/60 to-transparent">
-          <button onClick={() => { if(previewUrl) { setPreviewUrl(''); initCamera(); } else window.history.back(); }} className="p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10">
+          <button onClick={() => {
+            if(previewUrl) { setPreviewUrl(''); initCamera(); } 
+            else window.history.back();
+          }} className="p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10">
             <X size={24}/>
           </button>
           <button onClick={() => setShowMusic(true)} className="flex items-center gap-3 bg-white/10 backdrop-blur-3xl px-6 py-2.5 rounded-full border border-white/20">
@@ -362,8 +374,12 @@ export default function CreatePage() {
                   tempVid.preload = 'metadata';
                   tempVid.onloadedmetadata = () => {
                     window.URL.revokeObjectURL(tempVid.src);
-                    if (tempVid.duration > 31) toast.error("Video limit is 30 seconds!");
-                    else { setSelectedFile(f); setPreviewUrl(URL.createObjectURL(f)); }
+                    if (tempVid.duration > 31) {
+                        toast.error("Video limit is 30 seconds only!");
+                    } else {
+                        setSelectedFile(f); 
+                        setPreviewUrl(URL.createObjectURL(f));
+                    }
                   };
                   tempVid.src = URL.createObjectURL(f);
                 }
@@ -374,11 +390,16 @@ export default function CreatePage() {
           <div className="flex-1 relative overflow-hidden flex flex-col">
               <div className="flex-1 w-full relative overflow-hidden">
                 {renderContent(!previewUrl)}
+                
                 {isRecording && (
                   <div className="absolute top-20 inset-x-6 h-1.5 bg-white/20 rounded-full overflow-hidden z-[220]">
-                    <div className="h-full bg-red-600 transition-all duration-1000 ease-linear" style={{ width: `${(timer / durationLimit) * 100}%` }} />
+                    <div 
+                      className="h-full bg-red-600 transition-all duration-1000 ease-linear"
+                      style={{ width: `${(timer / durationLimit) * 100}%` }}
+                    />
                   </div>
                 )}
+
                 <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8 z-[210]">
                    {!previewUrl && (
                        <button onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-2">
@@ -402,7 +423,11 @@ export default function CreatePage() {
                       ))}
                     </div>
                     <div className="relative flex items-center justify-center">
-                      {isRecording && <span className="absolute -top-10 text-white font-black text-sm tabular-nums">{timer}s / {durationLimit}s</span>}
+                      {isRecording && (
+                        <span className="absolute -top-10 text-white font-black text-sm tabular-nums">
+                          {timer}s / {durationLimit}s
+                        </span>
+                      )}
                       <button onClick={isRecording ? stopRec : startRec} className="w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center">
                           <div className={`transition-all ${isRecording ? 'w-8 h-8 bg-red-600 rounded-lg animate-pulse' : 'w-14 h-14 bg-red-600 rounded-full'}`}/></button>
                     </div>
@@ -427,6 +452,7 @@ export default function CreatePage() {
                  </div>
                  <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Caption your short..." className="flex-1 bg-transparent border-none outline-none font-bold text-lg h-40 resize-none pt-4" />
               </div>
+
               {isUploading && (
                 <div className="mb-6">
                   <div className="flex justify-between text-[10px] font-black mb-2 text-blue-400">
@@ -438,6 +464,7 @@ export default function CreatePage() {
                   </div>
                 </div>
               )}
+
               <button onClick={publish} disabled={isUploading} className="w-full bg-red-600 py-6 rounded-[30px] font-black text-xl flex items-center justify-center gap-3">
                 {isUploading ? <Loader2 className="animate-spin"/> : <><Send size={24}/> POST SHORT</>}
               </button>
@@ -445,7 +472,7 @@ export default function CreatePage() {
         )}
       </main>
 
-      {/* Filters & Music Modals (UI unchanged) */}
+      {/* Filters Modal */}
       {showFilters && (
         <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[300] border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
             <div className="flex justify-between items-center mb-8">
@@ -465,6 +492,7 @@ export default function CreatePage() {
         </div>
       )}
 
+      {/* Music Library Modal */}
       {showMusic && (
         <div className="absolute inset-0 bg-[#000000] z-[400] p-6 pt-12 flex flex-col">
             <div className="flex justify-between items-center mb-6">
@@ -479,7 +507,7 @@ export default function CreatePage() {
               {filteredMusic.map(m => (
                 <div key={m.id} className="flex items-center justify-between">
                   <div className="flex items-center gap-5 flex-1 cursor-pointer" onClick={() => playAudio(m.audio_url, m.id)}>
-                    <div className="w-16 h-16 bg-[#262626] rounded-2xl flex items-center justify-center">
+                    <div className="w-16 h-16 bg-[#262626] rounded-2xl flex items-center justify-center transition-colors hover:bg-zinc-800">
                       {audioPlayId === m.id ? <Pause size={24} className="text-red-500 fill-red-500"/> : <Play size={24} className="text-white fill-white"/>}
                     </div>
                     <div className="flex flex-col">
@@ -501,4 +529,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-}
+} 
