@@ -2,9 +2,9 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.6.5 (Music Unique Sync & Duration Fix)
+ * VERSION: 4.6.6 (Forced Music Sync & CDN Logic)
  * VAADA: No functions removed, Original logic preserved.
- * UPDATE: CDN Domain sync to fix "Loading" issue.
+ * UPDATE: Every upload now automatically saves to Music Library.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -26,7 +26,6 @@ const R2_CONFIG = {
   accessKeyId: "bace896e3eba07cdbcb983394bd20da1", 
   secretAccessKey: "c38a89622fd343226dba534eedc26b8e8f3674c270651aba75e89206799a0acf",
   bucketName: "chiti-videos",
-  // 🔥 FIXED: Added 'cdn.' to match your working video links
   publicDomain: "https://cdn.chitishort.store"
 };
 
@@ -99,7 +98,7 @@ export default function CreatePage() {
 
   useEffect(() => {
     const loadMusic = async () => {
-      const { data } = await supabase.from('music_library').select('*');
+      const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false });
       if (data) setMusicList(data);
     };
     loadMusic();
@@ -173,7 +172,7 @@ export default function CreatePage() {
 
   const getMixedStream = () => {
     if (!streamRef.current || !audioRef.current) return streamRef.current;
-    const AC = window.AudioContext || (window as any).webkitAudioContext;
+    const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
     audioCtxRef.current = new AC();
     const dest = audioCtxRef.current.createMediaStreamDestination();
     const micSource = audioCtxRef.current.createMediaStreamSource(streamRef.current);
@@ -233,6 +232,7 @@ export default function CreatePage() {
     }
   };
 
+  // --- 🔥 UPDATED PUBLISH FUNCTION WITH FORCE MUSIC SYNC ---
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
@@ -275,16 +275,18 @@ export default function CreatePage() {
 
       const finalUrl = `${R2_CONFIG.publicDomain}/${path}`;
 
-      if (!activeMusic) {
-        const musicTitle = caption ? caption.substring(0, 30) : `Original Sound by ${user.user_metadata?.full_name || 'Creator'}`;
-        await supabase.from('music_library').insert([{
-          title: musicTitle,
-          audio_url: finalUrl,
-          artist: user.user_metadata?.full_name || 'Creator',
-          user_id: user.id,
-          duration: durationLimit
-        }]);
-      }
+      // Logic: Save to Music Library every time a video is uploaded
+      const musicTitle = caption ? caption.substring(0, 30) : `Original Sound by ${user.user_metadata?.full_name || 'Creator'}`;
+      
+      const { data: musicData, error: musicError } = await supabase.from('music_library').insert([{
+        title: musicTitle,
+        audio_url: finalUrl, // Using Branded CDN URL
+        artist: user.user_metadata?.full_name || 'Creator',
+        user_id: user.id,
+        duration: durationLimit || 15
+      }]).select();
+
+      if (musicError) console.error("Music Library Sync Error:", musicError);
 
       const { error: dbError } = await supabase.from('posts').insert([{
         video_url: finalUrl, 
@@ -292,7 +294,7 @@ export default function CreatePage() {
         user_id: user.id,
         user_name: user.user_metadata?.full_name || 'Creator',
         filter_name: selectedFilter,
-        music_id: activeMusic?.id || null
+        music_id: musicData?.[0]?.id || (activeMusic?.id || null)
       }]);
 
       if (dbError) throw dbError;
@@ -495,8 +497,8 @@ export default function CreatePage() {
       {showMusic && (
         <div className="absolute inset-0 bg-[#000000] z-[400] p-6 pt-12 flex flex-col">
             <div className="flex justify-between items-center mb-6">
-               <h2 className="text-4xl font-black italic text-pink-500 uppercase tracking-tighter">Library</h2>
-               <button onClick={() => {setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
+                <h2 className="text-4xl font-black italic text-pink-500 uppercase tracking-tighter">Library</h2>
+                <button onClick={() => {setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
             </div>
             <div className="relative mb-6">
               <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-zinc-500" size={22}/>
@@ -528,4 +530,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-}
+} 
