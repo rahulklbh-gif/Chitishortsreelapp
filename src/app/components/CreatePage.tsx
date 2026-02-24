@@ -28,6 +28,7 @@ const R2_CONFIG = {
   publicDomain: "https://cdn.chitishort.store"
 };
 
+// SARE FILTERS WAPAS ADD KIYE GAYE HAIN (UNCHANGED)
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "none", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
   crystal: { name: "Crystal Glow", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
@@ -108,12 +109,19 @@ export default function CreatePage() {
     };
   }, []);
 
+  // CAMERA KILLER FIX: Preview aane par camera band hoga
   useEffect(() => {
-    if (previewUrl && previewVideoRef.current) {
-        previewVideoRef.current.load();
-        setTimeout(() => {
-          previewVideoRef.current?.play().catch(e => console.log("Preview play blocked", e));
-        }, 150);
+    if (previewUrl) {
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+            streamRef.current = null;
+        }
+        if (previewVideoRef.current) {
+            previewVideoRef.current.load();
+            setTimeout(() => {
+              previewVideoRef.current?.play().catch(e => console.log("Preview play blocked", e));
+            }, 150);
+        }
     }
   }, [previewUrl]);
 
@@ -157,8 +165,8 @@ export default function CreatePage() {
         video: { 
           facingMode: { ideal: facing }, 
           aspectRatio: { ideal: 9/16 },
-          width: { ideal: 1080 },
-          height: { ideal: 1920 }
+          width: { ideal: 720 }, // Smoother performance than 1080p for recording
+          height: { ideal: 1280 }
         },
         audio: true
       });
@@ -197,9 +205,16 @@ export default function CreatePage() {
     if (!streamRef.current) return;
     chunksRef.current = [];
     const mixed = activeMusic ? getMixedStream() : streamRef.current;
-    const recorder = new MediaRecorder(mixed, { mimeType: 'video/webm' });
+    
+    // Smooth recording fix: webm with specific bitrate/codec
+    const recorder = new MediaRecorder(mixed, { 
+        mimeType: 'video/webm;codecs=vp8,opus' 
+    });
 
-    recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+    recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
+
     recorder.onstop = () => {
       const blob = new Blob(chunksRef.current, { type: 'video/webm' });
       const url = URL.createObjectURL(blob);
@@ -211,7 +226,7 @@ export default function CreatePage() {
     };
 
     if (activeMusic && audioRef.current) audioRef.current.play();
-    recorder.start();
+    recorder.start(200); // Small slices prevents lagging
     recorderRef.current = recorder;
     setIsRecording(true);
     setTimer(0);
@@ -331,7 +346,7 @@ export default function CreatePage() {
     const videoStyle = {
       filter: filter.style,
       transform: (facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
-      objectFit: 'cover' as const,
+      objectFit: 'cover' as const, // NO ZOOM, Maintains full screen original
       transition: 'filter 0.4s ease'
     };
 
@@ -393,7 +408,7 @@ export default function CreatePage() {
           </div>
         ) : !isFinalStep ? (
           <div className="flex-1 relative overflow-hidden flex flex-col">
-              <div className="flex-1 w-full relative overflow-hidden">
+              <div className="flex-1 w-full relative overflow-hidden bg-black">
                 {renderContent(!previewUrl)}
                 
                 {isRecording && (
@@ -447,10 +462,10 @@ export default function CreatePage() {
                 <h2 className="text-2xl font-black italic uppercase">Publishing</h2>
               </div>
               <div className="flex gap-6 mb-10">
-                 <div className="w-32 h-48 bg-zinc-900 rounded-3xl overflow-hidden border border-white/10 relative shrink-0">
-                   {renderContent(false)}
-                 </div>
-                 <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Caption your short..." className="flex-1 bg-transparent border-none outline-none font-bold text-lg h-40 resize-none pt-4" />
+                  <div className="w-32 h-48 bg-zinc-900 rounded-3xl overflow-hidden border border-white/10 relative shrink-0">
+                    {renderContent(false)}
+                  </div>
+                  <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Caption your short..." className="flex-1 bg-transparent border-none outline-none font-bold text-lg h-40 resize-none pt-4" />
               </div>
 
               {isUploading && (
@@ -472,7 +487,7 @@ export default function CreatePage() {
         )}
       </main>
 
-      {/* Filters Modal */}
+      {/* Filters Modal - SARE FILTERS KE SATH (UNCHANGED) */}
       {showFilters && (
         <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[300] border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
             <div className="flex justify-between items-center mb-8">
@@ -529,4 +544,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-}
+} 
