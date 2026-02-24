@@ -4,6 +4,7 @@
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
  * VERSION: 4.6.5 (Music Unique Sync & Duration Fix)
  * VAADA: No functions removed, Original logic preserved.
+ * UPDATE: CDN Domain sync to fix "Loading" issue.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -25,7 +26,8 @@ const R2_CONFIG = {
   accessKeyId: "bace896e3eba07cdbcb983394bd20da1", 
   secretAccessKey: "c38a89622fd343226dba534eedc26b8e8f3674c270651aba75e89206799a0acf",
   bucketName: "chiti-videos",
-  publicDomain: "https://chitishort.store"
+  // 🔥 FIXED: Added 'cdn.' to match your working video links
+  publicDomain: "https://cdn.chitishort.store"
 };
 
 const FILTERS_DATA: any = {
@@ -122,7 +124,6 @@ export default function CreatePage() {
   const playAudio = async (url: string, id: string) => {
     if (!audioRef.current) return;
 
-    // 🔥 FIX: Resume AudioContext on user interaction
     if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
       await audioCtxRef.current.resume();
     }
@@ -135,7 +136,7 @@ export default function CreatePage() {
             audioRef.current.pause();
             audioRef.current.crossOrigin = "anonymous";
             audioRef.current.src = url;
-            audioRef.current.load(); // Refresh source
+            audioRef.current.load();
             const playPromise = audioRef.current.play();
             if (playPromise !== undefined) {
                 playPromise.then(() => {
@@ -253,7 +254,6 @@ export default function CreatePage() {
         fileToUpload = selectedFile;
       }
 
-      // 🔥 FIXED: Generate UNIQUE filename using timestamp and random string
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.mp4`;
       const path = `chiti_vids/${user.id}/${fileName}`;
       
@@ -275,15 +275,14 @@ export default function CreatePage() {
 
       const finalUrl = `${R2_CONFIG.publicDomain}/${path}`;
 
-      // 🔥 FIXED: Music automatically adds to library with UNIQUE URL and DURATION
       if (!activeMusic) {
         const musicTitle = caption ? caption.substring(0, 30) : `Original Sound by ${user.user_metadata?.full_name || 'Creator'}`;
         await supabase.from('music_library').insert([{
           title: musicTitle,
-          audio_url: finalUrl, // Now unique per video
+          audio_url: finalUrl,
           artist: user.user_metadata?.full_name || 'Creator',
           user_id: user.id,
-          duration: durationLimit // Duration added to fix NULL issue
+          duration: durationLimit
         }]);
       }
 
