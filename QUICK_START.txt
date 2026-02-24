@@ -22,7 +22,7 @@
 🚀 ACCESSING YOUR APP
 ═══════════════════════════════════════════════════════════════
 
-Your app URL: [Your Figma Make deployment URL]
+Your app URL: [https://chitishort.store]
 
 Copy this URL and paste it in your phone's browser!
 
