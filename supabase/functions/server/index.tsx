@@ -6,6 +6,9 @@ import * as kv from "./kv_store.tsx";
 
 const app = new Hono();
 
+// Aapka Custom R2 Domain
+const R2_DOMAIN = "https://cdn.chitishort.store";
+
 // Initialize Supabase client
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL') || '',
@@ -61,17 +64,16 @@ app.get("/make-server-d82a0f74/videos", async (c) => {
   try {
     const videos = await kv.getByPrefix('video:');
     
-    // Generate signed URLs for each video
+    // 🔥 UPDATED: Signed URLs replaced with your R2 Domain URLs
     const videosWithUrls = await Promise.all(
       videos.map(async (video: any) => {
         if (video.videoPath) {
-          const { data } = await supabase.storage
-            .from('make-d82a0f74-videos')
-            .createSignedUrl(video.videoPath, 3600); // 1 hour expiry
+          // Hum purana path use kar rahe hain jo aapke R2 "chiti-videos" bucket me hai
+          const videoUrl = `${R2_DOMAIN}/${video.videoPath}`;
           
           return {
             ...video,
-            videoUrl: data?.signedUrl || null
+            videoUrl: videoUrl
           };
         }
         return video;
@@ -85,7 +87,7 @@ app.get("/make-server-d82a0f74/videos", async (c) => {
   }
 });
 
-// Upload video
+// Upload video metadata
 app.post("/make-server-d82a0f74/upload-video", async (c) => {
   try {
     const accessToken = c.req.header('Authorization')?.split(' ')[1];
@@ -108,28 +110,11 @@ app.post("/make-server-d82a0f74/upload-video", async (c) => {
       return c.json({ error: 'No video file provided' }, 400);
     }
 
-    // Generate unique filename
+    // Generate path matching your R2 structure
     const fileExt = file.name.split('.').pop();
-    const fileName = `${user.id}/${Date.now()}.${fileExt}`;
+    const fileName = `chiti_vids/${user.id}/${Date.now()}.${fileExt}`;
 
-    // Convert File to ArrayBuffer
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = new Uint8Array(arrayBuffer);
-
-    // Upload to Supabase Storage
-    const { error: uploadError } = await supabase.storage
-      .from('make-d82a0f74-videos')
-      .upload(fileName, buffer, {
-        contentType: file.type,
-        upsert: false
-      });
-
-    if (uploadError) {
-      console.error('Upload error:', uploadError);
-      return c.json({ error: 'Upload failed: ' + uploadError.message }, 500);
-    }
-
-    // Save video metadata
+    // Note: Frontend directly uploads to R2, we save the metadata here
     const videoId = `video:${Date.now()}_${user.id}`;
     const videoData = {
       id: videoId,
@@ -149,8 +134,9 @@ app.post("/make-server-d82a0f74/upload-video", async (c) => {
 
     return c.json({ 
       success: true, 
-      message: 'Video uploaded successfully',
-      videoId 
+      message: 'Video metadata saved successfully',
+      videoId,
+      url: `${R2_DOMAIN}/${fileName}`
     });
   } catch (error: any) {
     console.error('Upload error:', error);
@@ -173,17 +159,13 @@ app.get("/make-server-d82a0f74/music", async (c) => {
       return c.json({ music: [] });
     }
 
-    // Generate signed URLs
+    // Generate direct R2 URLs for music
     const musicWithUrls = await Promise.all(
       (files || []).map(async (file) => {
-        const { data } = await supabase.storage
-          .from('make-d82a0f74-music')
-          .createSignedUrl(file.name, 3600);
-        
         return {
           id: file.name,
           name: file.name.replace('.mp3', '').replace(/_/g, ' '),
-          url: data?.signedUrl || null
+          url: `${R2_DOMAIN}/music/${file.name}`
         };
       })
     );
@@ -276,4 +258,4 @@ app.get("/make-server-d82a0f74/videos/:videoId/comments", async (c) => {
   }
 });
 
-Deno.serve(app.fetch);
+Deno.serve(app.fetch); 
