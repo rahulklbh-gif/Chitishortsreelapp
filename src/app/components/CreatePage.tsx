@@ -2,8 +2,8 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.7.5 (200% Music Sync - No-Fail Edition)
- * UPDATE: Fixed Artist column bug, Added Retry Logic, Maintained all UI/Filters.
+ * VERSION: 4.8.5 (Gallery-Only Music Sync)
+ * UPDATE: Strictly syncs music ONLY from Gallery uploads. Camera/Existing music won't duplicate.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -229,7 +229,7 @@ export default function CreatePage() {
     }
   };
 
-  // --- 🔥 200% FAIL-SAFE PUBLISH LOGIC ---
+  // --- 🔥 SMART SYNC PUBLISH LOGIC (Gallery Only) ---
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
@@ -265,17 +265,16 @@ export default function CreatePage() {
         ContentType: 'video/mp4'
       }));
 
-      // 3. 🔥 MUSIC LIBRARY SYNC (200% Guarantee Logic)
-      setStatusText("Syncing with Music Library...");
-      const musicTitle = caption.trim() 
-        ? (caption.length > 50 ? caption.substring(0, 47) + "..." : caption) 
-        : `Original Sound - ${user.user_metadata?.full_name || 'Chiti User'}`;
+      // 3. 🔥 MUSIC LIBRARY SYNC (Only Gallery & No selection)
+      let finalMusicId = activeMusic?.id || null;
 
-      let finalMusicId = null;
-      let retries = 0;
+      // Condition: Agar Gallery se hai (!isCameraMode) aur pehle se koi Music select nahi kiya (!activeMusic)
+      if (!isCameraMode && !activeMusic) {
+        setStatusText("Syncing with Music Library...");
+        const musicTitle = caption.trim() 
+          ? (caption.length > 50 ? caption.substring(0, 47) + "..." : caption) 
+          : `Original Sound - ${user.user_metadata?.full_name || 'Chiti User'}`;
 
-      // Retry loop to ensure music is added
-      while (retries < 3) {
         const { data: musicEntry, error: musicError } = await supabase
           .from('music_library')
           .insert([{
@@ -288,12 +287,7 @@ export default function CreatePage() {
 
         if (!musicError && musicEntry && musicEntry.length > 0) {
           finalMusicId = musicEntry[0].id;
-          break; // Success!
         }
-        
-        console.error(`Music sync retry ${retries + 1}...`, musicError);
-        retries++;
-        await new Promise(r => setTimeout(r, 1000)); // Wait 1s
       }
 
       // 4. SAVE TO POSTS TABLE
@@ -304,13 +298,13 @@ export default function CreatePage() {
         user_id: user.id,
         user_name: user.user_metadata?.full_name || 'Creator',
         filter_name: selectedFilter,
-        music_id: finalMusicId || (activeMusic?.id || null)
+        music_id: finalMusicId
       }]);
 
       if (dbError) throw dbError;
 
       setUploadProgress(100);
-      toast.success("Shorts & Music Added Successfully!");
+      toast.success("Shorts Published!");
       setTimeout(() => { window.location.href = '/'; }, 1500);
 
     } catch (e: any) {
@@ -471,7 +465,7 @@ export default function CreatePage() {
                     <span>{uploadProgress}%</span>
                   </div>
                   <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 transition-all duration-300" style={{width: `${uploadProgress}%`}} />
+                    <div className="h-full bg-blue-600 transition-all duration-300" style={{width: `${uploadProgress}%` }} />
                   </div>
                 </div>
               )}
@@ -540,4 +534,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-}
+} 
