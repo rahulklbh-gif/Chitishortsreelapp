@@ -2,9 +2,9 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.6.6 (Forced Music Sync & CDN Logic)
+ * VERSION: 4.6.7 (Final Music Sync Fix)
  * VAADA: No functions removed, Original logic preserved.
- * UPDATE: Every upload now automatically saves to Music Library.
+ * UPDATE: Every upload now automatically saves to Music Library using Caption as Title.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -232,7 +232,7 @@ export default function CreatePage() {
     }
   };
 
-  // --- 🔥 UPDATED PUBLISH FUNCTION WITH FORCE MUSIC SYNC ---
+  // --- 🔥 FINAL FIXED PUBLISH FUNCTION ---
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
@@ -242,71 +242,76 @@ export default function CreatePage() {
     try {
       let fileToUpload: any = selectedFile;
 
+      // 1. Compression Logic
       try {
-        setStatusText("Optimizing for Fast Start...");
+        setStatusText("Optimizing video...");
         const optimized = await compressVideoTo480p(selectedFile, (p) => {
-          setUploadProgress(10 + Math.floor(p.progress * 50));
-          setStatusText(p.message || "Compressing...");
+          setUploadProgress(10 + Math.floor(p.progress * 40));
         });
         fileToUpload = optimized;
-      } catch (compressionError) {
-        console.warn("Compression skipped, using original file");
-        fileToUpload = selectedFile;
+      } catch (e) {
+        console.warn("Using original file");
       }
 
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.mp4`;
+      // 2. R2 Upload
+      const fileName = `${Date.now()}_chiti.mp4`;
       const path = `chiti_vids/${user.id}/${fileName}`;
+      const finalUrl = `${R2_CONFIG.publicDomain}/${path}`;
       
-      setStatusText("Uploading to Chiti Cloud...");
-
+      setStatusText("Uploading to Cloud...");
       const arrayBuffer = await fileToUpload.arrayBuffer();
 
       await s3Client.send(new PutObjectCommand({
         Bucket: R2_CONFIG.bucketName,
         Key: path,
-        Body: new Uint8Array(arrayBuffer), 
-        ContentType: 'video/mp4', 
-        ContentDisposition: 'inline',
-        CacheControl: "public, max-age=31536000, immutable"
+        Body: new Uint8Array(arrayBuffer),
+        ContentType: 'video/mp4'
       }));
 
-      setUploadProgress(90);
-      setStatusText("Finishing post...");
-
-      const finalUrl = `${R2_CONFIG.publicDomain}/${path}`;
-
-      // Logic: Save to Music Library every time a video is uploaded
-      const musicTitle = caption ? caption.substring(0, 30) : `Original Sound by ${user.user_metadata?.full_name || 'Creator'}`;
+      // 3. FORCE INSERT TO MUSIC LIBRARY
+      setStatusText("Syncing Music Library...");
       
-      const { data: musicData, error: musicError } = await supabase.from('music_library').insert([{
-        title: musicTitle,
-        audio_url: finalUrl, // Using Branded CDN URL
-        artist: user.user_metadata?.full_name || 'Creator',
-        user_id: user.id,
-        duration: durationLimit || 15
-      }]).select();
+      // Caption ko hi title banayenge, agar khali hai toh 'Original Sound'
+      const musicTitle = caption.trim() ? caption.substring(0, 50) : `Original Sound - ${user.user_metadata?.full_name || 'Creator'}`;
 
-      if (musicError) console.error("Music Library Sync Error:", musicError);
+      const { data: newMusic, error: mError } = await supabase
+        .from('music_library')
+        .insert([{
+          title: musicTitle,
+          audio_url: finalUrl,
+          artist: user.user_metadata?.full_name || 'Chiti Creator',
+          user_id: user.id,
+          duration: durationLimit
+        }])
+        .select()
+        .single();
 
-      const { error: dbError } = await supabase.from('posts').insert([{
-        video_url: finalUrl, 
-        caption: caption || "", 
+      if (mError) {
+        console.error("Music Sync Error:", mError);
+      }
+
+      // 4. INSERT TO POSTS
+      setStatusText("Finalizing post...");
+      const { error: pError } = await supabase.from('posts').insert([{
+        video_url: finalUrl,
+        caption: caption || "",
         user_id: user.id,
         user_name: user.user_metadata?.full_name || 'Creator',
         filter_name: selectedFilter,
-        music_id: musicData?.[0]?.id || (activeMusic?.id || null)
+        music_id: newMusic?.id || (activeMusic?.id || null) 
       }]);
 
-      if (dbError) throw dbError;
+      if (pError) throw pError;
 
       setUploadProgress(100);
-      toast.success("Short Published!");
-      setTimeout(() => { window.location.href = '/'; }, 1000);
-    } catch (e: any) {
-      console.error("Upload Error:", e);
-      toast.error(`Upload failed: ${e.message || 'Check Connection'}`);
+      toast.success("Shorts & Music Published!");
+      setTimeout(() => { window.location.href = '/'; }, 1500);
+
+    } catch (err: any) {
+      console.error("Critical Error:", err);
+      toast.error("Failed to publish: " + err.message);
+    } finally {
       setIsUploading(false);
-      setUploadProgress(0);
     }
   };
 
@@ -530,4 +535,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-} 
+}
