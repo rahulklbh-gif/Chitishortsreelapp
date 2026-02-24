@@ -109,7 +109,7 @@ export default function CreatePage() {
     };
   }, []);
 
-  // CAMERA KILLER FIX: Preview aane par camera band hoga
+  // CAMERA KILLER FIX: Preview aane par camera band hoga aur video load hoga
   useEffect(() => {
     if (previewUrl) {
         if (streamRef.current) {
@@ -120,7 +120,7 @@ export default function CreatePage() {
             previewVideoRef.current.load();
             setTimeout(() => {
               previewVideoRef.current?.play().catch(e => console.log("Preview play blocked", e));
-            }, 150);
+            }, 200);
         }
     }
   }, [previewUrl]);
@@ -165,8 +165,8 @@ export default function CreatePage() {
         video: { 
           facingMode: { ideal: facing }, 
           aspectRatio: { ideal: 9/16 },
-          width: { ideal: 720 }, // Smoother performance than 1080p for recording
-          height: { ideal: 1280 }
+          width: { ideal: 1080 },
+          height: { ideal: 1920 }
         },
         audio: true
       });
@@ -216,17 +216,18 @@ export default function CreatePage() {
     };
 
     recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+      // Changed to video/mp4 blob for better mobile preview compatibility
+      const blob = new Blob(chunksRef.current, { type: 'video/mp4' });
       const url = URL.createObjectURL(blob);
       setPreviewUrl(url);
-      setSelectedFile(new File([blob], 'chiti.webm'));
+      setSelectedFile(new File([blob], 'chiti.mp4', { type: 'video/mp4' }));
       setIsRecording(false);
       setTimer(0);
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
     };
 
     if (activeMusic && audioRef.current) audioRef.current.play();
-    recorder.start(200); // Small slices prevents lagging
+    recorder.start(100); 
     recorderRef.current = recorder;
     setIsRecording(true);
     setTimer(0);
@@ -343,20 +344,24 @@ export default function CreatePage() {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
+    // FIX 1 & 2: FULL SCREEN & NO ZOOM
     const videoStyle = {
       filter: filter.style,
       transform: (facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
-      objectFit: 'cover' as const, // NO ZOOM, Maintains full screen original
+      objectFit: 'cover' as const, // Ensures full fill without manual zoom distortion
+      width: '100%',
+      height: '100%',
       transition: 'filter 0.4s ease'
     };
 
     return (
-      <div className={`h-full w-full bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : 'flex'}`}>
+      <div className={`absolute inset-0 bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : 'flex'}`}>
         {[...Array(gridCount)].map((_, i) => (
-          <div key={i} className="relative w-full h-full bg-zinc-900 overflow-hidden">
+          <div key={i} className="relative w-full h-full bg-black overflow-hidden">
             {isLive ? (
               <video ref={i === 0 ? videoRef : null} autoPlay playsInline muted className="w-full h-full" style={videoStyle} />
             ) : (
+              // FIX 3: PREVIEW RENDER
               <video ref={i === 0 ? previewVideoRef : null} src={previewUrl} autoPlay loop playsInline muted={i !== 0} className="w-full h-full" style={videoStyle} />
             )}
           </div>
@@ -371,7 +376,7 @@ export default function CreatePage() {
       onClick={() => { if(audioCtxRef.current) audioCtxRef.current.resume(); }}
     >
       {!isFinalStep && (
-        <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[200] bg-gradient-to-b from-black/60 to-transparent">
+        <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[200] bg-gradient-to-b from-black/80 to-transparent">
           <button onClick={() => {
             if(previewUrl) { setPreviewUrl(''); initCamera(); } 
             else window.history.back();
@@ -388,9 +393,9 @@ export default function CreatePage() {
         </header>
       )}
 
-      <main className="flex-1 relative bg-zinc-950 flex flex-col overflow-hidden">
+      <main className="flex-1 relative bg-black flex flex-col overflow-hidden">
         {!isCameraMode && !previewUrl ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-12">
+          <div className="flex-1 flex flex-col items-center justify-center gap-12 z-[205]">
             <button onClick={() => setIsCameraMode(true)} className="w-40 h-40 bg-blue-600 rounded-[50px] flex items-center justify-center relative shadow-2xl active:scale-95 transition-all">
                  <Camera size={50} className="text-white"/>
             </button>
@@ -408,7 +413,8 @@ export default function CreatePage() {
           </div>
         ) : !isFinalStep ? (
           <div className="flex-1 relative overflow-hidden flex flex-col">
-              <div className="flex-1 w-full relative overflow-hidden bg-black">
+              {/* FIX: CAM CONTAINER IS NOW FULL SCREEN */}
+              <div className="flex-1 w-full relative">
                 {renderContent(!previewUrl)}
                 
                 {isRecording && (
@@ -456,7 +462,7 @@ export default function CreatePage() {
               </div>
           </div>
         ) : (
-          <div className="h-full w-full bg-zinc-950 p-8 flex flex-col pt-16">
+          <div className="h-full w-full bg-zinc-950 p-8 flex flex-col pt-16 z-[205]">
               <div className="flex items-center gap-6 mb-10">
                 <button onClick={() => setIsFinalStep(false)} className="p-2"><ArrowLeft size={30}/></button>
                 <h2 className="text-2xl font-black italic uppercase">Publishing</h2>
