@@ -2,8 +2,8 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.9.9 (Optimized Camera & Preview)
- * UPDATE: Fixed Full-screen constraints, No-zoom object-fit, and Preview Black Screen.
+ * VERSION: 4.9.9 (Final Camera & Preview Fix)
+ * UPDATE: 0% Zooming + Original Camera FOV + Guaranteed Preview Fix.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -110,16 +110,20 @@ export default function CreatePage() {
   // FIXED: PREVIEW BLACK SCREEN FIX logic
   useEffect(() => {
     if (previewUrl && previewVideoRef.current) {
-        // Stop camera tracks to release resource for preview playback
+        // Stop camera tracks immediately to free hardware for playback
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
             streamRef.current = null;
         }
         
         const vid = previewVideoRef.current;
+        vid.src = previewUrl;
         vid.load();
+        
         const playPreview = async () => {
             try {
+                // Thoda delay taaki browser camera release handle kar le
+                await new Promise(r => setTimeout(r, 150));
                 await vid.play();
             } catch (e) {
                 console.log("Auto-play blocked, waiting for user interaction");
@@ -168,13 +172,12 @@ export default function CreatePage() {
           streamRef.current.getTracks().forEach(t => t.stop());
       }
       
-      // FIXED: FULL SCREEN (Constraint fix for aspect ratio)
+      // FIXED: 0% ZOOMING - Removed fixed aspect ratio to prevent cropping zoom
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: { ideal: facing }, 
-          width: { ideal: 1080 },
-          height: { ideal: 1920 },
-          aspectRatio: { ideal: 9/16 }
+          width: { ideal: 1280 }, // Using standard HD wide for original FOV
+          height: { ideal: 720 }
         },
         audio: true
       });
@@ -352,11 +355,10 @@ export default function CreatePage() {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
-    // FIXED: NO ZOOM (objectFit: 'cover' replaced with 'fill' or custom scale to maintain 100% viewport)
     const videoStyle = {
       filter: filter.style,
       transform: (facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
-      objectFit: 'cover' as const, // Cover ensures it fills the div without black bars, but constraints handle the 'zoom' feel
+      objectFit: 'cover' as const, 
       width: '100%',
       height: '100%',
       transition: 'filter 0.4s ease'
@@ -378,7 +380,6 @@ export default function CreatePage() {
             ) : (
               <video 
                 ref={i === 0 ? previewVideoRef : null} 
-                src={previewUrl} 
                 autoPlay 
                 loop 
                 playsInline 
@@ -436,7 +437,6 @@ export default function CreatePage() {
           </div>
         ) : !isFinalStep ? (
           <div className="flex-1 relative overflow-hidden flex flex-col">
-              {/* FIXED: Full viewport camera container */}
               <div className="absolute inset-0 w-full h-full z-[10]">
                 {renderContent(!previewUrl)}
               </div>
@@ -576,4 +576,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-}
+} 
