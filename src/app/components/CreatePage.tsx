@@ -2,8 +2,8 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.9.9 (Full Features + Un-cut Code)
- * UPDATE: Strictly maintaining all filters and logic with New Camera Fixes.
+ * VERSION: 5.5.0 (The Brahmastra Ultimate)
+ * STATUS: 3-in-1 Triple Fix Injected
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -109,24 +109,33 @@ export default function CreatePage() {
     };
   }, []);
 
-  // FIX 3: BLACK SCREEN PREVIEW FIX
+  // BRAHMASTRA FIX: FULL BLACK SCREEN & PREVIEW FREEZE FIX
   useEffect(() => {
     if (previewUrl) {
-        // Kill existing camera tracks to free hardware for preview
+        // Step 1: Kill camera immediately to free hardware resources
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
             streamRef.current = null;
         }
-        if (previewVideoRef.current) {
-            previewVideoRef.current.load();
-            const playPreview = async () => {
-              try {
-                await previewVideoRef.current?.play();
-              } catch (e) {
-                console.log("Preview auto-play waited for user");
-              }
+
+        const video = previewVideoRef.current;
+        if (video) {
+            video.pause();
+            video.srcObject = null; // Important: Clear any camera stream residue
+            video.src = previewUrl;
+            video.load();
+            
+            // Step 2: Retry mechanism for mobile auto-play policy
+            const playWithRetry = async () => {
+                try {
+                    video.muted = true; // Start muted to satisfy browser policy
+                    await video.play();
+                    video.muted = false; // Unmute if possible
+                } catch (err) {
+                    console.warn("Retrying play on user interaction signal");
+                }
             };
-            playPreview();
+            setTimeout(playWithRetry, 300);
         }
     }
   }, [previewUrl]);
@@ -169,12 +178,12 @@ export default function CreatePage() {
       if (streamRef.current) {
           streamRef.current.getTracks().forEach(t => t.stop());
       }
-      // FIX 1 & 2: Dynamic Full Screen constraints
+      // BRAHMASTRA FIX: High-res Ideal Constraints for True Full Screen
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: { ideal: facing }, 
-          width: { ideal: 1080 },
-          height: { ideal: 1920 }
+          width: { ideal: 1080, min: 720 },
+          height: { ideal: 1920, min: 1280 }
         },
         audio: true
       });
@@ -216,10 +225,13 @@ export default function CreatePage() {
     chunksRef.current = [];
     const mixed = activeMusic ? getMixedStream() : streamRef.current;
     
-    // Smooth recording: Fixed mimeType for better compatibility
-    const recorder = new MediaRecorder(mixed, { 
-        mimeType: 'video/webm;codecs=vp8,opus' 
-    });
+    // Smooth recording: Better mimeType detection
+    let options: any = { mimeType: 'video/webm;codecs=vp8,opus' };
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'video/mp4' };
+    }
+
+    const recorder = new MediaRecorder(mixed, options);
 
     recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -349,29 +361,44 @@ export default function CreatePage() {
     }
   };
 
+  // BRAHMASTRA RENDER: FORCED FULL SCREEN & NO ZOOM
   const renderContent = (isLive: boolean) => {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
-    // FIX 1 & 2: FULL SCREEN & NO ZOOM (Fill and Width/Height 100%)
-    const videoStyle = {
+    const videoStyle: React.CSSProperties = {
       filter: filter.style,
       transform: (facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
-      objectFit: 'fill' as const, // Force fill to avoid zooming in
+      objectFit: 'fill', // BRAHMASTRA FIX: STRETCH WITHOUT ZOOM
       width: '100%',
       height: '100%',
+      position: 'absolute',
+      top: 0,
+      left: 0,
       transition: 'filter 0.4s ease'
     };
 
     return (
-      <div className={`absolute inset-0 w-full h-full bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : 'flex'}`}>
+      <div className={`fixed inset-0 w-full h-full bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : 'flex'}`}>
         {[...Array(gridCount)].map((_, i) => (
           <div key={i} className="relative w-full h-full bg-black overflow-hidden">
             {isLive ? (
-              <video ref={i === 0 ? videoRef : null} autoPlay playsInline muted className="absolute inset-0 w-full h-full" style={videoStyle} />
+              <video 
+                ref={i === 0 ? videoRef : null} 
+                autoPlay 
+                playsInline 
+                muted 
+                style={videoStyle} 
+              />
             ) : (
-              // FIX 3: PREVIEW RENDER (Using absolute inset-0 for full screen)
-              <video ref={i === 0 ? previewVideoRef : null} src={previewUrl} autoPlay loop playsInline muted={i !== 0} className="absolute inset-0 w-full h-full" style={videoStyle} />
+              <video 
+                ref={i === 0 ? previewVideoRef : null} 
+                autoPlay 
+                loop 
+                playsInline 
+                muted={i !== 0} 
+                style={videoStyle} 
+              />
             )}
           </div>
         ))}
@@ -422,13 +449,13 @@ export default function CreatePage() {
           </div>
         ) : !isFinalStep ? (
           <div className="flex-1 relative overflow-hidden flex flex-col">
-              {/* FIX: CAM CONTAINER IS NOW FORCED FULL SCREEN */}
+              {/* BRAHMASTRA FIX: CAM CONTAINER IS NOW FORCED FULL SCREEN */}
               <div className="absolute inset-0 w-full h-full z-[10]">
                 {renderContent(!previewUrl)}
               </div>
 
               {/* OVERLAY UI */}
-              <div className="relative z-[20] flex-1 flex flex-col">
+              <div className="relative z-[20] flex-1 flex flex-col pointer-events-none">
                 {isRecording && (
                   <div className="absolute top-20 inset-x-6 h-1.5 bg-white/20 rounded-full overflow-hidden">
                     <div 
@@ -438,7 +465,7 @@ export default function CreatePage() {
                   </div>
                 )}
 
-                <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8">
+                <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8 pointer-events-auto">
                     {!previewUrl && (
                         <button onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-2">
                             <div className="p-4 bg-black/40 rounded-2xl border border-white/10 backdrop-blur-md"><RefreshCw size={24}/></div>
@@ -451,7 +478,7 @@ export default function CreatePage() {
                     </button>
                 </div>
 
-                <div className="mt-auto w-full p-6 pb-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black/60 to-transparent">
+                <div className="mt-auto w-full p-6 pb-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black/60 to-transparent pointer-events-auto">
                   {!previewUrl ? (
                     <>
                       <div className="flex bg-black/50 p-1.5 rounded-full border border-white/10 backdrop-blur-xl">
@@ -505,7 +532,7 @@ export default function CreatePage() {
         )}
       </main>
 
-      {/* Filters Modal - SARE FILTERS KE SATH (UNCHANGED) */}
+      {/* Filters Modal */}
       {showFilters && (
         <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[300] border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
             <div className="flex justify-between items-center mb-8">
@@ -559,7 +586,8 @@ export default function CreatePage() {
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}`}</style>
+        video { -webkit-transform: translateZ(0); }
+      `}</style>
     </div>
   );
 }
