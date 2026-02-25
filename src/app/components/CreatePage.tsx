@@ -2,7 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.9.9 (Final Audio-Sync & Zero-Zoom Fix)
+ * VERSION: 5.1.0 (Fixed Full-Screen & Absolute Zero-Zoom)
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -174,6 +174,7 @@ export default function CreatePage() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: { ideal: facing }, 
+          // FORCE 1080P FOR ZERO ZOOM (High-res keeps field of view wide)
           width: { ideal: 1080 },
           height: { ideal: 1920 },
           aspectRatio: { ideal: 9/16 }
@@ -240,7 +241,6 @@ export default function CreatePage() {
       setSelectedFile(new File([blob], 'chiti.mp4', { type: 'video/mp4' }));
       setIsRecording(false);
       setTimer(0);
-      // Don't kill audio yet, it might be needed for preview
     };
 
     recorder.start(100); 
@@ -361,11 +361,11 @@ export default function CreatePage() {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
-    // FIXED: ZERO ZOOM (objectFit: 'contain' to prevent cropping/zoom)
+    // FIXED: OBJECT-FIT COVER FOR FULL SCREEN RECORDING & PREVIEW
     const videoStyle = {
       filter: filter.style,
       transform: (facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
-      objectFit: 'contain' as const, 
+      objectFit: 'cover' as const, // Cover ensures full screen without bars
       width: '100%',
       height: '100%',
       backgroundColor: 'black',
@@ -528,7 +528,6 @@ export default function CreatePage() {
         )}
       </main>
 
-      {/* Filters & Music Modal same as before... */}
       {showFilters && (
         <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[300] border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
             <div className="flex justify-between items-center mb-8">
@@ -581,8 +580,8 @@ export default function CreatePage() {
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        video { object-fit: contain !important; } 
+        video { object-fit: cover !important; } 
       `}</style>
     </div>
   );
-}
+} 
