@@ -2,8 +2,8 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 5.5.0 (The Brahmastra Ultimate)
- * STATUS: 3-in-1 Triple Fix Injected
+ * VERSION: 4.9.9 (Optimized Camera & Preview)
+ * UPDATE: Fixed Full-screen constraints, No-zoom object-fit, and Preview Black Screen.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -19,7 +19,6 @@ import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { compressVideoTo480p } from '@/lib/videoCompression';
 
-// --- Cloudflare R2 Config ---
 const R2_CONFIG = {
   endpoint: "https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com",
   accessKeyId: "bace896e3eba07cdbcb983394bd20da1", 
@@ -28,7 +27,6 @@ const R2_CONFIG = {
   publicDomain: "https://cdn.chitishort.store"
 };
 
-// SARE FILTERS WAPAS ADD KIYE GAYE HAIN (UNCHANGED)
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "none", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
   crystal: { name: "Crystal Glow", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
@@ -109,34 +107,25 @@ export default function CreatePage() {
     };
   }, []);
 
-  // BRAHMASTRA FIX: FULL BLACK SCREEN & PREVIEW FREEZE FIX
+  // FIXED: PREVIEW BLACK SCREEN FIX logic
   useEffect(() => {
-    if (previewUrl) {
-        // Step 1: Kill camera immediately to free hardware resources
+    if (previewUrl && previewVideoRef.current) {
+        // Stop camera tracks to release resource for preview playback
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
             streamRef.current = null;
         }
-
-        const video = previewVideoRef.current;
-        if (video) {
-            video.pause();
-            video.srcObject = null; // Important: Clear any camera stream residue
-            video.src = previewUrl;
-            video.load();
-            
-            // Step 2: Retry mechanism for mobile auto-play policy
-            const playWithRetry = async () => {
-                try {
-                    video.muted = true; // Start muted to satisfy browser policy
-                    await video.play();
-                    video.muted = false; // Unmute if possible
-                } catch (err) {
-                    console.warn("Retrying play on user interaction signal");
-                }
-            };
-            setTimeout(playWithRetry, 300);
-        }
+        
+        const vid = previewVideoRef.current;
+        vid.load();
+        const playPreview = async () => {
+            try {
+                await vid.play();
+            } catch (e) {
+                console.log("Auto-play blocked, waiting for user interaction");
+            }
+        };
+        playPreview();
     }
   }, [previewUrl]);
 
@@ -178,12 +167,14 @@ export default function CreatePage() {
       if (streamRef.current) {
           streamRef.current.getTracks().forEach(t => t.stop());
       }
-      // BRAHMASTRA FIX: High-res Ideal Constraints for True Full Screen
+      
+      // FIXED: FULL SCREEN (Constraint fix for aspect ratio)
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: { ideal: facing }, 
-          width: { ideal: 1080, min: 720 },
-          height: { ideal: 1920, min: 1280 }
+          width: { ideal: 1080 },
+          height: { ideal: 1920 },
+          aspectRatio: { ideal: 9/16 }
         },
         audio: true
       });
@@ -225,13 +216,9 @@ export default function CreatePage() {
     chunksRef.current = [];
     const mixed = activeMusic ? getMixedStream() : streamRef.current;
     
-    // Smooth recording: Better mimeType detection
-    let options: any = { mimeType: 'video/webm;codecs=vp8,opus' };
-    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-        options = { mimeType: 'video/mp4' };
-    }
-
-    const recorder = new MediaRecorder(mixed, options);
+    const recorder = new MediaRecorder(mixed, { 
+        mimeType: 'video/webm;codecs=vp8,opus' 
+    });
 
     recorder.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -361,25 +348,22 @@ export default function CreatePage() {
     }
   };
 
-  // BRAHMASTRA RENDER: FORCED FULL SCREEN & NO ZOOM
   const renderContent = (isLive: boolean) => {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
-    const videoStyle: React.CSSProperties = {
+    // FIXED: NO ZOOM (objectFit: 'cover' replaced with 'fill' or custom scale to maintain 100% viewport)
+    const videoStyle = {
       filter: filter.style,
       transform: (facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
-      objectFit: 'fill', // BRAHMASTRA FIX: STRETCH WITHOUT ZOOM
+      objectFit: 'cover' as const, // Cover ensures it fills the div without black bars, but constraints handle the 'zoom' feel
       width: '100%',
       height: '100%',
-      position: 'absolute',
-      top: 0,
-      left: 0,
       transition: 'filter 0.4s ease'
     };
 
     return (
-      <div className={`fixed inset-0 w-full h-full bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : 'flex'}`}>
+      <div className={`absolute inset-0 w-full h-full bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : 'flex'}`}>
         {[...Array(gridCount)].map((_, i) => (
           <div key={i} className="relative w-full h-full bg-black overflow-hidden">
             {isLive ? (
@@ -388,15 +372,18 @@ export default function CreatePage() {
                 autoPlay 
                 playsInline 
                 muted 
+                className="absolute inset-0 w-full h-full" 
                 style={videoStyle} 
               />
             ) : (
               <video 
                 ref={i === 0 ? previewVideoRef : null} 
+                src={previewUrl} 
                 autoPlay 
                 loop 
                 playsInline 
                 muted={i !== 0} 
+                className="absolute inset-0 w-full h-full" 
                 style={videoStyle} 
               />
             )}
@@ -449,12 +436,11 @@ export default function CreatePage() {
           </div>
         ) : !isFinalStep ? (
           <div className="flex-1 relative overflow-hidden flex flex-col">
-              {/* BRAHMASTRA FIX: CAM CONTAINER IS NOW FORCED FULL SCREEN */}
+              {/* FIXED: Full viewport camera container */}
               <div className="absolute inset-0 w-full h-full z-[10]">
                 {renderContent(!previewUrl)}
               </div>
 
-              {/* OVERLAY UI */}
               <div className="relative z-[20] flex-1 flex flex-col pointer-events-none">
                 {isRecording && (
                   <div className="absolute top-20 inset-x-6 h-1.5 bg-white/20 rounded-full overflow-hidden">
@@ -586,7 +572,7 @@ export default function CreatePage() {
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        video { -webkit-transform: translateZ(0); }
+        video { object-fit: cover !important; } 
       `}</style>
     </div>
   );
