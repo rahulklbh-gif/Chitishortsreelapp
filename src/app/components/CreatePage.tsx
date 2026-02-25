@@ -109,18 +109,24 @@ export default function CreatePage() {
     };
   }, []);
 
-  // CAMERA KILLER FIX: Preview aane par camera band hoga aur video load hoga
+  // FIX 3: BLACK SCREEN PREVIEW FIX
   useEffect(() => {
     if (previewUrl) {
+        // Kill existing camera tracks to free hardware for preview
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
             streamRef.current = null;
         }
         if (previewVideoRef.current) {
             previewVideoRef.current.load();
-            setTimeout(() => {
-              previewVideoRef.current?.play().catch(e => console.log("Preview play blocked", e));
-            }, 200);
+            const playPreview = async () => {
+              try {
+                await previewVideoRef.current?.play();
+              } catch (e) {
+                console.log("Preview auto-play waited for user");
+              }
+            };
+            playPreview();
         }
     }
   }, [previewUrl]);
@@ -160,18 +166,22 @@ export default function CreatePage() {
 
   const initCamera = useCallback(async () => {
     try {
-      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop());
+      }
+      // FIX 1 & 2: Dynamic Full Screen constraints
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: { ideal: facing }, 
-          aspectRatio: { ideal: 9/16 },
           width: { ideal: 1080 },
           height: { ideal: 1920 }
         },
         audio: true
       });
       streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
     } catch (e) {
       toast.error("Camera error!");
       setIsCameraMode(false);
@@ -206,7 +216,7 @@ export default function CreatePage() {
     chunksRef.current = [];
     const mixed = activeMusic ? getMixedStream() : streamRef.current;
     
-    // Smooth recording fix: webm with specific bitrate/codec
+    // Smooth recording: Fixed mimeType for better compatibility
     const recorder = new MediaRecorder(mixed, { 
         mimeType: 'video/webm;codecs=vp8,opus' 
     });
@@ -216,7 +226,6 @@ export default function CreatePage() {
     };
 
     recorder.onstop = () => {
-      // Changed to video/mp4 blob for better mobile preview compatibility
       const blob = new Blob(chunksRef.current, { type: 'video/mp4' });
       const url = URL.createObjectURL(blob);
       setPreviewUrl(url);
@@ -344,25 +353,25 @@ export default function CreatePage() {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
-    // FIX 1 & 2: FULL SCREEN & NO ZOOM
+    // FIX 1 & 2: FULL SCREEN & NO ZOOM (Fill and Width/Height 100%)
     const videoStyle = {
       filter: filter.style,
       transform: (facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
-      objectFit: 'cover' as const, // Ensures full fill without manual zoom distortion
+      objectFit: 'fill' as const, // Force fill to avoid zooming in
       width: '100%',
       height: '100%',
       transition: 'filter 0.4s ease'
     };
 
     return (
-      <div className={`absolute inset-0 bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : 'flex'}`}>
+      <div className={`absolute inset-0 w-full h-full bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : 'flex'}`}>
         {[...Array(gridCount)].map((_, i) => (
           <div key={i} className="relative w-full h-full bg-black overflow-hidden">
             {isLive ? (
-              <video ref={i === 0 ? videoRef : null} autoPlay playsInline muted className="w-full h-full" style={videoStyle} />
+              <video ref={i === 0 ? videoRef : null} autoPlay playsInline muted className="absolute inset-0 w-full h-full" style={videoStyle} />
             ) : (
-              // FIX 3: PREVIEW RENDER
-              <video ref={i === 0 ? previewVideoRef : null} src={previewUrl} autoPlay loop playsInline muted={i !== 0} className="w-full h-full" style={videoStyle} />
+              // FIX 3: PREVIEW RENDER (Using absolute inset-0 for full screen)
+              <video ref={i === 0 ? previewVideoRef : null} src={previewUrl} autoPlay loop playsInline muted={i !== 0} className="absolute inset-0 w-full h-full" style={videoStyle} />
             )}
           </div>
         ))}
@@ -372,7 +381,7 @@ export default function CreatePage() {
 
   return (
     <div 
-      className="fixed inset-0 bg-black text-white flex flex-col z-[999] overflow-hidden font-sans"
+      className="fixed inset-0 h-[100dvh] w-full bg-black text-white flex flex-col z-[999] overflow-hidden font-sans"
       onClick={() => { if(audioCtxRef.current) audioCtxRef.current.resume(); }}
     >
       {!isFinalStep && (
@@ -413,12 +422,15 @@ export default function CreatePage() {
           </div>
         ) : !isFinalStep ? (
           <div className="flex-1 relative overflow-hidden flex flex-col">
-              {/* FIX: CAM CONTAINER IS NOW FULL SCREEN */}
-              <div className="flex-1 w-full relative">
+              {/* FIX: CAM CONTAINER IS NOW FORCED FULL SCREEN */}
+              <div className="absolute inset-0 w-full h-full z-[10]">
                 {renderContent(!previewUrl)}
-                
+              </div>
+
+              {/* OVERLAY UI */}
+              <div className="relative z-[20] flex-1 flex flex-col">
                 {isRecording && (
-                  <div className="absolute top-20 inset-x-6 h-1.5 bg-white/20 rounded-full overflow-hidden z-[220]">
+                  <div className="absolute top-20 inset-x-6 h-1.5 bg-white/20 rounded-full overflow-hidden">
                     <div 
                       className="h-full bg-red-600 transition-all duration-1000 ease-linear"
                       style={{ width: `${(timer / durationLimit) * 100}%` }}
@@ -426,7 +438,7 @@ export default function CreatePage() {
                   </div>
                 )}
 
-                <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8 z-[210]">
+                <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8">
                     {!previewUrl && (
                         <button onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-2">
                             <div className="p-4 bg-black/40 rounded-2xl border border-white/10 backdrop-blur-md"><RefreshCw size={24}/></div>
@@ -438,27 +450,27 @@ export default function CreatePage() {
                         <span className="text-[9px] font-bold uppercase tracking-tighter">Filters</span>
                     </button>
                 </div>
-              </div>
 
-              <div className="shrink-0 w-full p-6 pb-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black to-transparent z-[210]">
-                {!previewUrl ? (
-                  <>
-                    <div className="flex bg-black/50 p-1.5 rounded-full border border-white/10 backdrop-blur-xl">
-                      {[15, 30].map(d => (
-                        <button key={d} onClick={() => setDurationLimit(d)} className={`px-7 py-2 rounded-full text-[10px] font-black transition-all ${durationLimit === d ? 'bg-white text-black' : 'text-zinc-500'}`}>{d}s</button>
-                      ))}
+                <div className="mt-auto w-full p-6 pb-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black/60 to-transparent">
+                  {!previewUrl ? (
+                    <>
+                      <div className="flex bg-black/50 p-1.5 rounded-full border border-white/10 backdrop-blur-xl">
+                        {[15, 30].map(d => (
+                          <button key={d} onClick={() => setDurationLimit(d)} className={`px-7 py-2 rounded-full text-[10px] font-black transition-all ${durationLimit === d ? 'bg-white text-black' : 'text-zinc-500'}`}>{d}s</button>
+                        ))}
+                      </div>
+                      <div className="relative flex items-center justify-center">
+                        <button onClick={isRecording ? stopRec : startRec} className="w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center">
+                            <div className={`transition-all ${isRecording ? 'w-8 h-8 bg-red-600 rounded-lg animate-pulse' : 'w-14 h-14 bg-red-600 rounded-full'}`}/></button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex gap-4 w-full px-10">
+                      <button onClick={() => {setPreviewUrl(''); setIsCameraMode(true); initCamera();}} className="flex-1 py-4 bg-zinc-900 rounded-2xl font-black uppercase text-[10px] border border-white/10">Discard</button>
+                      <button onClick={() => setIsFinalStep(true)} className="flex-1 py-4 bg-red-600 rounded-2xl font-black uppercase text-[10px]">Next</button>
                     </div>
-                    <div className="relative flex items-center justify-center">
-                      <button onClick={isRecording ? stopRec : startRec} className="w-20 h-20 rounded-full border-4 border-white/30 flex items-center justify-center">
-                          <div className={`transition-all ${isRecording ? 'w-8 h-8 bg-red-600 rounded-lg animate-pulse' : 'w-14 h-14 bg-red-600 rounded-full'}`}/></button>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex gap-4 w-full px-10">
-                    <button onClick={() => {setPreviewUrl(''); setIsCameraMode(true); initCamera();}} className="flex-1 py-4 bg-zinc-900 rounded-2xl font-black uppercase text-[10px] border border-white/10">Discard</button>
-                    <button onClick={() => setIsFinalStep(true)} className="flex-1 py-4 bg-red-600 rounded-2xl font-black uppercase text-[10px]">Next</button>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
           </div>
         ) : (
@@ -547,7 +559,7 @@ export default function CreatePage() {
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      `}</style>
+      `}`}</style>
     </div>
   );
 }
