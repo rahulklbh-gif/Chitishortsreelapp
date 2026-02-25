@@ -2,9 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.9.9 (Optimized Camera & Preview)
- * UPDATE: Fixed Full-screen constraints, No-zoom object-fit, and Preview Black Screen.
- * FIX: Added Key-based rendering to kill Black Screen on Preview & Publish.
+ * VERSION: 4.9.9 (Final Audio-Sync & Zero-Zoom Fix)
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -108,7 +106,7 @@ export default function CreatePage() {
     };
   }, []);
 
-  // FIXED: PREVIEW BLACK SCREEN FIX logic
+  // FIXED: PREVIEW BLACK SCREEN & AUDIO SYNC FIX
   useEffect(() => {
     if (previewUrl && previewVideoRef.current) {
         if (streamRef.current) {
@@ -121,13 +119,18 @@ export default function CreatePage() {
         const playPreview = async () => {
             try {
                 await vid.play();
+                // Play selected music in sync with preview
+                if (activeMusic && audioRef.current) {
+                  audioRef.current.currentTime = 0;
+                  audioRef.current.play();
+                }
             } catch (e) {
-                console.log("Auto-play blocked, waiting for user interaction");
+                console.log("Interaction required for playback");
             }
         };
         playPreview();
     }
-  }, [previewUrl]);
+  }, [previewUrl, activeMusic]);
 
   const filteredMusic = useMemo(() => {
     return musicList.filter(m => m.title?.toLowerCase().includes(query.toLowerCase()));
@@ -213,6 +216,13 @@ export default function CreatePage() {
   const startRec = () => {
     if (!streamRef.current) return;
     chunksRef.current = [];
+    
+    // Reset music to start for sync recording
+    if (activeMusic && audioRef.current) {
+      audioRef.current.currentTime = 0;
+      audioRef.current.play();
+    }
+
     const mixed = activeMusic ? getMixedStream() : streamRef.current;
     
     const recorder = new MediaRecorder(mixed, { 
@@ -230,10 +240,9 @@ export default function CreatePage() {
       setSelectedFile(new File([blob], 'chiti.mp4', { type: 'video/mp4' }));
       setIsRecording(false);
       setTimer(0);
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
+      // Don't kill audio yet, it might be needed for preview
     };
 
-    if (activeMusic && audioRef.current) audioRef.current.play();
     recorder.start(100); 
     recorderRef.current = recorder;
     setIsRecording(true);
@@ -257,6 +266,7 @@ export default function CreatePage() {
     if (countdownRef.current) {
       clearInterval(countdownRef.current);
     }
+    if (audioRef.current) audioRef.current.pause();
   };
 
   const publish = async () => {
@@ -351,12 +361,14 @@ export default function CreatePage() {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
+    // FIXED: ZERO ZOOM (objectFit: 'contain' to prevent cropping/zoom)
     const videoStyle = {
       filter: filter.style,
       transform: (facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
-      objectFit: 'cover' as const, 
+      objectFit: 'contain' as const, 
       width: '100%',
       height: '100%',
+      backgroundColor: 'black',
       transition: 'filter 0.4s ease'
     };
 
@@ -374,7 +386,6 @@ export default function CreatePage() {
                 style={videoStyle} 
               />
             ) : (
-              /* THE BLACK SCREEN KILLER FIX: Adding KEY helps React force-reload the video element */
               <video 
                 key={previewUrl}
                 ref={i === 0 ? previewVideoRef : null} 
@@ -401,7 +412,7 @@ export default function CreatePage() {
       {!isFinalStep && (
         <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[200] bg-gradient-to-b from-black/80 to-transparent">
           <button onClick={() => {
-            if(previewUrl) { setPreviewUrl(''); initCamera(); } 
+            if(previewUrl) { setPreviewUrl(''); if(audioRef.current) audioRef.current.pause(); initCamera(); } 
             else window.history.back();
           }} className="p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10">
             <X size={24}/>
@@ -478,7 +489,7 @@ export default function CreatePage() {
                     </>
                   ) : (
                     <div className="flex gap-4 w-full px-10">
-                      <button onClick={() => {setPreviewUrl(''); setIsCameraMode(true); initCamera();}} className="flex-1 py-4 bg-zinc-900 rounded-2xl font-black uppercase text-[10px] border border-white/10">Discard</button>
+                      <button onClick={() => {setPreviewUrl(''); if(audioRef.current) audioRef.current.pause(); setIsCameraMode(true); initCamera();}} className="flex-1 py-4 bg-zinc-900 rounded-2xl font-black uppercase text-[10px] border border-white/10">Discard</button>
                       <button onClick={() => setIsFinalStep(true)} className="flex-1 py-4 bg-red-600 rounded-2xl font-black uppercase text-[10px]">Next</button>
                     </div>
                   )}
@@ -488,7 +499,7 @@ export default function CreatePage() {
         ) : (
           <div className="h-full w-full bg-zinc-950 p-8 flex flex-col pt-16 z-[205]">
               <div className="flex items-center gap-6 mb-10">
-                <button onClick={() => setIsFinalStep(false)} className="p-2"><ArrowLeft size={30}/></button>
+                <button onClick={() => {setIsFinalStep(false); if(audioRef.current && activeMusic) audioRef.current.play(); }} className="p-2"><ArrowLeft size={30}/></button>
                 <h2 className="text-2xl font-black italic uppercase">Publishing</h2>
               </div>
               <div className="flex gap-6 mb-10">
@@ -517,6 +528,7 @@ export default function CreatePage() {
         )}
       </main>
 
+      {/* Filters & Music Modal same as before... */}
       {showFilters && (
         <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[300] border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
             <div className="flex justify-between items-center mb-8">
@@ -569,8 +581,8 @@ export default function CreatePage() {
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        video { object-fit: cover !important; } 
+        video { object-fit: contain !important; } 
       `}</style>
     </div>
   );
-} 
+}
