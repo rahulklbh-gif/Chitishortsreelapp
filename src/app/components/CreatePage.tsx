@@ -4,7 +4,7 @@
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
  * VERSION: 4.8.5 (Gallery-Only Music Sync)
  * UPDATE: Strictly syncs music ONLY from Gallery uploads. Camera/Existing music won't duplicate.
- * FIX: Zero Zoom Camera (1080x1920) & Preview Mirroring Fixed.
+ * FIX: Zero Zoom Resolution & Preview Mirroring Sync.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -153,9 +153,7 @@ export default function CreatePage() {
     try {
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
       
-      // FIX 1: TikTok Jaisa Full Screen (0% Face Zooming)
-      // Tumhara purana code (width: 1280, height: 720) phone ki screen me aakar bahut zoom-in ho jaata tha.
-      // Ab ye ekdum vertical high quality me record karega bina kisi cut ke.
+      // FIX 1: Zero Zoom Face Logic. Resolution switched to Portrait (1080x1920)
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: { ideal: facing }, width: { ideal: 1080 }, height: { ideal: 1920 } },
         audio: true
@@ -234,7 +232,6 @@ export default function CreatePage() {
     }
   };
 
-  // --- 🔥 SMART SYNC PUBLISH LOGIC (Gallery Only) ---
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
@@ -244,7 +241,6 @@ export default function CreatePage() {
     try {
       let fileToUpload: any = selectedFile;
 
-      // 1. Optimize Video (480p)
       try {
         setStatusText("Optimizing video...");
         const optimized = await compressVideoTo480p(selectedFile, (p) => {
@@ -255,7 +251,6 @@ export default function CreatePage() {
         console.warn("Using original file");
       }
 
-      // 2. Upload to Cloudflare R2
       const fileName = `${Date.now()}_chiti.mp4`;
       const path = `chiti_vids/${user.id}/${fileName}`;
       const finalUrl = `${R2_CONFIG.publicDomain}/${path}`;
@@ -270,10 +265,8 @@ export default function CreatePage() {
         ContentType: 'video/mp4'
       }));
 
-      // 3. 🔥 MUSIC LIBRARY SYNC (Only Gallery & No selection)
       let finalMusicId = activeMusic?.id || null;
 
-      // Condition: Agar Gallery se hai (!isCameraMode) aur pehle se koi Music select nahi kiya (!activeMusic)
       if (!isCameraMode && !activeMusic) {
         setStatusText("Syncing with Music Library...");
         const musicTitle = caption.trim() 
@@ -295,7 +288,6 @@ export default function CreatePage() {
         }
       }
 
-      // 4. SAVE TO POSTS TABLE
       setStatusText("Finalizing Post...");
       const { error: dbError } = await supabase.from('posts').insert([{
         video_url: finalUrl,
@@ -323,9 +315,7 @@ export default function CreatePage() {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
-    // FIX 2: Preview Mirroring Problem
-    // Maine yahan se `isLive &&` ki condition hata di hai. 
-    // Ab face jaisa Live mein dikhega bilkul waisa hi exact Preview video mein dikhega.
+    // FIX 2: Preview Mirroring Fix. Removed 'isLive' dependency to keep face direction consistent.
     const videoStyle = {
       filter: filter.style,
       transform: (facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
