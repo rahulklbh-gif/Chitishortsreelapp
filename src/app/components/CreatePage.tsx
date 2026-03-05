@@ -2,9 +2,8 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.8.5 (Gallery-Only Music Sync)
- * UPDATE: Strictly syncs music ONLY from Gallery uploads. Camera/Existing music won't duplicate.
- * FIX: Zero Zoom Resolution & Preview Mirroring Sync.
+ * VERSION: 4.8.6 (Ultimate Full-Screen Fix)
+ * UPDATE: Fixed camera aspect ratio to cover 100% screen height/width.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -152,10 +151,12 @@ export default function CreatePage() {
   const initCamera = useCallback(async () => {
     try {
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-      
-      // FIX 1: Zero Zoom Face Logic. Resolution switched to Portrait (1080x1920)
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: facing }, width: { ideal: 1080 }, height: { ideal: 1920 } },
+        video: { 
+            facingMode: { ideal: facing }, 
+            width: { ideal: 1920 }, // Try to get highest resolution
+            height: { ideal: 1080 } 
+        },
         audio: true
       });
       streamRef.current = stream;
@@ -315,18 +316,22 @@ export default function CreatePage() {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
-    // FIX 2: Preview Mirroring Fix. Removed 'isLive' dependency to keep face direction consistent.
+    // --- Camera FULL SCREEN Logic ---
     const videoStyle = {
       filter: filter.style,
-      transform: (facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
-      objectFit: 'cover' as const,
-      transition: 'filter 0.4s ease'
+      transform: (isLive && facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
+      objectFit: 'cover' as const, // Yeh video ko fill kar dega bina stretching ke
+      width: '100%',
+      height: '100%',
+      position: 'absolute' as const,
+      top: 0,
+      left: 0
     };
 
     return (
-      <div className={`h-full w-full bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : 'flex'}`}>
+      <div className={`absolute inset-0 bg-black ${filter.isGrid ? `grid ${filter.cols} ${filter.rows}` : ''}`}>
         {[...Array(gridCount)].map((_, i) => (
-          <div key={i} className="relative w-full h-full bg-zinc-900 overflow-hidden border-[0.5px] border-white/5">
+          <div key={i} className="relative w-full h-full overflow-hidden">
             {isLive ? (
               <video ref={i === 0 ? videoRef : null} autoPlay playsInline muted className="w-full h-full" style={videoStyle} />
             ) : (
@@ -344,7 +349,7 @@ export default function CreatePage() {
       onClick={() => { if(audioCtxRef.current) audioCtxRef.current.resume(); }}
     >
       {!isFinalStep && (
-        <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[200] bg-gradient-to-b from-black/60 to-transparent">
+        <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[250] bg-gradient-to-b from-black/60 to-transparent">
           <button onClick={() => {
             if(previewUrl) { setPreviewUrl(''); initCamera(); } 
             else window.history.back();
@@ -361,9 +366,9 @@ export default function CreatePage() {
         </header>
       )}
 
-      <main className="flex-1 relative bg-zinc-950 flex flex-col overflow-hidden">
+      <main className="flex-1 relative bg-black flex flex-col overflow-hidden">
         {!isCameraMode && !previewUrl ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-12">
+          <div className="flex-1 flex flex-col items-center justify-center gap-12 z-[210]">
             <button onClick={() => setIsCameraMode(true)} className="w-40 h-40 bg-blue-600 rounded-[50px] flex items-center justify-center relative shadow-2xl active:scale-95 transition-all">
                  <Camera size={50} className="text-white"/>
             </button>
@@ -390,12 +395,12 @@ export default function CreatePage() {
             </label>
           </div>
         ) : !isFinalStep ? (
-          <div className="flex-1 relative overflow-hidden flex flex-col">
-              <div className="flex-1 w-full relative overflow-hidden">
+          <div className="absolute inset-0 overflow-hidden flex flex-col">
+              <div className="flex-1 w-full relative h-full">
                 {renderContent(!previewUrl)}
                 
                 {isRecording && (
-                  <div className="absolute top-20 inset-x-6 h-1.5 bg-white/20 rounded-full overflow-hidden z-[220]">
+                  <div className="absolute top-24 inset-x-10 h-1.5 bg-white/20 rounded-full overflow-hidden z-[220]">
                     <div 
                       className="h-full bg-red-600 transition-all duration-1000 ease-linear"
                       style={{ width: `${(timer / durationLimit) * 100}%` }}
@@ -403,7 +408,7 @@ export default function CreatePage() {
                   </div>
                 )}
 
-                <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8 z-[210]">
+                <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8 z-[260]">
                     {!previewUrl && (
                         <button onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-2">
                             <div className="p-4 bg-black/40 rounded-2xl border border-white/10 backdrop-blur-md"><RefreshCw size={24}/></div>
@@ -417,7 +422,7 @@ export default function CreatePage() {
                 </div>
               </div>
 
-              <div className="shrink-0 w-full p-6 pb-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black to-transparent z-[210]">
+              <div className="absolute bottom-0 inset-x-0 p-6 pb-12 flex flex-col items-center gap-6 bg-gradient-to-t from-black/80 to-transparent z-[260]">
                 {!previewUrl ? (
                   <>
                     <div className="flex bg-black/50 p-1.5 rounded-full border border-white/10 backdrop-blur-xl">
@@ -436,7 +441,7 @@ export default function CreatePage() {
                     </div>
                   </>
                 ) : (
-                  <div className="flex gap-4 w-full max-sm">
+                  <div className="flex gap-4 w-full max-w-sm">
                     <button onClick={() => {setPreviewUrl(''); setIsCameraMode(true);}} className="flex-1 py-4 bg-zinc-900 rounded-2xl font-black uppercase text-[10px] border border-white/10">Discard</button>
                     <button onClick={() => setIsFinalStep(true)} className="flex-1 py-4 bg-red-600 rounded-2xl font-black uppercase text-[10px]">Next</button>
                   </div>
@@ -444,16 +449,18 @@ export default function CreatePage() {
               </div>
           </div>
         ) : (
-          <div className="h-full w-full bg-zinc-950 p-8 flex flex-col pt-16">
+          <div className="h-full w-full bg-zinc-950 p-8 flex flex-col pt-16 z-[300]">
               <div className="flex items-center gap-6 mb-10">
                 <button onClick={() => setIsFinalStep(false)} className="p-2"><ArrowLeft size={30}/></button>
                 <h2 className="text-2xl font-black italic uppercase">Publishing</h2>
               </div>
               <div className="flex gap-6 mb-10">
-                 <div className="w-32 h-48 bg-zinc-900 rounded-3xl overflow-hidden border border-white/10 relative shrink-0">
-                   {renderContent(false)}
-                 </div>
-                 <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Caption your short..." className="flex-1 bg-transparent border-none outline-none font-bold text-lg h-40 resize-none pt-4" />
+                  <div className="w-32 h-48 bg-zinc-900 rounded-3xl overflow-hidden border border-white/10 relative shrink-0">
+                    <div className="w-full h-full relative">
+                        {renderContent(false)}
+                    </div>
+                  </div>
+                  <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Caption your short..." className="flex-1 bg-transparent border-none outline-none font-bold text-lg h-40 resize-none pt-4" />
               </div>
 
               {isUploading && (
@@ -477,7 +484,7 @@ export default function CreatePage() {
 
       {/* Filters Modal */}
       {showFilters && (
-        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[300] border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
+        <div className="absolute bottom-0 inset-x-0 bg-zinc-950 p-8 rounded-t-[40px] z-[450] border-t border-white/10 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]">
             <div className="flex justify-between items-center mb-8">
               <h3 className="font-black italic uppercase text-lg">Visual Studio</h3>
               <button onClick={() => setShowFilters(false)} className="p-2 bg-white/5 rounded-full"><X size={20}/></button>
@@ -497,7 +504,7 @@ export default function CreatePage() {
 
       {/* Music Library Modal */}
       {showMusic && (
-        <div className="absolute inset-0 bg-[#000000] z-[400] p-6 pt-12 flex flex-col">
+        <div className="absolute inset-0 bg-[#000000] z-[500] p-6 pt-12 flex flex-col">
             <div className="flex justify-between items-center mb-6">
                 <h2 className="text-4xl font-black italic text-pink-500 uppercase tracking-tighter">Library</h2>
                 <button onClick={() => {setShowMusic(false); audioRef.current?.pause(); setAudioPlayId(null);}} className="p-3 bg-white/10 rounded-full"><X size={24}/></button>
@@ -529,6 +536,7 @@ export default function CreatePage() {
       <style jsx global>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        video { width: 100% !important; height: 100% !important; object-fit: cover !important; }
       `}</style>
     </div>
   );
