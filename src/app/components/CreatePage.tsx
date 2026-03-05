@@ -2,8 +2,8 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.8.6 (Ultimate Full-Screen Fix)
- * UPDATE: Fixed camera aspect ratio to cover 100% screen height/width.
+ * VERSION: 4.8.7 (Enhanced Auto-Preview Logic)
+ * UPDATE: Fixed immediate auto-play after recording stop.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -108,10 +108,21 @@ export default function CreatePage() {
     };
   }, []);
 
+  // --- AUTO-PLAY PREVIEW LOGIC ---
   useEffect(() => {
     if (previewUrl && previewVideoRef.current) {
-        previewVideoRef.current.load();
-        previewVideoRef.current.play().catch(e => console.log("Auto-preview play blocked", e));
+        const playPreview = async () => {
+            try {
+                previewVideoRef.current!.muted = true; // Ensure muted for auto-play success
+                await previewVideoRef.current!.load();
+                await previewVideoRef.current!.play();
+            } catch (e) {
+                console.log("Auto-preview play failed, retrying...", e);
+                // Fallback for some browsers
+                setTimeout(() => previewVideoRef.current?.play(), 200);
+            }
+        };
+        playPreview();
     }
   }, [previewUrl]);
 
@@ -154,7 +165,7 @@ export default function CreatePage() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
             facingMode: { ideal: facing }, 
-            width: { ideal: 1920 }, // Try to get highest resolution
+            width: { ideal: 1920 }, 
             height: { ideal: 1080 } 
         },
         audio: true
@@ -194,21 +205,31 @@ export default function CreatePage() {
     if (!streamRef.current) return;
     chunksRef.current = [];
     const mixed = activeMusic ? getMixedStream() : streamRef.current;
-    const recorder = new MediaRecorder(mixed, { mimeType: 'video/webm' });
+    
+    // Using a more standard video/mp4 if available, otherwise webm
+    const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
+    const recorder = new MediaRecorder(mixed, { mimeType });
 
-    recorder.ondataavailable = (e) => chunksRef.current.push(e.data);
+    recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
+
     recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: 'video/webm' });
+      const blob = new Blob(chunksRef.current, { type: mimeType });
       const url = URL.createObjectURL(blob);
+      
+      // Stop all tracks to release camera
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      
       setPreviewUrl(url);
-      setSelectedFile(new File([blob], 'chiti.webm'));
+      setSelectedFile(new File([blob], `chiti.${mimeType.split('/')[1]}`));
       setIsRecording(false);
       setTimer(0);
       if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0; }
     };
 
     if (activeMusic && audioRef.current) audioRef.current.play();
-    recorder.start();
+    recorder.start(1000); // Collect data every 1s to prevent data loss
     recorderRef.current = recorder;
     setIsRecording(true);
     setTimer(0);
@@ -316,11 +337,10 @@ export default function CreatePage() {
     const filter = FILTERS_DATA[selectedFilter];
     const gridCount = filter.isGrid ? filter.gridCount : 1;
     
-    // --- Camera FULL SCREEN Logic ---
     const videoStyle = {
       filter: filter.style,
       transform: (isLive && facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
-      objectFit: 'cover' as const, // Yeh video ko fill kar dega bina stretching ke
+      objectFit: 'cover' as const,
       width: '100%',
       height: '100%',
       position: 'absolute' as const,
@@ -335,7 +355,16 @@ export default function CreatePage() {
             {isLive ? (
               <video ref={i === 0 ? videoRef : null} autoPlay playsInline muted className="w-full h-full" style={videoStyle} />
             ) : (
-              <video ref={i === 0 ? previewVideoRef : null} src={previewUrl} autoPlay loop playsInline muted={i !== 0} className="w-full h-full" style={videoStyle} />
+              <video 
+                ref={i === 0 ? previewVideoRef : null} 
+                src={previewUrl} 
+                autoPlay 
+                loop 
+                playsInline 
+                muted={true} // Start muted to ensure auto-play
+                className="w-full h-full" 
+                style={videoStyle} 
+              />
             )}
           </div>
         ))}
