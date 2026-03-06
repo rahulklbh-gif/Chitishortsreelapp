@@ -2,8 +2,8 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.9.0 (Multi-Segment Camera Sync)
- * UPDATE: Added Pause/Resume recording like YouTube Shorts.
+ * VERSION: 4.9.0 (YouTube Style Multi-Segment Camera)
+ * UPDATE: Added Pause/Resume recording, Multi-segment timer, and refined hardware release.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -151,12 +151,7 @@ export default function CreatePage() {
     try {
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: { ideal: facing }, 
-          aspectRatio: 0.5625, // 9:16 for proper mobile view
-          width: { ideal: 1280 }, 
-          height: { ideal: 720 } 
-        },
+        video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 }, aspectRatio: 0.5625 },
         audio: true
       });
       streamRef.current = stream;
@@ -178,7 +173,7 @@ export default function CreatePage() {
     const dest = audioCtxRef.current.createMediaStreamDestination();
     const micSource = audioCtxRef.current.createMediaStreamSource(streamRef.current);
     const micGain = audioCtxRef.current.createGain();
-    micGain.gain.value = 0.2; 
+    micGain.gain.value = 0.4; 
     const musicSource = audioCtxRef.current.createMediaElementSource(audioRef.current);
     const musicGain = audioCtxRef.current.createGain();
     musicGain.gain.value = 1.0; 
@@ -190,14 +185,14 @@ export default function CreatePage() {
     return new MediaStream([streamRef.current.getVideoTracks()[0], dest.stream.getAudioTracks()[0]]);
   };
 
-  // --- 🔥 UPDATED START RECORDING (Supports Multi-Segment) ---
+  // --- 🔥 UPDATED START RECORDING (YouTube Style Multi-Segment) ---
   const startRec = () => {
     if (!streamRef.current) return;
     
-    // YouTube style: Agar pause ke baad dobara start kar rahe ho toh chunks mat clear karo
+    // Safety: Clear previous interval if any
+    if (countdownRef.current) clearInterval(countdownRef.current);
+
     const mixed = activeMusic ? getMixedStream() : streamRef.current;
-    
-    // Check supported mime types
     const mimeType = MediaRecorder.isTypeSupported('video/mp4') ? 'video/mp4' : 'video/webm';
     const recorder = new MediaRecorder(mixed, { mimeType });
 
@@ -206,19 +201,18 @@ export default function CreatePage() {
     };
 
     recorder.onstop = () => {
-      // Jab final limit hit ho ya stop button dabaye tabhi preview dikhaye
+      // If limit reached or manually finalized, create preview
       if (timer >= durationLimit || !isRecording) {
-        finalizeRecording();
+         // This is handled in finalizeRecording manually to avoid accidental triggers
       }
     };
 
     if (activeMusic && audioRef.current) {
-      // Sync music with current timer position
-      audioRef.current.currentTime = timer;
-      audioRef.current.play();
+        audioRef.current.currentTime = timer;
+        audioRef.current.play();
     }
 
-    recorder.start(100); // Capture in small chunks for better merging
+    recorder.start(100); // Capture chunks every 100ms for better merging
     recorderRef.current = recorder;
     setIsRecording(true);
 
@@ -226,6 +220,7 @@ export default function CreatePage() {
       setTimer(prev => {
         if (prev >= durationLimit) {
           stopRec();
+          finalizeRecording();
           return durationLimit;
         }
         return prev + 1;
@@ -248,7 +243,7 @@ export default function CreatePage() {
     setPreviewUrl(url);
     setSelectedFile(new File([blob], 'chiti_short.mp4', { type: 'video/mp4' }));
     
-    // Release Hardware
+    // Stop Camera Tracks
     if (streamRef.current) {
         streamRef.current.getTracks().forEach(t => t.stop());
         streamRef.current = null;
@@ -368,7 +363,7 @@ export default function CreatePage() {
       {!isFinalStep && (
         <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[200] bg-gradient-to-b from-black/60 to-transparent">
           <button onClick={() => {
-            if(previewUrl) { setPreviewUrl(''); setTimer(0); chunksRef.current = []; initCamera(); } 
+            if(previewUrl || timer > 0) { setPreviewUrl(''); setTimer(0); chunksRef.current = []; initCamera(); } 
             else window.history.back();
           }} className="p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10">
             <X size={24}/>
@@ -416,11 +411,11 @@ export default function CreatePage() {
               <div className="flex-1 w-full relative overflow-hidden">
                 {renderContent(!previewUrl)}
                 
-                {/* Timer Bar (YouTube Style) */}
-                <div className="absolute top-20 inset-x-6 h-1.5 bg-white/20 rounded-full overflow-hidden z-[220]">
+                {/* YouTube Style Multi-Segment Timer Bar */}
+                <div className="absolute top-20 inset-x-6 h-1.5 bg-white/20 rounded-full overflow-hidden z-[220] flex gap-0.5">
                     <div 
-                        className="h-full bg-red-600 transition-all duration-300 ease-linear"
-                        style={{ width: `${(timer / durationLimit) * 100}%` }}
+                      className="h-full bg-red-600 transition-all duration-300 ease-linear"
+                      style={{ width: `${(timer / durationLimit) * 100}%` }}
                     />
                 </div>
 
@@ -435,11 +430,10 @@ export default function CreatePage() {
                         <div className="p-4 bg-black/40 rounded-2xl border border-white/10 text-cyan-400 backdrop-blur-md"><Sparkles size={24}/></div>
                         <span className="text-[9px] font-bold uppercase tracking-tighter">Filters</span>
                     </button>
-                    {/* Add Segment Check Icon if some video is recorded but not finished */}
                     {timer > 0 && !isRecording && !previewUrl && (
                          <button onClick={finalizeRecording} className="flex flex-col items-center gap-2">
                             <div className="p-4 bg-green-600 rounded-2xl shadow-lg animate-bounce"><Check size={24}/></div>
-                            <span className="text-[9px] font-bold uppercase tracking-tighter">Done</span>
+                            <span className="text-[9px] font-bold uppercase tracking-tighter">Finish</span>
                         </button>
                     )}
                 </div>
@@ -555,4 +549,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-}
+} 
