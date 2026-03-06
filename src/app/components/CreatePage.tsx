@@ -2,7 +2,7 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.9.1 (STUTTER FIX + PREVIEW MIRROR FIX + LIVE TIMER)
+ * VERSION: 4.9.2 (MIRROR FIX + PREVIEW BACK BUTTON + STABLE)
  * STATUS: FULL UNCUT CODE - NO FUNCTIONS REMOVED
  */
 
@@ -11,7 +11,7 @@ import {
   Upload, Video, Sparkles, Loader2, Send, X, Camera, 
   RefreshCw, Music, Check, Play, Pause, Zap, ArrowLeft, 
   ShieldCheck, Search, Info, Settings, Scissors, HardDrive,
-  MonitorPlay, Mic, Volume2, Clapperboard, Layers, Trash2, Type
+  MonitorPlay, Mic, Volume2, Clapperboard, Layers, Trash2, Type, ChevronLeft
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -19,7 +19,7 @@ import { supabase } from '@/lib/supabase';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import { compressVideoTo480p } from '@/lib/videoCompression';
 
-// --- CLOUDFLARE R2 CONFIG (STRICTLY PRESERVED) ---
+// --- CLOUDFLARE R2 CONFIG ---
 const R2_CONFIG = {
   endpoint: "https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com",
   accessKeyId: "bace896e3eba07cdbcb983394bd20da1", 
@@ -28,7 +28,7 @@ const R2_CONFIG = {
   publicDomain: "https://cdn.chitishort.store"
 };
 
-// --- ALL FILTERS DATA (STRICTLY PRESERVED) ---
+// --- FILTERS DATA ---
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "none", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
   crystal: { name: "Crystal Glow", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
@@ -180,7 +180,6 @@ export default function CreatePage() {
     if (isCameraMode && !previewUrl) initCamera();
   }, [isCameraMode, initCamera, previewUrl]);
 
-  // Audio Mixing Logic (Full Original Logic)
   const getMixedStream = () => {
     if (!streamRef.current || !audioRef.current) return streamRef.current;
     const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
@@ -201,7 +200,6 @@ export default function CreatePage() {
     chunksRef.current = [];
     const mixed = activeMusic ? getMixedStream() : streamRef.current;
     
-    // STUTTER FIX: Better bitrates and encoding frequency
     const recorder = new MediaRecorder(mixed, { 
         mimeType: 'video/webm;codecs=vp8,opus',
         videoBitsPerSecond: 2500000 
@@ -218,12 +216,11 @@ export default function CreatePage() {
     };
 
     if (activeMusic && audioRef.current) audioRef.current.play();
-    recorder.start(100); // 100ms chunks for smooth stream
+    recorder.start(100); 
     recorderRef.current = recorder;
     setIsRecording(true);
     setTimer(0);
     
-    // LIVE TIMER LOGIC
     countdownRef.current = setInterval(() => {
       setTimer(prev => {
         if (prev >= durationLimit) { stopRec(); return durationLimit; }
@@ -263,7 +260,7 @@ export default function CreatePage() {
     setTextOverlays(prev => prev.map(t => t.id === draggingId ? { ...t, x, y } : t));
   };
 
-  // --- PUBLISH ENGINE (STRICTLY PRESERVED) ---
+  // --- PUBLISH ENGINE ---
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
@@ -344,6 +341,7 @@ export default function CreatePage() {
                 className="w-full h-full object-cover" 
                 style={{
                   filter: filter.style,
+                  // Camera Mirroring only in Live Preview
                   transform: (facing === 'user') ? 'scaleX(-1)' : 'none',
                 }} 
               />
@@ -355,7 +353,8 @@ export default function CreatePage() {
                   autoPlay loop playsInline 
                   muted={i !== 0} 
                   className="w-full h-full object-cover" 
-                  style={{ filter: filter.style, transform: 'none' }} // PREVIEW MIRROR FIX: ALWAYS NONE
+                  // PREVIEW MIRROR FIX: Transformation is ALWAYS none for recorded video
+                  style={{ filter: filter.style, transform: 'none' }} 
                 />
                 {/* DRAGGABLE TEXT LAYER */}
                 {i === 0 && textOverlays.map(t => (
@@ -388,13 +387,21 @@ export default function CreatePage() {
     >
       {!isFinalStep && (
         <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[500] bg-gradient-to-b from-black/70 to-transparent">
-          <button onClick={() => {
-            if(previewUrl) { setPreviewUrl(''); setTextOverlays([]); initCamera(); } 
-            else if(isCameraMode) setIsCameraMode(false);
-            else window.history.back();
-          }} className="p-3 bg-black/20 backdrop-blur-xl rounded-full border border-white/10">
-            <X size={24}/>
-          </button>
+          {previewUrl ? (
+            // BACK BUTTON IN PREVIEW MODE
+            <button onClick={() => { setPreviewUrl(''); setTextOverlays([]); initCamera(); }} className="flex items-center gap-2 p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10 text-white font-black uppercase text-[10px] px-4">
+              <ChevronLeft size={20}/>
+              Back
+            </button>
+          ) : (
+            <button onClick={() => {
+              if(isCameraMode) setIsCameraMode(false);
+              else window.history.back();
+            }} className="p-3 bg-black/20 backdrop-blur-xl rounded-full border border-white/10">
+              <X size={24}/>
+            </button>
+          )}
+
           <button onClick={() => setShowMusic(true)} className="flex items-center gap-2 bg-white/10 backdrop-blur-3xl px-5 py-2 rounded-full border border-white/20">
             <Music size={16} className="text-pink-500"/>
             <span className="text-[11px] font-black uppercase truncate max-w-[120px]">{activeMusic ? activeMusic.title : "Add Sound"}</span>
@@ -450,7 +457,6 @@ export default function CreatePage() {
                         <button key={d} onClick={() => setDurationLimit(d)} className={`px-6 py-2 rounded-full text-[10px] font-black transition-all ${durationLimit === d ? 'bg-white text-black' : 'text-zinc-500'}`}>{d}s</button>
                       ))}
                     </div>
-                    {/* VISIBLE TIMER BADGE */}
                     {isRecording && (
                         <div className="bg-red-600 px-3 py-1 rounded text-[10px] font-black animate-pulse flex items-center gap-1">
                             <div className="w-1.5 h-1.5 bg-white rounded-full"/>
@@ -529,7 +535,7 @@ export default function CreatePage() {
         </div>
       )}
 
-      {/* MUSIC LIBRARY (STRICTLY RESTORED) */}
+      {/* MUSIC LIBRARY */}
       {showMusic && (
         <div className="absolute inset-0 bg-black z-[900] p-6 pt-16 flex flex-col">
             <div className="flex justify-between items-center mb-8">
@@ -566,4 +572,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-} 
+}
