@@ -2,8 +2,8 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.8.6 (Mirroring Fix Integrated)
- * UPDATE: Strictly fixed camera mirroring in preview while keeping all 4.8.5 functions intact.
+ * VERSION: 4.8.7 (Full Code - YouTube Camera + Text Overlay)
+ * UPDATE: Strictly integrated YT-style text system into the full 4.8.5 framework.
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -11,7 +11,7 @@ import {
   Upload, Video, Sparkles, Loader2, Send, X, Camera, 
   RefreshCw, Music, Check, Play, Pause, Zap, ArrowLeft, 
   ShieldCheck, Search, Info, Settings, Scissors, HardDrive,
-  MonitorPlay, Mic, Volume2, Clapperboard, Layers, Trash2
+  MonitorPlay, Mic, Volume2, Clapperboard, Layers, Trash2, Type
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -82,6 +82,12 @@ export default function CreatePage() {
   const [activeMusic, setActiveMusic] = useState<any>(null);
   const [isFinalStep, setIsFinalStep] = useState(false);
   const [audioPlayId, setAudioPlayId] = useState<string | null>(null);
+
+  // --- YT TEXT SYSTEM STATE ---
+  const [textOverlays, setTextOverlays] = useState<any[]>([]);
+  const [isAddingText, setIsAddingText] = useState(false);
+  const [currentText, setCurrentText] = useState("");
+  const [currentColor, setCurrentColor] = useState("#ffffff");
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -226,6 +232,19 @@ export default function CreatePage() {
     }
   };
 
+  const handleAddText = () => {
+    if (!currentText.trim()) { setIsAddingText(false); return; }
+    setTextOverlays([...textOverlays, { 
+      id: Date.now(), 
+      text: currentText, 
+      color: currentColor,
+      x: 50, 
+      y: 40 
+    }]);
+    setCurrentText("");
+    setIsAddingText(false);
+  };
+
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
@@ -321,25 +340,31 @@ export default function CreatePage() {
                 className="w-full h-full object-cover" 
                 style={{
                   filter: filter.style,
-                  // Camera Mirror Logic
                   transform: (facing === 'user') ? 'scaleX(-1)' : 'scaleX(1)',
                 }} 
               />
             ) : (
-              <video 
-                ref={i === 0 ? previewVideoRef : null} 
-                src={previewUrl} 
-                autoPlay 
-                loop 
-                playsInline 
-                muted={i !== 0} 
-                className="w-full h-full object-cover" 
-                style={{
-                  filter: filter.style,
-                  // Preview NO Mirror Logic (Same as recorded file)
-                  transform: 'scaleX(1)',
-                }} 
-              />
+              <div className="w-full h-full relative">
+                <video 
+                  ref={i === 0 ? previewVideoRef : null} 
+                  src={previewUrl} 
+                  autoPlay 
+                  loop 
+                  playsInline 
+                  muted={i !== 0} 
+                  className="w-full h-full object-cover" 
+                  style={{ filter: filter.style }} 
+                />
+                {/* Text Layer on Preview Only */}
+                {i === 0 && textOverlays.map(t => (
+                  <div key={t.id} className="absolute flex items-center gap-2 group cursor-default" style={{ top: `${t.y}%`, left: `${t.x}%`, transform: 'translate(-50%, -50%)' }}>
+                    <span style={{ color: t.color }} className="text-2xl font-black italic uppercase drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] px-2">{t.text}</span>
+                    <button onClick={() => setTextOverlays(textOverlays.filter(x => x.id !== t.id))} className="bg-red-600 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Trash2 size={14}/>
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         ))}
@@ -355,7 +380,7 @@ export default function CreatePage() {
       {!isFinalStep && (
         <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[200] bg-gradient-to-b from-black/60 to-transparent">
           <button onClick={() => {
-            if(previewUrl) { setPreviewUrl(''); initCamera(); } 
+            if(previewUrl) { setPreviewUrl(''); setTextOverlays([]); initCamera(); } 
             else window.history.back();
           }} className="p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10">
             <X size={24}/>
@@ -413,10 +438,15 @@ export default function CreatePage() {
                 )}
 
                 <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-8 z-[210]">
-                    {!previewUrl && (
+                    {!previewUrl ? (
                         <button onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-2">
                             <div className="p-4 bg-black/40 rounded-2xl border border-white/10 backdrop-blur-md"><RefreshCw size={24}/></div>
                             <span className="text-[9px] font-bold uppercase tracking-tighter">Flip</span>
+                        </button>
+                    ) : (
+                        <button onClick={() => setIsAddingText(true)} className="flex flex-col items-center gap-2">
+                            <div className="p-4 bg-black/40 rounded-2xl border border-white/10 text-yellow-400 backdrop-blur-md"><Type size={24}/></div>
+                            <span className="text-[9px] font-bold uppercase tracking-tighter">Text</span>
                         </button>
                     )}
                     <button onClick={() => setShowFilters(true)} className="flex flex-col items-center gap-2">
@@ -446,7 +476,7 @@ export default function CreatePage() {
                   </>
                 ) : (
                   <div className="flex gap-4 w-full max-sm">
-                    <button onClick={() => {setPreviewUrl(''); setIsCameraMode(true);}} className="flex-1 py-4 bg-zinc-900 rounded-2xl font-black uppercase text-[10px] border border-white/10">Discard</button>
+                    <button onClick={() => {setPreviewUrl(''); setTextOverlays([]); setIsCameraMode(true);}} className="flex-1 py-4 bg-zinc-900 rounded-2xl font-black uppercase text-[10px] border border-white/10">Discard</button>
                     <button onClick={() => setIsFinalStep(true)} className="flex-1 py-4 bg-red-600 rounded-2xl font-black uppercase text-[10px]">Next</button>
                   </div>
                 )}
@@ -483,6 +513,31 @@ export default function CreatePage() {
           </div>
         )}
       </main>
+
+      {/* Text Editor Overlay */}
+      {isAddingText && (
+        <div className="fixed inset-0 z-[500] bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6">
+          <input 
+            autoFocus 
+            value={currentText} 
+            onChange={e => setCurrentText(e.target.value)} 
+            className="bg-transparent text-center text-4xl font-black italic uppercase outline-none w-full border-none" 
+            style={{ color: currentColor }} 
+            placeholder="TYPE HERE..." 
+          />
+          <div className="flex gap-4 mt-12 overflow-x-auto p-2">
+             {['#ffffff', '#ff0000', '#00ff00', '#0088ff', '#ffff00', '#ff00ff', '#000000'].map(c => (
+               <button 
+                 key={c} 
+                 onClick={() => setCurrentColor(c)} 
+                 className={`w-10 h-10 rounded-full border-2 ${currentColor === c ? 'border-white scale-125' : 'border-white/20'}`} 
+                 style={{ backgroundColor: c }} 
+               />
+             ))}
+          </div>
+          <button onClick={handleAddText} className="mt-12 bg-white text-black px-12 py-4 rounded-full font-black uppercase tracking-widest active:scale-95 transition-all">Done</button>
+        </div>
+      )}
 
       {/* Filters Modal */}
       {showFilters && (
