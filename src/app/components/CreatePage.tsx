@@ -3,7 +3,7 @@
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
  * VERSION: 4.9.5 (PRO TEXT SYSTEM + FINAL MIRROR SYNC)
- * STATUS: FULL UNCUT CODE - PRESERVED ALL FUNCTIONS
+ * STATUS: FULL UNCUT CODE - NO FUNCTIONS REMOVED
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -11,8 +11,8 @@ import {
   Upload, Video, Sparkles, Loader2, Send, X, Camera, 
   RefreshCw, Music, Check, Play, Pause, Zap, ArrowLeft, 
   ShieldCheck, Search, Info, Settings, Scissors, HardDrive,
-  MonitorPlay, Mic, Volume2, Clapperboard, Layers, Trash2, Type,
-  CaseSensitive, TypeasIcon, Maximize2
+  MonitorPlay, Mic, Volume2, Clapperboard, Layers, Trash2, Type, 
+  ChevronLeft, CaseSensitive, Maximize2
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -29,6 +29,7 @@ const R2_CONFIG = {
   publicDomain: "https://cdn.chitishort.store"
 };
 
+// --- FILTERS DATA ---
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "none", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
   crystal: { name: "Crystal Glow", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
@@ -52,6 +53,7 @@ const FILTERS_DATA: any = {
   triple: { name: "Stacked", style: "none", isGrid: true, gridCount: 3, cols: "grid-cols-1", rows: "grid-rows-3", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" }
 };
 
+// --- FONT STYLES ---
 const FONT_STYLES = [
   { id: 'classic', name: 'CLASSIC', class: 'font-black italic' },
   { id: 'modern', name: 'MODERN', class: 'font-sans font-light tracking-widest' },
@@ -94,7 +96,7 @@ export default function CreatePage() {
   const [isFinalStep, setIsFinalStep] = useState(false);
   const [audioPlayId, setAudioPlayId] = useState<string | null>(null);
 
-  // --- ENHANCED TEXT SYSTEM STATE ---
+  // --- ADVANCED TEXT SYSTEM STATE ---
   const [textOverlays, setTextOverlays] = useState<any[]>([]);
   const [isAddingText, setIsAddingText] = useState(false);
   const [currentText, setCurrentText] = useState("");
@@ -115,6 +117,7 @@ export default function CreatePage() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Initialize Data
   useEffect(() => {
     const loadMusic = async () => {
       const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false });
@@ -128,6 +131,7 @@ export default function CreatePage() {
     };
   }, []);
 
+  // Sync Video Loading
   useEffect(() => {
     if (previewUrl && previewVideoRef.current) {
         previewVideoRef.current.load();
@@ -135,10 +139,12 @@ export default function CreatePage() {
     }
   }, [previewUrl]);
 
+  // Search logic for music
   const filteredMusic = useMemo(() => {
     return musicList.filter(m => m.title?.toLowerCase().includes(query.toLowerCase()));
   }, [musicList, query]);
 
+  // Playback logic
   const playAudio = async (url: string, id: string) => {
     if (!audioRef.current) return;
     if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
@@ -161,6 +167,7 @@ export default function CreatePage() {
     } catch (err) { console.error(err); }
   };
 
+  // --- CAMERA ENGINE ---
   const initCamera = useCallback(async () => {
     try {
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
@@ -239,7 +246,7 @@ export default function CreatePage() {
     if (countdownRef.current) clearInterval(countdownRef.current);
   };
 
-  // --- ENHANCED TEXT SYSTEM ACTIONS ---
+  // --- TEXT SYSTEM ACTIONS ---
   const handleAddText = () => {
     if (!currentText.trim()) { setIsAddingText(false); return; }
     setTextOverlays([...textOverlays, { 
@@ -267,6 +274,7 @@ export default function CreatePage() {
     setTextOverlays(prev => prev.map(t => t.id === draggingId ? { ...t, x, y } : t));
   };
 
+  // --- PUBLISH ENGINE ---
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
@@ -318,8 +326,7 @@ export default function CreatePage() {
         user_name: user.user_metadata?.full_name || 'Creator',
         filter_name: selectedFilter,
         music_id: finalMusicId,
-        // SAVING OVERLAYS TO PERSIST IN FEED
-        text_overlays: textOverlays 
+        text_overlays: textOverlays // SAVE OVERLAYS DATA
       }]);
 
       if (dbError) throw dbError;
@@ -360,13 +367,13 @@ export default function CreatePage() {
                   autoPlay loop playsInline 
                   muted={i !== 0} 
                   className="w-full h-full object-cover" 
+                  // PREVIEW MIRROR FIX: Ab ye recording ke camera state ko respect karega
                   style={{ 
                     filter: filter.style, 
-                    // FINAL MIRROR SYNC: Preview matches exactly what record state showed
                     transform: (facing === 'user' && isCameraMode) ? 'scaleX(-1)' : 'none' 
                   }} 
                 />
-                {/* PERSISTENT TEXT OVERLAYS */}
+                {/* DRAGGABLE TEXT LAYER */}
                 {i === 0 && textOverlays.map(t => (
                   <div 
                     key={t.id} 
@@ -376,15 +383,12 @@ export default function CreatePage() {
                     style={{ top: `${t.y}%`, left: `${t.x}%`, transform: 'translate(-50%, -50%)' }}
                   >
                     <span 
-                      style={{ color: t.color, fontSize: `${t.fontSize}px` }} 
-                      className={`${FONT_STYLES.find(f => f.id === t.fontStyle)?.class} drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] px-2 whitespace-nowrap`}
+                       style={{ color: t.color, fontSize: `${t.fontSize}px` }} 
+                       className={`${FONT_STYLES.find(f => f.id === t.fontStyle)?.class} drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] px-2 whitespace-nowrap`}
                     >
-                      {t.text}
+                        {t.text}
                     </span>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); setTextOverlays(textOverlays.filter(x => x.id !== t.id)); }} 
-                      className="bg-red-600/80 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-md"
-                    >
+                    <button onClick={(e) => { e.stopPropagation(); setTextOverlays(textOverlays.filter(x => x.id !== t.id)); }} className="bg-red-600/80 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-md">
                       <Trash2 size={16}/>
                     </button>
                   </div>
@@ -405,14 +409,20 @@ export default function CreatePage() {
     >
       {!isFinalStep && (
         <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[500] bg-gradient-to-b from-black/70 to-transparent">
-          <button onClick={() => {
-            if(previewUrl) { setPreviewUrl(''); initCamera(); } 
-            else if(isCameraMode) setIsCameraMode(false);
-            else window.history.back();
-          }} className="p-3 bg-black/20 backdrop-blur-xl rounded-full border border-white/10">
-            {previewUrl ? <ArrowLeft size={24}/> : <X size={24}/>}
-          </button>
-          
+          {previewUrl ? (
+            <button onClick={() => { setPreviewUrl(''); setTextOverlays([]); initCamera(); }} className="flex items-center gap-2 p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10 text-white font-black uppercase text-[10px] px-4">
+              <ChevronLeft size={20}/>
+              Back
+            </button>
+          ) : (
+            <button onClick={() => {
+              if(isCameraMode) setIsCameraMode(false);
+              else window.history.back();
+            }} className="p-3 bg-black/20 backdrop-blur-xl rounded-full border border-white/10">
+              <X size={24}/>
+            </button>
+          )}
+
           <button onClick={() => setShowMusic(true)} className="flex items-center gap-2 bg-white/10 backdrop-blur-3xl px-5 py-2 rounded-full border border-white/20">
             <Music size={16} className="text-pink-500"/>
             <span className="text-[11px] font-black uppercase truncate max-w-[120px]">{activeMusic ? activeMusic.title : "Add Sound"}</span>
@@ -517,7 +527,7 @@ export default function CreatePage() {
         )}
       </main>
 
-      {/* --- PRO TEXT OVERLAY EDITOR --- */}
+      {/* --- ENHANCED TEXT OVERLAY EDITOR --- */}
       {isAddingText && (
         <div className="fixed inset-0 z-[1000] bg-black/95 backdrop-blur-3xl flex flex-col p-6">
           <div className="flex justify-between items-center mb-10">
