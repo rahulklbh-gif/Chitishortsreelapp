@@ -258,6 +258,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 avatarUrl={video.user_avatar}
                 caption={video.caption}
                 filterName={video.filter_name || 'none'}
+                // 🚀 FIXED: Pass new props for text and mirroring
+                textOverlays={video.text_overlays}
+                isFrontCamera={video.is_front_camera}
               />
             ) : (
               <div className="w-full h-full bg-black flex items-center justify-center">
@@ -324,4 +327,4 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       })}
     </div>
   );
-} 
+}
