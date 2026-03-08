@@ -2,8 +2,8 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.9.2 (MIRROR FIX + PREVIEW BACK BUTTON + STABLE)
- * STATUS: FULL UNCUT CODE - NO FUNCTIONS REMOVED
+ * VERSION: 4.9.5 (PRO TEXT SYSTEM + FINAL MIRROR SYNC)
+ * STATUS: FULL UNCUT CODE - PRESERVED ALL FUNCTIONS
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -11,7 +11,8 @@ import {
   Upload, Video, Sparkles, Loader2, Send, X, Camera, 
   RefreshCw, Music, Check, Play, Pause, Zap, ArrowLeft, 
   ShieldCheck, Search, Info, Settings, Scissors, HardDrive,
-  MonitorPlay, Mic, Volume2, Clapperboard, Layers, Trash2, Type, ChevronLeft
+  MonitorPlay, Mic, Volume2, Clapperboard, Layers, Trash2, Type,
+  CaseSensitive, TypeasIcon, Maximize2
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
@@ -28,7 +29,6 @@ const R2_CONFIG = {
   publicDomain: "https://cdn.chitishort.store"
 };
 
-// --- FILTERS DATA ---
 const FILTERS_DATA: any = {
   none: { name: "Normal", style: "none", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" },
   crystal: { name: "Crystal Glow", style: "brightness(1.4) contrast(1.1) saturate(1.1)", thumb: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=100" },
@@ -51,6 +51,13 @@ const FILTERS_DATA: any = {
   sixer: { name: "6-Grid", style: "none", isGrid: true, gridCount: 6, cols: "grid-cols-2", rows: "grid-rows-3", thumb: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100" },
   triple: { name: "Stacked", style: "none", isGrid: true, gridCount: 3, cols: "grid-cols-1", rows: "grid-rows-3", thumb: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=100" }
 };
+
+const FONT_STYLES = [
+  { id: 'classic', name: 'CLASSIC', class: 'font-black italic' },
+  { id: 'modern', name: 'MODERN', class: 'font-sans font-light tracking-widest' },
+  { id: 'bold', name: 'BLOCK', class: 'font-serif font-bold' },
+  { id: 'marker', name: 'MARKER', class: 'font-mono uppercase' }
+];
 
 const s3Client = new S3Client({
   region: "auto",
@@ -87,11 +94,14 @@ export default function CreatePage() {
   const [isFinalStep, setIsFinalStep] = useState(false);
   const [audioPlayId, setAudioPlayId] = useState<string | null>(null);
 
-  // --- TEXT SYSTEM STATE ---
+  // --- ENHANCED TEXT SYSTEM STATE ---
   const [textOverlays, setTextOverlays] = useState<any[]>([]);
   const [isAddingText, setIsAddingText] = useState(false);
   const [currentText, setCurrentText] = useState("");
   const [currentColor, setCurrentColor] = useState("#ffffff");
+  const [currentFontSize, setCurrentFontSize] = useState(32);
+  const [currentFontStyle, setCurrentFontStyle] = useState('classic');
+  const [isUppercase, setIsUppercase] = useState(true);
   const [draggingId, setDraggingId] = useState<number | null>(null);
 
   // Refs
@@ -105,7 +115,6 @@ export default function CreatePage() {
   const audioCtxRef = useRef<AudioContext | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Initialize Data
   useEffect(() => {
     const loadMusic = async () => {
       const { data } = await supabase.from('music_library').select('*').order('created_at', { ascending: false });
@@ -119,7 +128,6 @@ export default function CreatePage() {
     };
   }, []);
 
-  // Sync Video Loading
   useEffect(() => {
     if (previewUrl && previewVideoRef.current) {
         previewVideoRef.current.load();
@@ -127,12 +135,10 @@ export default function CreatePage() {
     }
   }, [previewUrl]);
 
-  // Search logic for music
   const filteredMusic = useMemo(() => {
     return musicList.filter(m => m.title?.toLowerCase().includes(query.toLowerCase()));
   }, [musicList, query]);
 
-  // Playback logic
   const playAudio = async (url: string, id: string) => {
     if (!audioRef.current) return;
     if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
@@ -155,7 +161,6 @@ export default function CreatePage() {
     } catch (err) { console.error(err); }
   };
 
-  // --- CAMERA ENGINE ---
   const initCamera = useCallback(async () => {
     try {
       if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
@@ -234,13 +239,15 @@ export default function CreatePage() {
     if (countdownRef.current) clearInterval(countdownRef.current);
   };
 
-  // --- TEXT SYSTEM ACTIONS ---
+  // --- ENHANCED TEXT SYSTEM ACTIONS ---
   const handleAddText = () => {
     if (!currentText.trim()) { setIsAddingText(false); return; }
     setTextOverlays([...textOverlays, { 
       id: Date.now(), 
-      text: currentText, 
+      text: isUppercase ? currentText.toUpperCase() : currentText, 
       color: currentColor,
+      fontSize: currentFontSize,
+      fontStyle: currentFontStyle,
       x: 50, 
       y: 50 
     }]);
@@ -260,7 +267,6 @@ export default function CreatePage() {
     setTextOverlays(prev => prev.map(t => t.id === draggingId ? { ...t, x, y } : t));
   };
 
-  // --- PUBLISH ENGINE ---
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
@@ -311,7 +317,9 @@ export default function CreatePage() {
         user_id: user.id,
         user_name: user.user_metadata?.full_name || 'Creator',
         filter_name: selectedFilter,
-        music_id: finalMusicId
+        music_id: finalMusicId,
+        // SAVING OVERLAYS TO PERSIST IN FEED
+        text_overlays: textOverlays 
       }]);
 
       if (dbError) throw dbError;
@@ -341,7 +349,6 @@ export default function CreatePage() {
                 className="w-full h-full object-cover" 
                 style={{
                   filter: filter.style,
-                  // Camera Mirroring only in Live Preview
                   transform: (facing === 'user') ? 'scaleX(-1)' : 'none',
                 }} 
               />
@@ -353,20 +360,31 @@ export default function CreatePage() {
                   autoPlay loop playsInline 
                   muted={i !== 0} 
                   className="w-full h-full object-cover" 
-                  // PREVIEW MIRROR FIX: Transformation is ALWAYS none for recorded video
-                  style={{ filter: filter.style, transform: 'none' }} 
+                  style={{ 
+                    filter: filter.style, 
+                    // FINAL MIRROR SYNC: Preview matches exactly what record state showed
+                    transform: (facing === 'user' && isCameraMode) ? 'scaleX(-1)' : 'none' 
+                  }} 
                 />
-                {/* DRAGGABLE TEXT LAYER */}
+                {/* PERSISTENT TEXT OVERLAYS */}
                 {i === 0 && textOverlays.map(t => (
                   <div 
                     key={t.id} 
                     onMouseDown={() => setDraggingId(t.id)}
                     onTouchStart={() => setDraggingId(t.id)}
-                    className="absolute flex items-center gap-2 group cursor-move select-none touch-none z-[300]" 
+                    className="absolute flex flex-col items-center gap-2 group cursor-move select-none touch-none z-[300]" 
                     style={{ top: `${t.y}%`, left: `${t.x}%`, transform: 'translate(-50%, -50%)' }}
                   >
-                    <span style={{ color: t.color }} className="text-3xl font-black italic uppercase drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] px-2">{t.text}</span>
-                    <button onClick={(e) => { e.stopPropagation(); setTextOverlays(textOverlays.filter(x => x.id !== t.id)); }} className="bg-red-600 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                    <span 
+                      style={{ color: t.color, fontSize: `${t.fontSize}px` }} 
+                      className={`${FONT_STYLES.find(f => f.id === t.fontStyle)?.class} drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)] px-2 whitespace-nowrap`}
+                    >
+                      {t.text}
+                    </span>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setTextOverlays(textOverlays.filter(x => x.id !== t.id)); }} 
+                      className="bg-red-600/80 p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-md"
+                    >
                       <Trash2 size={16}/>
                     </button>
                   </div>
@@ -387,21 +405,14 @@ export default function CreatePage() {
     >
       {!isFinalStep && (
         <header className="absolute top-0 inset-x-0 p-6 flex justify-between items-center z-[500] bg-gradient-to-b from-black/70 to-transparent">
-          {previewUrl ? (
-            // BACK BUTTON IN PREVIEW MODE
-            <button onClick={() => { setPreviewUrl(''); setTextOverlays([]); initCamera(); }} className="flex items-center gap-2 p-3 bg-black/40 backdrop-blur-xl rounded-full border border-white/10 text-white font-black uppercase text-[10px] px-4">
-              <ChevronLeft size={20}/>
-              Back
-            </button>
-          ) : (
-            <button onClick={() => {
-              if(isCameraMode) setIsCameraMode(false);
-              else window.history.back();
-            }} className="p-3 bg-black/20 backdrop-blur-xl rounded-full border border-white/10">
-              <X size={24}/>
-            </button>
-          )}
-
+          <button onClick={() => {
+            if(previewUrl) { setPreviewUrl(''); initCamera(); } 
+            else if(isCameraMode) setIsCameraMode(false);
+            else window.history.back();
+          }} className="p-3 bg-black/20 backdrop-blur-xl rounded-full border border-white/10">
+            {previewUrl ? <ArrowLeft size={24}/> : <X size={24}/>}
+          </button>
+          
           <button onClick={() => setShowMusic(true)} className="flex items-center gap-2 bg-white/10 backdrop-blur-3xl px-5 py-2 rounded-full border border-white/20">
             <Music size={16} className="text-pink-500"/>
             <span className="text-[11px] font-black uppercase truncate max-w-[120px]">{activeMusic ? activeMusic.title : "Add Sound"}</span>
@@ -429,7 +440,6 @@ export default function CreatePage() {
           <div className="h-full w-full relative">
               {renderContent(!previewUrl)}
               
-              {/* SIDEBAR TOOLS */}
               <div className="absolute right-5 top-1/2 -translate-y-1/2 flex flex-col gap-6 z-[400]">
                   {!previewUrl ? (
                       <button onClick={() => setFacing(f => f === 'user' ? 'environment' : 'user')} className="flex flex-col items-center gap-1">
@@ -448,7 +458,6 @@ export default function CreatePage() {
                   </button>
               </div>
 
-              {/* RECORDING / ACTION BUTTONS */}
               <div className="absolute bottom-10 inset-x-0 flex flex-col items-center gap-6 z-[400]">
                 {!previewUrl ? (
                   <>
@@ -476,11 +485,17 @@ export default function CreatePage() {
           </div>
         ) : (
           <div className="h-full bg-zinc-950 p-8 flex flex-col pt-20">
+              <header className="absolute top-0 inset-x-0 p-6 flex items-center z-[500]">
+                <button onClick={() => setIsFinalStep(false)} className="p-3 bg-white/5 rounded-full border border-white/10">
+                  <ArrowLeft size={24}/>
+                </button>
+              </header>
+
               <div className="flex gap-4 mb-10">
-                 <div className="w-24 h-40 bg-zinc-900 rounded-2xl overflow-hidden border border-white/10 relative shrink-0">
-                    <video src={previewUrl} autoPlay loop muted className="w-full h-full object-cover"/>
-                 </div>
-                 <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Write a caption for your short..." className="flex-1 bg-transparent border-none outline-none font-bold text-lg h-32 resize-none" />
+                  <div className="w-24 h-40 bg-zinc-900 rounded-2xl overflow-hidden border border-white/10 relative shrink-0">
+                    <video src={previewUrl} autoPlay loop muted className="w-full h-full object-cover" style={{ transform: (facing === 'user' && isCameraMode) ? 'scaleX(-1)' : 'none' }}/>
+                  </div>
+                  <textarea value={caption} onChange={e => setCaption(e.target.value)} placeholder="Write a caption for your short..." className="flex-1 bg-transparent border-none outline-none font-bold text-lg h-32 resize-none" />
               </div>
 
               {isUploading && (
@@ -502,16 +517,60 @@ export default function CreatePage() {
         )}
       </main>
 
-      {/* TEXT OVERLAY EDITOR */}
+      {/* --- PRO TEXT OVERLAY EDITOR --- */}
       {isAddingText && (
-        <div className="fixed inset-0 z-[1000] bg-black/90 backdrop-blur-2xl flex flex-col items-center justify-center p-6">
-          <input autoFocus value={currentText} onChange={e => setCurrentText(e.target.value)} className="bg-transparent text-center text-4xl font-black italic uppercase outline-none w-full mb-10" style={{ color: currentColor }} placeholder="TYPE TEXT..."/>
-          <div className="flex gap-4 mb-12">
-             {['#ffffff', '#ff0000', '#00ff00', '#0088ff', '#ffff00', '#000000'].map(c => (
-               <button key={c} onClick={() => setCurrentColor(c)} className={`w-10 h-10 rounded-full border-2 ${currentColor === c ? 'border-white scale-125' : 'border-white/20'}`} style={{ backgroundColor: c }} />
-             ))}
+        <div className="fixed inset-0 z-[1000] bg-black/95 backdrop-blur-3xl flex flex-col p-6">
+          <div className="flex justify-between items-center mb-10">
+             <button onClick={() => setIsUppercase(!isUppercase)} className={`p-3 rounded-xl border ${isUppercase ? 'bg-white text-black' : 'border-white/20 text-white'}`}>
+                <CaseSensitive size={24}/>
+             </button>
+             <button onClick={handleAddText} className="bg-red-600 text-white px-8 py-3 rounded-full font-black uppercase tracking-widest">Done</button>
           </div>
-          <button onClick={handleAddText} className="bg-white text-black px-12 py-4 rounded-full font-black uppercase tracking-widest">Done</button>
+
+          <div className="flex-1 flex items-center justify-center">
+             <input 
+               autoFocus 
+               value={currentText} 
+               onChange={e => setCurrentText(e.target.value)} 
+               className={`bg-transparent text-center outline-none w-full ${FONT_STYLES.find(f => f.id === currentFontStyle)?.class}`} 
+               style={{ color: currentColor, fontSize: `${currentFontSize}px` }} 
+               placeholder="TYPE SOMETHING..."
+             />
+          </div>
+
+          <div className="space-y-8 pb-10">
+              {/* FONT STYLE PICKER */}
+              <div className="flex gap-4 overflow-x-auto no-scrollbar py-2">
+                 {FONT_STYLES.map(font => (
+                   <button 
+                     key={font.id} 
+                     onClick={() => setCurrentFontStyle(font.id)} 
+                     className={`px-6 py-2 rounded-xl whitespace-nowrap text-[10px] font-black border transition-all ${currentFontStyle === font.id ? 'bg-white text-black border-white' : 'border-white/10 text-zinc-500'}`}
+                   >
+                     {font.name}
+                   </button>
+                 ))}
+              </div>
+
+              {/* SIZE SLIDER */}
+              <div className="flex items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/10">
+                 <Maximize2 size={16} className="text-zinc-500"/>
+                 <input 
+                   type="range" min="16" max="100" 
+                   value={currentFontSize} 
+                   onChange={(e) => setCurrentFontSize(parseInt(e.target.value))}
+                   className="flex-1 accent-red-600"
+                 />
+                 <span className="text-[10px] font-black w-8">{currentFontSize}</span>
+              </div>
+
+              {/* COLOR PICKER */}
+              <div className="flex justify-between items-center overflow-x-auto no-scrollbar gap-4">
+                 {['#ffffff', '#ff0000', '#00ff00', '#0088ff', '#ffff00', '#ff00ff', '#00ffff', '#000000'].map(c => (
+                   <button key={c} onClick={() => setCurrentColor(c)} className={`w-10 h-10 rounded-full border-2 shrink-0 ${currentColor === c ? 'border-white scale-110' : 'border-transparent opacity-50'}`} style={{ backgroundColor: c }} />
+                 ))}
+              </div>
+          </div>
         </div>
       )}
 
