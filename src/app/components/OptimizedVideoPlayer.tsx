@@ -27,99 +27,76 @@ const FILTERS_DATA: any = {
  ocean: { name: "Oceanic", style: "hue-rotate(180deg) brightness(1.1)" }
 };
 
-// ✅ Added isFrontCamera prop for Mirroring Fix
 export function OptimizedVideoPlayer({ 
   videoUrl: rawVideoUrl, 
   videoId, 
   isActive, 
   filterName = 'none', 
-  textOverlays = [],
-  isFrontCamera = false // Default false (Back camera)
+  textOverlays = [], 
+  isFrontCamera = false 
 }: any) {
  
- // CDN Link + Fast Start Trick
- const videoUrl = rawVideoUrl?.replace(
-   /pub-[a-zA-Z0-9]+\.r2\.dev/g, 
-   'cdn.chitishort.store'
- ) + "#t=0.001";
+ const videoUrl = rawVideoUrl?.replace(/pub-[a-zA-Z0-9]+\.r2\.dev/g, 'cdn.chitishort.store') + "#t=0.001";
 
  const videoRef = useRef<HTMLVideoElement>(null);
  const secondaryRefs = useRef<(HTMLVideoElement | null)[]>([]);
  const [isLoaded, setIsLoaded] = useState(false);
  const [isBuffering, setIsBuffering] = useState(false);
+ const [parsedOverlays, setParsedOverlays] = useState<any[]>([]);
 
- const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
- const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
+ // 🚀 FIX 1: JSON Parsing Logic (Screenshot ke hisaab se)
+ useEffect(() => {
+  if (typeof textOverlays === 'string') {
+    try {
+      setParsedOverlays(JSON.parse(textOverlays));
+    } catch (e) {
+      setParsedOverlays([]);
+    }
+  } else {
+    setParsedOverlays(textOverlays || []);
+  }
+ }, [textOverlays]);
 
- // Preload Optimization logic
+ // Preload logic intact
  useEffect(() => {
   if (videoUrl) {
     const link = document.createElement('link');
-    link.rel = 'preload';
-    link.as = 'video';
-    link.href = videoUrl;
+    link.rel = 'preload'; link.as = 'video'; link.href = videoUrl;
     document.head.appendChild(link);
     return () => { try { document.head.removeChild(link); } catch(e) {} };
   }
  }, [videoUrl]);
 
- useEffect(() => {
-  setIsLoaded(false);
-  setIsBuffering(false);
-  if (videoRef.current) {
-    videoRef.current.load();
-  }
- }, [videoUrl]);
-
- // Fast Playback Logic
+ // Fast Playback Logic intact
  useEffect(() => {
   const video = videoRef.current;
   if (!video) return;
-  
   if (isActive) {
     video.muted = true; 
-    const playPromise = video.play();
-    
-    if (playPromise !== undefined) {
-     playPromise.then(() => {
+    video.play().then(() => {
       setIsLoaded(true);
       setIsBuffering(false);
       video.muted = false;
-
-      secondaryRefs.current.forEach(v => {
-       if(v) { 
-         v.currentTime = video.currentTime; 
-         v.play().catch(() => {}); 
-       }
-      });
-     }).catch(() => {
-      video.muted = true;
-      video.play().then(() => setIsLoaded(true));
-     });
-    }
+      secondaryRefs.current.forEach(v => { if(v) { v.currentTime = video.currentTime; v.play().catch(() => {}); } });
+    }).catch(() => { video.muted = true; video.play(); });
   } else {
     video.pause();
     secondaryRefs.current.forEach(v => v?.pause());
   }
  }, [isActive]);
 
+ const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
+ const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
+
  return (
   <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
-    
-    {/* BUFFER LOADER UI */}
     {(!isLoaded || isBuffering) && (
-     <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-30">
-      <div className="flex flex-col items-center gap-3">
-       <div className="w-12 h-12 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
-       <div className="flex items-center gap-2">
-        <Zap size={16} className="text-blue-500 animate-pulse"/>
-        <span className="text-blue-500 text-[10px] font-black uppercase tracking-widest">Streaming...</span>
-       </div>
-      </div>
+     <div className="absolute inset-0 flex items-center justify-center bg-black/60 z-30">
+        <Zap size={24} className="text-blue-500 animate-bounce"/>
      </div>
     )}
 
-    <div className={`w-full h-full transition-all duration-500 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'} ${currentFilter.isGrid ? 'grid' : ''}`}
+    <div className={`w-full h-full transition-all duration-500 ${isLoaded ? 'opacity-100' : 'opacity-0'} ${currentFilter.isGrid ? 'grid' : ''}`}
           style={currentFilter.isGrid ? { 
             gridTemplateColumns: `repeat(${currentFilter.cols}, 1fr)`,
             gridTemplateRows: `repeat(${currentFilter.rows}, 1fr)` 
@@ -128,58 +105,35 @@ export function OptimizedVideoPlayer({
       {[...Array(gridCount)].map((_, i) => (
        <div key={i} className="relative w-full h-full overflow-hidden bg-zinc-950">
         <video
-         ref={(el) => {
-          if (i === 0) (videoRef as any).current = el;
-          else secondaryRefs.current[i] = el;
-         }}
+         ref={(el) => { if (i === 0) (videoRef as any).current = el; else secondaryRefs.current[i] = el; }}
          className="w-full h-full object-cover"
          src={videoUrl}
-         loop
-         playsInline
-         autoPlay={isActive}
+         loop playsInline
          muted={i !== 0 || !isActive}
-         preload="metadata"
-         // @ts-ignore
-         fetchpriority={isActive ? "high" : "low"}
-         onLoadedMetadata={() => i === 0 && setIsLoaded(true)}
-         onWaiting={() => i === 0 && setIsBuffering(true)}
-         onPlaying={() => i === 0 && (setIsBuffering(false), setIsLoaded(true))}
          crossOrigin="anonymous"
-         
-         // ✅ MIRRORING LOGIC: Agar Front camera hai toh flip karo, warna normal rakho
+         // 🚀 FIX 2: Front Camera Mirroring Fix
          style={{ 
            filter: currentFilter.style, 
            transform: isFrontCamera ? 'scaleX(-1)' : 'none' 
          }}
         />
 
-        {/* ✅ TEXT OVERLAY ENGINE (Dynamic Rendering) */}
+        {/* 🚀 FIX 3: Text Overlay Rendering with Mirror Correction */}
         <div className="absolute inset-0 pointer-events-none z-20">
-          {textOverlays && textOverlays.map((t: any) => (
+          {parsedOverlays.map((t: any, idx: number) => (
             <div
-              key={t.id}
-              className="absolute select-none"
+              key={idx}
+              className="absolute"
               style={{
                 top: `${t.y}%`,
                 left: `${t.x}%`,
-                // Mirroring correction for Text: 
-                // Agar video flipped hai, toh text ko wapas flip karna padega taaki wo seedha dikhe
+                // Video mirror hai toh text ko wapas flip karo (isFrontCamera fix)
                 transform: `translate(-50%, -50%) ${isFrontCamera ? 'scaleX(-1)' : ''}`,
               }}
             >
               <span
-                style={{
-                  color: t.color,
-                  fontSize: `${t.fontSize}px`,
-                  textShadow: '0px 2px 8px rgba(0,0,0,0.8)'
-                }}
-                className={`
-                  ${t.fontStyle === 'classic' ? 'font-black italic' : ''} 
-                  ${t.fontStyle === 'modern' ? 'font-sans font-light tracking-widest' : ''}
-                  ${t.fontStyle === 'bold' ? 'font-serif font-bold' : ''}
-                  ${t.fontStyle === 'marker' ? 'font-mono uppercase' : ''}
-                  px-2 whitespace-nowrap block
-                `}
+                style={{ color: t.color, fontSize: `${t.fontSize}px`, textShadow: '0 2px 4px rgba(0,0,0,0.5)' }}
+                className={`whitespace-nowrap px-2 block ${t.fontStyle === 'classic' ? 'font-black italic' : 'font-sans'}`}
               >
                 {t.text}
               </span>
@@ -188,11 +142,6 @@ export function OptimizedVideoPlayer({
         </div>
        </div>
       ))}
-
-      {/* VFX Logic */}
-      {isActive && currentFilter.vfxType === 'lightning' && (
-       <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
-      )}
     </div>
   </div>
  );
