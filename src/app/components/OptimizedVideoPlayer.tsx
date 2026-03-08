@@ -27,8 +27,15 @@ const FILTERS_DATA: any = {
  ocean: { name: "Oceanic", style: "hue-rotate(180deg) brightness(1.1)" }
 };
 
-// ✅ Props mein textOverlays add kiya
-export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive, filterName = 'none', textOverlays = [] }: any) {
+// ✅ Added isFrontCamera prop for Mirroring Fix
+export function OptimizedVideoPlayer({ 
+  videoUrl: rawVideoUrl, 
+  videoId, 
+  isActive, 
+  filterName = 'none', 
+  textOverlays = [],
+  isFrontCamera = false // Default false (Back camera)
+}: any) {
  
  // CDN Link + Fast Start Trick
  const videoUrl = rawVideoUrl?.replace(
@@ -44,7 +51,7 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
  const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
  const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
 
- // Preload Optimization logic (Vaisa hi hai)
+ // Preload Optimization logic
  useEffect(() => {
   if (videoUrl) {
     const link = document.createElement('link');
@@ -64,7 +71,7 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
   }
  }, [videoUrl]);
 
- // Fast Playback Logic (Vaisa hi hai)
+ // Fast Playback Logic
  useEffect(() => {
   const video = videoRef.current;
   if (!video) return;
@@ -106,7 +113,7 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
        <div className="w-12 h-12 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
        <div className="flex items-center gap-2">
         <Zap size={16} className="text-blue-500 animate-pulse"/>
-        <span className="text-blue-500 text-[10px] font-black uppercase tracking-widest">Streaming Speed...</span>
+        <span className="text-blue-500 text-[10px] font-black uppercase tracking-widest">Streaming...</span>
        </div>
       </div>
      </div>
@@ -137,14 +144,16 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
          onLoadedMetadata={() => i === 0 && setIsLoaded(true)}
          onWaiting={() => i === 0 && setIsBuffering(true)}
          onPlaying={() => i === 0 && (setIsBuffering(false), setIsLoaded(true))}
-         onCanPlay={() => i === 0 && setIsLoaded(true)}
-         onCanPlayThrough={() => i === 0 && setIsLoaded(true)}
          crossOrigin="anonymous"
-         // ✅ FIXED: Mirroring handle karne ke liye transform: none aur filter sync
-         style={{ filter: currentFilter.style, transform: 'none' }}
+         
+         // ✅ MIRRORING LOGIC: Agar Front camera hai toh flip karo, warna normal rakho
+         style={{ 
+           filter: currentFilter.style, 
+           transform: isFrontCamera ? 'scaleX(-1)' : 'none' 
+         }}
         />
 
-        {/* ✅ TEXT OVERLAY ENGINE: Har grid column par text dikhega agar filter grid hai to */}
+        {/* ✅ TEXT OVERLAY ENGINE (Dynamic Rendering) */}
         <div className="absolute inset-0 pointer-events-none z-20">
           {textOverlays && textOverlays.map((t: any) => (
             <div
@@ -153,7 +162,9 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
               style={{
                 top: `${t.y}%`,
                 left: `${t.x}%`,
-                transform: 'translate(-50%, -50%)',
+                // Mirroring correction for Text: 
+                // Agar video flipped hai, toh text ko wapas flip karna padega taaki wo seedha dikhe
+                transform: `translate(-50%, -50%) ${isFrontCamera ? 'scaleX(-1)' : ''}`,
               }}
             >
               <span
