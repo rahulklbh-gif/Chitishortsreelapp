@@ -27,8 +27,10 @@ const FILTERS_DATA: any = {
  ocean: { name: "Oceanic", style: "hue-rotate(180deg) brightness(1.1)" }
 };
 
-export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive, filterName = 'none' }: any) {
- // ✅ CDN Link + Fast Start Trick
+// ✅ Props mein textOverlays add kiya
+export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive, filterName = 'none', textOverlays = [] }: any) {
+ 
+ // CDN Link + Fast Start Trick
  const videoUrl = rawVideoUrl?.replace(
    /pub-[a-zA-Z0-9]+\.r2\.dev/g, 
    'cdn.chitishort.store'
@@ -42,7 +44,7 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
  const currentFilter = FILTERS_DATA[filterName] || FILTERS_DATA.none;
  const gridCount = currentFilter.isGrid ? currentFilter.gridCount : 1;
 
- // 🚀 JUGAR 1: Preload Optimization
+ // Preload Optimization logic (Vaisa hi hai)
  useEffect(() => {
   if (videoUrl) {
     const link = document.createElement('link');
@@ -62,7 +64,7 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
   }
  }, [videoUrl]);
 
- // 🚀 JUGAR 2: Fast Playback Logic
+ // Fast Playback Logic (Vaisa hi hai)
  useEffect(() => {
   const video = videoRef.current;
   if (!video) return;
@@ -77,14 +79,13 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
       setIsBuffering(false);
       video.muted = false;
 
-      // Grids sync logic
       secondaryRefs.current.forEach(v => {
        if(v) { 
          v.currentTime = video.currentTime; 
          v.play().catch(() => {}); 
        }
       });
-     }).catch((error) => {
+     }).catch(() => {
       video.muted = true;
       video.play().then(() => setIsLoaded(true));
      });
@@ -98,9 +99,9 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
  return (
   <div className="relative w-full h-screen bg-black flex items-center justify-center overflow-hidden">
     
-    {/* 🔥 BUFFER LOADER UI */}
+    {/* BUFFER LOADER UI */}
     {(!isLoaded || isBuffering) && (
-     <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-20">
+     <div className="absolute inset-0 flex items-center justify-center bg-black/60 backdrop-blur-sm z-30">
       <div className="flex flex-col items-center gap-3">
        <div className="w-12 h-12 border-4 border-blue-600/30 border-t-blue-600 rounded-full animate-spin"></div>
        <div className="flex items-center gap-2">
@@ -112,46 +113,75 @@ export function OptimizedVideoPlayer({ videoUrl: rawVideoUrl, videoId, isActive,
     )}
 
     <div className={`w-full h-full transition-all duration-500 ${isLoaded ? 'opacity-100 scale-100' : 'opacity-0 scale-105'} ${currentFilter.isGrid ? 'grid' : ''}`}
-         style={currentFilter.isGrid ? { 
-           gridTemplateColumns: `repeat(${currentFilter.cols}, 1fr)`,
-           gridTemplateRows: `repeat(${currentFilter.rows}, 1fr)` 
-         } : {}}>
+          style={currentFilter.isGrid ? { 
+            gridTemplateColumns: `repeat(${currentFilter.cols}, 1fr)`,
+            gridTemplateRows: `repeat(${currentFilter.rows}, 1fr)` 
+          } : {}}>
     
-     {[...Array(gridCount)].map((_, i) => (
-      <div key={i} className="relative w-full h-full overflow-hidden bg-zinc-950">
-       <video
-        ref={(el) => {
-         if (i === 0) (videoRef as any).current = el;
-         else secondaryRefs.current[i] = el;
-        }}
-        className="w-full h-full object-cover"
-        src={videoUrl}
-        loop
-        playsInline
-        autoPlay={isActive}
-        muted={i !== 0 || !isActive}
-        
-        // 🔥 PRELOAD METADATA: Browser ko bolta hai poora file mat uthao
-        preload="metadata"
-        
-        // @ts-ignore
-        fetchpriority={isActive ? "high" : "low"}
-        
-        onLoadedMetadata={() => i === 0 && setIsLoaded(true)}
-        onWaiting={() => i === 0 && setIsBuffering(true)}
-        onPlaying={() => i === 0 && (setIsBuffering(false), setIsLoaded(true))}
-        onCanPlay={() => i === 0 && setIsLoaded(true)}
-        onCanPlayThrough={() => i === 0 && setIsLoaded(true)}
-        crossOrigin="anonymous"
-        style={{ filter: currentFilter.style }}
-       />
-      </div>
-     ))}
+      {[...Array(gridCount)].map((_, i) => (
+       <div key={i} className="relative w-full h-full overflow-hidden bg-zinc-950">
+        <video
+         ref={(el) => {
+          if (i === 0) (videoRef as any).current = el;
+          else secondaryRefs.current[i] = el;
+         }}
+         className="w-full h-full object-cover"
+         src={videoUrl}
+         loop
+         playsInline
+         autoPlay={isActive}
+         muted={i !== 0 || !isActive}
+         preload="metadata"
+         // @ts-ignore
+         fetchpriority={isActive ? "high" : "low"}
+         onLoadedMetadata={() => i === 0 && setIsLoaded(true)}
+         onWaiting={() => i === 0 && setIsBuffering(true)}
+         onPlaying={() => i === 0 && (setIsBuffering(false), setIsLoaded(true))}
+         onCanPlay={() => i === 0 && setIsLoaded(true)}
+         onCanPlayThrough={() => i === 0 && setIsLoaded(true)}
+         crossOrigin="anonymous"
+         // ✅ FIXED: Mirroring handle karne ke liye transform: none aur filter sync
+         style={{ filter: currentFilter.style, transform: 'none' }}
+        />
 
-     {/* VFX Logic intact */}
-     {isActive && currentFilter.vfxType === 'lightning' && (
-      <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
-     )}
+        {/* ✅ TEXT OVERLAY ENGINE: Har grid column par text dikhega agar filter grid hai to */}
+        <div className="absolute inset-0 pointer-events-none z-20">
+          {textOverlays && textOverlays.map((t: any) => (
+            <div
+              key={t.id}
+              className="absolute select-none"
+              style={{
+                top: `${t.y}%`,
+                left: `${t.x}%`,
+                transform: 'translate(-50%, -50%)',
+              }}
+            >
+              <span
+                style={{
+                  color: t.color,
+                  fontSize: `${t.fontSize}px`,
+                  textShadow: '0px 2px 8px rgba(0,0,0,0.8)'
+                }}
+                className={`
+                  ${t.fontStyle === 'classic' ? 'font-black italic' : ''} 
+                  ${t.fontStyle === 'modern' ? 'font-sans font-light tracking-widest' : ''}
+                  ${t.fontStyle === 'bold' ? 'font-serif font-bold' : ''}
+                  ${t.fontStyle === 'marker' ? 'font-mono uppercase' : ''}
+                  px-2 whitespace-nowrap block
+                `}
+              >
+                {t.text}
+              </span>
+            </div>
+          ))}
+        </div>
+       </div>
+      ))}
+
+      {/* VFX Logic */}
+      {isActive && currentFilter.vfxType === 'lightning' && (
+       <div className="absolute inset-0 z-10 pointer-events-none bg-blue-500/10 animate-pulse" />
+      )}
     </div>
   </div>
  );
