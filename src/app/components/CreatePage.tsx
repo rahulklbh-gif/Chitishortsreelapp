@@ -2,29 +2,30 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.9.6 (FINAL MIRROR SYNC)
+ * VERSION: 4.9.7 (SMOOTH PROGRESS & MIRROR TEXT FIX)
  * STATUS: FULL UNCUT CODE - INTEGRATED IS_FRONT_CAMERA LOGIC
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
-  Upload, Video, Sparkles, Loader2, Send, X, Camera, 
-  RefreshCw, Music, Check, Play, Pause, Zap, ArrowLeft, 
+  Upload as UploadIcon, Video, Sparkles, Loader2, Send, X, Camera, 
+  RefreshCw, Check, Play, Pause, Zap, ArrowLeft, 
   ShieldCheck, Search, Info, Settings, Scissors, HardDrive,
   MonitorPlay, Mic, Volume2, Clapperboard, Layers, Trash2, Type, 
-  ChevronLeft, CaseSensitive, Maximize2
+  ChevronLeft, CaseSensitive, Maximize2, Music
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage"; // FOR REAL-TIME PROGRESS & SPEED
 import { compressVideoTo480p } from '@/lib/videoCompression';
 
 // --- CLOUDFLARE R2 CONFIG ---
 const R2_CONFIG = {
   endpoint: "https://0b25a09adcbd3ebc61ee73f2e958da9a.r2.cloudflarestorage.com",
   accessKeyId: "bace896e3eba07cdbcb983394bd20da1", 
-  secretAccessKey: "c38a89622fd343226dba534eedc26b8e8f3674c270651aba75e89206799a0acf",
+  secretAccessKey: "c38a89622fb343226dba534eedc26b8e8f3674c270651aba75e89206799a0acf",
   bucketName: "chiti-videos",
   publicDomain: "https://cdn.chitishort.store"
 };
@@ -265,8 +266,8 @@ export default function CreatePage() {
   const handleDragMove = (e: React.MouseEvent | React.TouchEvent) => {
     if (draggingId === null || !containerRef.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    const clientX = 'touches' in e ? (e as React.TouchEvent).touches[0].clientX : (e as React.MouseEvent).clientX;
+    const clientY = 'touches' in e ? (e as React.TouchEvent).touches[0].clientY : (e as React.MouseEvent).clientY;
     
     const x = ((clientX - rect.left) / rect.width) * 100;
     const y = ((clientY - rect.top) / rect.height) * 100;
@@ -274,40 +275,57 @@ export default function CreatePage() {
     setTextOverlays(prev => prev.map(t => t.id === draggingId ? { ...t, x, y } : t));
   };
 
-  // --- PUBLISH ENGINE ---
+  // --- PUBLISH ENGINE (v4.9.7 SMOOTH PROGRESS UPDATE) ---
   const publish = async () => {
     if (!selectedFile || !user) return;
     setIsUploading(true);
-    setUploadProgress(5);
-    setStatusText("Chiti is processing...");
+    setUploadProgress(0);
+    setStatusText("Chiti is starting...");
     
     try {
       let fileToUpload: any = selectedFile;
-      try {
-        setStatusText("Optimizing video...");
-        const optimized = await compressVideoTo480p(selectedFile, (p) => {
-          setUploadProgress(10 + Math.floor(p.progress * 40));
-        });
-        fileToUpload = optimized;
-      } catch (e) { console.warn("Using original file"); }
+      
+      // 1. Optimization Step (Progress 0-30)
+      setStatusText("Optimizing video...");
+      const optimized = await compressVideoTo480p(selectedFile, (p) => {
+        setUploadProgress(Math.floor(p.progress * 30));
+      });
+      fileToUpload = optimized;
 
       const fileName = `${Date.now()}_chiti.mp4`;
       const path = `chiti_vids/${user.id}/${fileName}`;
       const finalUrl = `${R2_CONFIG.publicDomain}/${path}`;
       
+      // 2. Multi-part Upload with REAL PROGRESS (Progress 30-95)
       setStatusText("Uploading to Cloud...");
-      const arrayBuffer = await fileToUpload.arrayBuffer();
+      
+      const parallelUpload = new Upload({
+        client: s3Client,
+        params: {
+          Bucket: R2_CONFIG.bucketName,
+          Key: path,
+          Body: fileToUpload,
+          ContentType: 'video/mp4'
+        },
+        queueSize: 4, // SPEED: 4 chunks at a time for slow internet
+        partSize: 5 * 1024 * 1024, // 5MB parts
+      });
 
-      await s3Client.send(new PutObjectCommand({
-        Bucket: R2_CONFIG.bucketName,
-        Key: path,
-        Body: new Uint8Array(arrayBuffer),
-        ContentType: 'video/mp4'
-      }));
+      parallelUpload.on("httpUploadProgress", (progress) => {
+        if (progress.loaded && progress.total) {
+          const rawPercent = (progress.loaded / progress.total) * 65; // Scale to 65% of the bar
+          setUploadProgress(30 + Math.floor(rawPercent));
+          setStatusText(`Uploading: ${Math.floor((progress.loaded / progress.total) * 100)}%`);
+        }
+      });
 
+      await parallelUpload.done();
+
+      // 3. Database Entry (Progress 95-100)
+      setStatusText("Finalizing Post...");
+      
       let finalMusicId = activeMusic?.id || null;
       if (!isCameraMode && !activeMusic) {
-        setStatusText("Syncing Audio...");
         const musicTitle = caption.trim() 
           ? (caption.length > 50 ? caption.substring(0, 47) + "..." : caption) 
           : `Original Sound - ${user.user_metadata?.full_name || 'Chiti User'}`;
@@ -318,7 +336,6 @@ export default function CreatePage() {
         if (musicEntry) finalMusicId = musicEntry[0].id;
       }
 
-      setStatusText("Finalizing Post...");
       const { error: dbError } = await supabase.from('posts').insert([{
         video_url: finalUrl,
         caption: caption || "",
@@ -326,11 +343,12 @@ export default function CreatePage() {
         user_name: user.user_metadata?.full_name || 'Creator',
         filter_name: selectedFilter,
         music_id: finalMusicId,
-        text_overlays: textOverlays, // SAVE OVERLAYS DATA
-        is_front_camera: facing === 'user' // 🚀 MIRROR SYNC FIX: Sends TRUE if front camera was used
+        text_overlays: textOverlays,
+        is_front_camera: facing === 'user' 
       }]);
 
       if (dbError) throw dbError;
+      
       setUploadProgress(100);
       toast.success("Shorts Published!");
       setTimeout(() => { window.location.href = '/'; }, 1500);
@@ -373,14 +391,19 @@ export default function CreatePage() {
                     transform: (facing === 'user' && isCameraMode) ? 'scaleX(-1)' : 'none' 
                   }} 
                 />
-                {/* DRAGGABLE TEXT LAYER */}
+                {/* DRAGGABLE TEXT LAYER: MIRROR FIX APPLIED HERE */}
                 {i === 0 && textOverlays.map(t => (
                   <div 
                     key={t.id} 
                     onMouseDown={() => setDraggingId(t.id)}
                     onTouchStart={() => setDraggingId(t.id)}
                     className="absolute flex flex-col items-center gap-2 group cursor-move select-none touch-none z-[300]" 
-                    style={{ top: `${t.y}%`, left: `${t.x}%`, transform: 'translate(-50%, -50%)' }}
+                    style={{ 
+                        top: `${t.y}%`, 
+                        left: `${t.x}%`, 
+                        // FIX: Agar front camera mirrored hai, toh text ko wapas flip karo taaki wo feed mein seedha dikhe
+                        transform: `translate(-50%, -50%) ${ (facing === 'user' && isCameraMode) ? 'scaleX(-1)' : '' }` 
+                    }}
                   >
                     <span 
                        style={{ color: t.color, fontSize: `${t.fontSize}px` }} 
@@ -438,7 +461,7 @@ export default function CreatePage() {
                  <Camera size={50} className="text-white"/>
             </button>
             <label className="flex items-center gap-4 bg-zinc-900 px-10 py-5 rounded-2xl border border-white/5 cursor-pointer hover:bg-zinc-800 transition-colors">
-              <Upload size={20} className="text-blue-500"/>
+              <UploadIcon size={20} className="text-blue-500"/>
               <span className="text-xs font-black uppercase tracking-widest">Gallery Upload</span>
               <input type="file" hidden accept="video/*" onChange={(e) => {
                 const f = e.target.files?.[0];
@@ -514,7 +537,7 @@ export default function CreatePage() {
                     <span>{statusText}</span>
                     <span>{uploadProgress}%</span>
                   </div>
-                  <div className="h-1 w-full bg-white/10 rounded-full overflow-hidden">
+                  <div className="h-1.5 w-full bg-white/10 rounded-full overflow-hidden">
                     <div className="h-full bg-blue-600 transition-all duration-300" style={{width: `${uploadProgress}%` }} />
                   </div>
                 </div>
@@ -549,7 +572,6 @@ export default function CreatePage() {
           </div>
 
           <div className="space-y-8 pb-10">
-              {/* FONT STYLE PICKER */}
               <div className="flex gap-4 overflow-x-auto no-scrollbar py-2">
                  {FONT_STYLES.map(font => (
                    <button 
@@ -562,7 +584,6 @@ export default function CreatePage() {
                  ))}
               </div>
 
-              {/* SIZE SLIDER */}
               <div className="flex items-center gap-4 bg-white/5 p-4 rounded-2xl border border-white/10">
                  <Maximize2 size={16} className="text-zinc-500"/>
                  <input 
@@ -574,7 +595,6 @@ export default function CreatePage() {
                  <span className="text-[10px] font-black w-8">{currentFontSize}</span>
               </div>
 
-              {/* COLOR PICKER */}
               <div className="flex justify-between items-center overflow-x-auto no-scrollbar gap-4">
                  {['#ffffff', '#ff0000', '#00ff00', '#0088ff', '#ffff00', '#ff00ff', '#00ffff', '#000000'].map(c => (
                    <button key={c} onClick={() => setCurrentColor(c)} className={`w-10 h-10 rounded-full border-2 shrink-0 ${currentColor === c ? 'border-white scale-110' : 'border-transparent opacity-50'}`} style={{ backgroundColor: c }} />
@@ -641,4 +661,4 @@ export default function CreatePage() {
       `}</style>
     </div>
   );
-}
+} 
