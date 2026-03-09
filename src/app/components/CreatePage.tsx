@@ -2,8 +2,8 @@
 
 /**
  * PROJECT: CHITI SHORT VIDEO CREATOR PRO
- * VERSION: 4.9.5 (PRO TEXT SYSTEM + FINAL MIRROR SYNC)
- * STATUS: FULL UNCUT CODE - NO FUNCTIONS REMOVED
+ * VERSION: 4.9.6 (FINAL MIRROR SYNC)
+ * STATUS: FULL UNCUT CODE - INTEGRATED IS_FRONT_CAMERA LOGIC
  */
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
@@ -326,7 +326,8 @@ export default function CreatePage() {
         user_name: user.user_metadata?.full_name || 'Creator',
         filter_name: selectedFilter,
         music_id: finalMusicId,
-        text_overlays: textOverlays // SAVE OVERLAYS DATA
+        text_overlays: textOverlays, // SAVE OVERLAYS DATA
+        is_front_camera: facing === 'user' // 🚀 MIRROR SYNC FIX: Sends TRUE if front camera was used
       }]);
 
       if (dbError) throw dbError;
@@ -367,7 +368,6 @@ export default function CreatePage() {
                   autoPlay loop playsInline 
                   muted={i !== 0} 
                   className="w-full h-full object-cover" 
-                  // PREVIEW MIRROR FIX: Ab ye recording ke camera state ko respect karega
                   style={{ 
                     filter: filter.style, 
                     transform: (facing === 'user' && isCameraMode) ? 'scaleX(-1)' : 'none' 
