@@ -1,14 +1,13 @@
 "use client";
-
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { VideoActions } from './VideoActions';
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { Loader2, Music2, Play as PlayIcon, Pause, Plus, Send } from 'lucide-react'; 
+import { Loader2, Music2, Play as PlayIcon, Pause, Plus, Send } from 'lucide-react'; // ✅ Plus aur Send add kiya
 import { toast } from 'sonner'; 
-import StoryEditor from './StoryEditor'; // ✅ StoryEditor Import Kiya
+import StoryEditor from './StoryEditor'; // ✅ StoryEditor Import kiya
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
   const { user: currentUser } = useAuth();
@@ -17,20 +16,18 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-
   const [isPlaying, setIsPlaying] = useState(true); 
   const [showPlayIcon, setShowPlayIcon] = useState(false); 
-  
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewedVideos = useRef<Set<string>>(new Set());
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
 
-  // ✅ STORY STATES (Gallery aur Editor ke liye)
+  // ✅ STORY STATES
   const [selectedStoryVideo, setSelectedStoryVideo] = useState<string | null>(null);
   const storyInputRef = useRef<HTMLInputElement>(null);
 
-  // 🚀 PERFORMANCE: Pre-warm domains (Aapka original logic)
+  // 🚀 PERFORMANCE: Pre-warm domains (Original Logic)
   useEffect(() => {
     const domains = ['https://cdnjs.cloudflare.com', 'https://cdn.chitishort.store'];
     domains.forEach(domain => {
@@ -49,7 +46,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- REAL-TIME COMMENT COUNT UPDATE (Aapka original logic) ---
+  // --- REAL-TIME COMMENT COUNT UPDATE (Original Logic) ---
   useEffect(() => {
     const channel = supabase
       .channel('schema-db-changes')
@@ -65,20 +62,18 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         }
       )
       .subscribe();
-
     return () => {
       supabase.removeChannel(channel);
     };
   }, []);
 
-  // --- VIEW RECORDING (Aapka original logic) ---
+  // --- VIEW RECORDING (Original Logic) ---
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
       const currentVideoId = videos[activeIndex].id;
       const currentUserId = currentUser.id;
       if (viewedVideos.current.has(currentVideoId)) return;
-
       try {
         await supabase.rpc('increment_views', { 
           post_id: currentVideoId, 
@@ -89,17 +84,15 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         console.error("View error:", err);
       }
     };
-
     const timer = setTimeout(recordView, 3000); 
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
-  // --- FETCH VIDEOS (Aapka original logic - Sab kuch same hai) ---
+  // --- FETCH VIDEOS (Original Logic) ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
-
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -111,7 +104,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           )
         `)
        .order('created_at', { ascending: false });
-
       if (error) throw error;
       
       if (data) {
@@ -123,7 +115,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           
           const rawUrl = video.video_url || video.url || "";
           const finalUrl = rawUrl.replace(/pub-[a-zA-Z0-9]+\.r2\.dev/g, 'cdn.chitishort.store');
-
           return {
             ...video,
             video_url: finalUrl,
@@ -134,7 +125,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             shares_count: video.shares_count || 0
           };
         });
-
         if (videoIdFromUrl) {
           const targetIndex = updatedVideos.findIndex(v => v.id === videoIdFromUrl);
           if (targetIndex !== -1) {
@@ -142,7 +132,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             updatedVideos = [targetVideo, ...updatedVideos];
           }
         }
-
         setVideos(updatedVideos);
       }
     } catch (error) { 
@@ -225,22 +214,25 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { console.log("Share action cancelled"); }
   };
 
+  if (loading) return (
+    <div className="fixed inset-0 flex items-center justify-center bg-black">
+      <Loader2 className="w-12 h-12 text-blue-500 animate-spin" />
+    </div>
+  );
+
   return (
     <div className="relative h-screen w-full bg-black overflow-hidden">
       
-      {/* --- NEW: INSTAGRAM STYLE HEADER & STORY ROW --- */}
-      <div className="absolute top-0 left-0 right-0 pt-10 z-[100] bg-gradient-to-b from-black/80 via-black/40 to-transparent">
-        <div className="px-4 flex items-center justify-between mb-4">
+      {/* ✅ ADDED: STORY HEADER */}
+      <div className="absolute top-0 left-0 right-0 pt-10 z-[100] bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none">
+        <div className="px-4 flex items-center justify-between mb-4 pointer-events-auto">
           <h1 className="text-xl font-black italic tracking-tighter text-white drop-shadow-lg">
             CHITI <span className="text-blue-500">SHORTS</span>
           </h1>
-          <button onClick={() => navigate('/chats')} className="p-2 bg-black/20 backdrop-blur-md rounded-full border border-white/10 active:scale-90 transition-all">
-             <Send size={20} className="text-white -rotate-12" />
-          </button>
         </div>
 
-        {/* 🟡 STORY HORIZONTAL ROW */}
-        <div className="flex gap-4 overflow-x-auto no-scrollbar px-4 pb-2">
+        {/* Story Row */}
+        <div className="flex gap-4 overflow-x-auto no-scrollbar px-4 pb-2 pointer-events-auto">
           <div className="flex flex-col items-center gap-1 shrink-0">
             <div 
               onClick={() => storyInputRef.current?.click()}
@@ -268,23 +260,23 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         </div>
       </div>
 
+      {/* VIDEO CONTAINER (Original Logic Safe) */}
       <div
         ref={containerRef}
-        className="h-full w-full overflow-y-scroll snap-y snap-mandatory no-scrollbar bg-black scroll-smooth"
+        className="fixed inset-0 overflow-y-scroll snap-y snap-mandatory no-scrollbar bg-black scroll-smooth"
         onScroll={handleScroll}
         style={{ WebkitOverflowScrolling: 'touch' }}
       >
         {videos.map((video, index) => {
           const isActive = index === activeIndex;
           const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 2;
-
           return (
             <div 
               key={video.id} 
               className="relative h-screen w-full snap-start snap-always bg-black"
               onClick={togglePlayPause} 
             >
-              {shouldRender && (
+              {shouldRender ? (
                 <>
                   <OptimizedVideoPlayer
                     videoUrl={video.video_url}
@@ -298,14 +290,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                     isFrontCamera={video.is_front_camera}
                   />
 
-                  {/* ✅ NEW: FEED STORY BUTTON (Side mein add kiya) */}
+                  {/* ✅ ADDED: FEED STORY BUTTON (Side mein) */}
                   <div className="absolute right-4 bottom-[440px] z-30 flex flex-col items-center gap-1">
                     <button 
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedStoryVideo(video.video_url);
                       }}
-                      className="p-3 bg-white/10 backdrop-blur-xl rounded-full border border-white/10 active:scale-95 transition-all group hover:bg-blue-600"
+                      className="p-3 bg-white/10 backdrop-blur-xl rounded-full border border-white/10 active:scale-95 transition-all group"
                     >
                       <Send size={24} className="text-white -rotate-45" />
                     </button>
@@ -320,6 +312,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                     </div>
                   )}
 
+                  {/* UI LAYER (Original Logic Safe) */}
                   <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-transparent to-transparent text-white z-20 pointer-events-none">
                     <div 
                       className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer"
@@ -328,11 +321,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                         if (video.user_id) navigate(`/profile/${video.user_id}`);
                       }}
                     >
-                      <img 
-                        src={video.user_avatar} 
-                        className="w-11 h-11 rounded-full border-2 border-white object-cover" 
-                        alt="avatar"
-                      />
+                      <img src={video.user_avatar} className="w-11 h-11 rounded-full border-2 border-white object-cover" />
                       <span className="font-black text-lg shadow-black drop-shadow-lg">@{video.user_name}</span>
                       <button 
                         onClick={(e) => handleFollowToggle(e, video.user_id)} 
@@ -361,19 +350,25 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                     />
                   </div>
                 </>
+              ) : (
+                <div className="w-full h-full bg-black flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 text-white/5 animate-spin" />
+                </div>
               )}
             </div>
           );
         })}
       </div>
 
-      {/* ✅ NEW: STORY EDITOR MODAL */}
+      {/* ✅ ADDED: STORY EDITOR MODAL */}
       {selectedStoryVideo && (
-        <StoryEditor 
-          videoUrl={selectedStoryVideo} 
-          user={currentUser} 
-          onCancel={() => setSelectedStoryVideo(null)} 
-        />
+        <div className="fixed inset-0 z-[2000]">
+          <StoryEditor 
+            videoUrl={selectedStoryVideo} 
+            user={currentUser} 
+            onCancel={() => setSelectedStoryVideo(null)} 
+          />
+        </div>
       )}
     </div>
   );
