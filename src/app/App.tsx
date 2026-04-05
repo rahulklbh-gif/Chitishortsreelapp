@@ -14,13 +14,14 @@ import { LogIn, Send, Plus } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { ChatListPage } from '@/app/components/ChatListPage';
 import { ChatRoom } from '@/app/components/ChatRoom';
-import { cn } from "@/lib/utils";
 
-// --- STORY BAR COMPONENT (Naya Add kiya hai bina logic chhade) ---
+// 🔥 FIX: Aapke screenshot ke mutabiq sahi path ye hai
+import { cn } from "@/app/components/ui/utils";
+
+// --- STORY BAR COMPONENT ---
 function StoryBar({ users, navigate }: { users: any[], navigate: any }) {
   return (
     <div className="flex items-center gap-3 overflow-x-auto no-scrollbar py-2 mt-2">
-      {/* Add Story Button */}
       <div className="flex flex-col items-center gap-1 shrink-0" onClick={() => navigate('/create?type=story')}>
         <div className="relative size-14 rounded-full border-2 border-dashed border-zinc-500 flex items-center justify-center cursor-pointer">
           <Plus className="size-6 text-zinc-400" />
@@ -31,7 +32,6 @@ function StoryBar({ users, navigate }: { users: any[], navigate: any }) {
         <span className="text-[10px] text-zinc-400">Your Story</span>
       </div>
 
-      {/* Other Users Stories */}
       {users?.map((u) => (
         <div key={u.id} className="flex flex-col items-center gap-1 shrink-0 cursor-pointer">
           <div className={cn(
@@ -58,8 +58,6 @@ function AppContent() {
   
   const navigate = useNavigate();
   const location = useLocation();
-
-  // Story data state (Yahan Supabase se data aayega)
   const [stories, setStories] = useState([]);
 
   useEffect(() => {
@@ -89,15 +87,12 @@ function AppContent() {
 
   return (
     <div className="relative min-h-screen bg-black">
-      {/* ✅ HEADER SECTION: Jahan pehle sirf H1 tha, ab wahan Story Bar hai */}
       {location.pathname === '/' && (
         <div className="fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-black/95 via-black/70 to-transparent p-4 pb-2">
           <div className="flex items-center justify-between">
-            {/* Branding ko thoda chhota karke side me kar diya */}
             <h1 className="text-xl font-black text-white italic tracking-tighter">
               CHITI
             </h1>
-            
             <div className="flex items-center gap-3">
               {!user ? (
                 <button
@@ -118,13 +113,10 @@ function AppContent() {
               )}
             </div>
           </div>
-
-          {/* 📱 Naya Story Bar: Bilkul Instagram jaisa */}
           <StoryBar users={stories} navigate={navigate} />
         </div>
       )}
 
-      {/* ⚠️ Content Margin: Story bar ki wajah se thoda gap zaroori hai */}
       <main className={location.pathname === '/' ? 'pt-4' : 'pt-0'}>
         <Routes>
           <Route path="/" element={<RealVideoFeed key={location.key} onComment={handleComment} />} />
@@ -138,7 +130,6 @@ function AppContent() {
         </Routes>
       </main>
 
-      {/* Same Bottom Nav & Sheets */}
       <BottomNavigation activeTab={activeTab} onTabChange={handleTabChange} />
       <CommentSheet
         videoId={selectedVideoId}
