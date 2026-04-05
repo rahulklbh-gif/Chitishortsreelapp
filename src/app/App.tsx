@@ -15,36 +15,36 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ChatListPage } from '@/app/components/ChatListPage';
 import { ChatRoom } from '@/app/components/ChatRoom';
 
-// 🔥 FIX: Aapke screenshot ke mutabiq sahi path
+// Sahi path aapke screenshot ke mutabiq
 import { cn } from "@/app/components/ui/utils";
 
-// --- STORY BAR COMPONENT (Branding hatakar Story Button ko corner pe set kiya) ---
+// --- STORY BAR COMPONENT (Transparent background aur alignment fix kiya) ---
 function StoryBar({ users, navigate }: { users: any[], navigate: any }) {
   return (
-    <div className="flex items-center gap-3 overflow-x-auto no-scrollbar py-2">
-      {/* 🟢 STORY BUTTON (Ab ye wahan hai jahan pehle 'CHITI' likha tha) */}
+    <div className="flex items-center gap-3 overflow-x-auto no-scrollbar py-2 px-1">
+      {/* 🟢 STORY BUTTON: Ab ye top-left corner mein message icon ke barabar alignment mein hai */}
       <div className="flex flex-col items-center gap-1 shrink-0" onClick={() => navigate('/create?type=story')}>
-        <div className="relative size-14 rounded-full border-2 border-dashed border-zinc-500 flex items-center justify-center cursor-pointer hover:border-white transition-all">
-          <Plus className="size-6 text-zinc-400" />
-          <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-1 border-2 border-black">
-            <Plus className="size-3 text-white" />
+        <div className="relative size-12 rounded-full border-2 border-dashed border-white/50 flex items-center justify-center cursor-pointer hover:border-white transition-all shadow-lg">
+          <Plus className="size-5 text-white" />
+          <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-0.5 border-2 border-black">
+            <Plus className="size-2.5 text-white" />
           </div>
         </div>
-        <span className="text-[10px] text-zinc-400">Your Story</span>
+        <span className="text-[9px] text-white font-medium drop-shadow-md">Your Story</span>
       </div>
 
       {/* Other Users Stories */}
       {users?.map((u) => (
         <div key={u.id} className="flex flex-col items-center gap-1 shrink-0 cursor-pointer">
           <div className={cn(
-            "size-14 rounded-full p-[2px]",
-            u.has_unseen_story ? "bg-gradient-to-tr from-yellow-400 via-orange-500 to-fuchsia-600" : "bg-zinc-700"
+            "size-12 rounded-full p-[2px]",
+            u.has_unseen_story ? "bg-gradient-to-tr from-yellow-400 via-orange-500 to-fuchsia-600" : "bg-white/20"
           )}>
             <div className="size-full rounded-full border-2 border-black overflow-hidden bg-zinc-900">
               <img src={u.avatar_url || "/default-avatar.png"} className="size-full object-cover" alt="story" />
             </div>
           </div>
-          <span className="text-[10px] text-zinc-300 truncate w-14 text-center">{u.username}</span>
+          <span className="text-[9px] text-white truncate w-12 text-center drop-shadow-md">{u.username}</span>
         </div>
       ))}
     </div>
@@ -90,36 +90,39 @@ function AppContent() {
   return (
     <div className="relative min-h-screen bg-black">
       {location.pathname === '/' && (
-        <div className="fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-black/95 via-black/70 to-transparent p-4 pb-2">
-          {/* Top Section me Branding hatakar DM/Auth button ko right me hi rakha hai */}
-          <div className="flex justify-end mb-1">
-            <div className="flex items-center gap-3">
+        /* ✅ Header ko transparent kiya aur padding kam ki taaki video clear dikhe */
+        <div className="fixed top-0 left-0 right-0 z-30 bg-transparent p-3 pt-2">
+          <div className="flex items-start justify-between">
+            
+            {/* 📱 Story Bar: Ab ye sabse upar corner mein hai */}
+            <StoryBar users={stories} navigate={navigate} />
+
+            {/* Message/Auth Icons: Inka position Story button ke level mein set kiya */}
+            <div className="flex items-center pt-1 px-1">
               {!user ? (
                 <button
                   onClick={() => setAuthModalOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full text-sm font-semibold hover:opacity-90 transition"
+                  className="flex items-center gap-2 px-4 py-1.5 bg-gradient-to-r from-purple-600 to-pink-600 rounded-full text-xs font-semibold hover:opacity-90 transition shadow-lg"
                 >
-                  <LogIn className="w-4 h-4" />
+                  <LogIn className="w-3.5 h-3.5" />
                   Sign In
                 </button>
               ) : (
                 <button
                   onClick={() => navigate('/chats')} 
-                  className="p-2 bg-white/10 backdrop-blur-md rounded-full text-white hover:bg-white/20 transition relative"
+                  className="p-2 bg-black/20 backdrop-blur-md rounded-full text-white hover:bg-black/40 transition relative border border-white/10"
                 >
-                  <Send size={22} className="-rotate-12" />
+                  <Send size={20} className="-rotate-12" />
                   <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-black"></span>
                 </button>
               )}
             </div>
           </div>
-
-          {/* 📱 Story Bar: Ab ye sabse upar corner se shuru hoga */}
-          <StoryBar users={stories} navigate={navigate} />
         </div>
       )}
 
-      <main className={location.pathname === '/' ? 'pt-4' : 'pt-0'}>
+      {/* Video content ko upar tak stretch rakha hai taaki header niche na aaye */}
+      <main className="pt-0">
         <Routes>
           <Route path="/" element={<RealVideoFeed key={location.key} onComment={handleComment} />} />
           <Route path="/discover" element={<DiscoverPage />} />
