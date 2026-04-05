@@ -15,15 +15,16 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ChatListPage } from '@/app/components/ChatListPage';
 import { ChatRoom } from '@/app/components/ChatRoom';
 
-// 🔥 FIX: Aapke screenshot ke mutabiq sahi path ye hai
+// 🔥 FIX: Aapke screenshot ke mutabiq sahi path
 import { cn } from "@/app/components/ui/utils";
 
-// --- STORY BAR COMPONENT ---
+// --- STORY BAR COMPONENT (Branding hatakar Story Button ko corner pe set kiya) ---
 function StoryBar({ users, navigate }: { users: any[], navigate: any }) {
   return (
-    <div className="flex items-center gap-3 overflow-x-auto no-scrollbar py-2 mt-2">
+    <div className="flex items-center gap-3 overflow-x-auto no-scrollbar py-2">
+      {/* 🟢 STORY BUTTON (Ab ye wahan hai jahan pehle 'CHITI' likha tha) */}
       <div className="flex flex-col items-center gap-1 shrink-0" onClick={() => navigate('/create?type=story')}>
-        <div className="relative size-14 rounded-full border-2 border-dashed border-zinc-500 flex items-center justify-center cursor-pointer">
+        <div className="relative size-14 rounded-full border-2 border-dashed border-zinc-500 flex items-center justify-center cursor-pointer hover:border-white transition-all">
           <Plus className="size-6 text-zinc-400" />
           <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-1 border-2 border-black">
             <Plus className="size-3 text-white" />
@@ -32,6 +33,7 @@ function StoryBar({ users, navigate }: { users: any[], navigate: any }) {
         <span className="text-[10px] text-zinc-400">Your Story</span>
       </div>
 
+      {/* Other Users Stories */}
       {users?.map((u) => (
         <div key={u.id} className="flex flex-col items-center gap-1 shrink-0 cursor-pointer">
           <div className={cn(
@@ -89,10 +91,8 @@ function AppContent() {
     <div className="relative min-h-screen bg-black">
       {location.pathname === '/' && (
         <div className="fixed top-0 left-0 right-0 z-30 bg-gradient-to-b from-black/95 via-black/70 to-transparent p-4 pb-2">
-          <div className="flex items-center justify-between">
-            <h1 className="text-xl font-black text-white italic tracking-tighter">
-              CHITI
-            </h1>
+          {/* Top Section me Branding hatakar DM/Auth button ko right me hi rakha hai */}
+          <div className="flex justify-end mb-1">
             <div className="flex items-center gap-3">
               {!user ? (
                 <button
@@ -113,6 +113,8 @@ function AppContent() {
               )}
             </div>
           </div>
+
+          {/* 📱 Story Bar: Ab ye sabse upar corner se shuru hoga */}
           <StoryBar users={stories} navigate={navigate} />
         </div>
       )}
