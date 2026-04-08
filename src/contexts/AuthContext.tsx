@@ -9,6 +9,9 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
+  // ✅ Naye functions interface mein add kiye
+  signIn: (email: string, password: string) => Promise<{ error: any }>; 
+  signUp: (email: string, password: string, name: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
 }
 
@@ -71,7 +74,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // 3. Sign Out Logic
+  // ✅ 3. Email Sign-In Logic (Naya Function)
+  const signIn = async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    return { error };
+  };
+
+  // ✅ 4. Email Sign-Up Logic (Naya Function)
+  const signUp = async (email: string, password: string, name: string) => {
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: name,
+        },
+      },
+    });
+    return { error };
+  };
+
+  // 5. Sign Out Logic
   const signOut = async () => {
     try {
       const { error } = await supabase.auth.signOut();
@@ -83,7 +109,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ 
+      user, 
+      session, 
+      loading, 
+      signInWithGoogle, 
+      signIn, // ✅ Provider mein add kiya
+      signUp, // ✅ Provider mein add kiya
+      signOut 
+    }}>
       {!loading && children}
     </AuthContext.Provider>
   );
@@ -96,4 +130,4 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}; 
+};
