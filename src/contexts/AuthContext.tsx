@@ -9,7 +9,6 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signInWithGoogle: () => Promise<void>;
-  // ✅ Naye functions interface mein add kiye
   signIn: (email: string, password: string) => Promise<{ error: any }>; 
   signUp: (email: string, password: string, name: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
@@ -46,28 +45,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(currentSession?.user ?? null);
       setLoading(false);
 
-      // ✅ FIXED: Login hote hi page refresh hoga taaki black screen/small UI issue khatam ho jaye
+      // ✅ FIXED: Login hote hi sirf EK BAAR reload hoga, loop nahi banega
       if (_event === 'SIGNED_IN') {
-        window.location.reload();
+        const hasReloaded = sessionStorage.getItem('auth_reloaded');
+        if (!hasReloaded) {
+          sessionStorage.setItem('auth_reloaded', 'true');
+          window.location.reload();
+        }
+      }
+
+      // Logout hone par flag saaf kar dein taaki agli baar login par fir refresh ho sake
+      if (_event === 'SIGNED_OUT') {
+        sessionStorage.removeItem('auth_reloaded');
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Google Sign-In Logic - YouTube Scopes Removed for Better Trust
+  // 2. Google Sign-In Logic - YouTube Scopes Removed
   const signInWithGoogle = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          // ✅ YouTube permissions hata di hain taaki "Unverified" warning na aaye
           scopes: 'openid email profile', 
           queryParams: {
             access_type: 'offline',
-            prompt: 'select_account', // Consent screen ki jagah account selection dikhayega
+            prompt: 'select_account',
           },
-          // ✅ Aapka domain link yahan add kiya hai
           redirectTo: 'https://chitishort.store'
         }
       });
@@ -79,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // ✅ 3. Email Sign-In Logic (Naya Function)
+  // 3. Email Sign-In Logic
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -88,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   };
 
-  // ✅ 4. Email Sign-Up Logic (Naya Function)
+  // 4. Email Sign-Up Logic
   const signUp = async (email: string, password: string, name: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -108,7 +114,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       toast.success('Logged out successfully');
-      // Logout par bhi refresh kar dena behtar hai
+      // Logout par bhi session storage clean kar dena chahiye
+      sessionStorage.removeItem('auth_reloaded');
       window.location.reload();
     } catch (error: any) {
       toast.error('Error signing out');
@@ -121,8 +128,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       session, 
       loading, 
       signInWithGoogle, 
-      signIn, // ✅ Provider mein add kiya
-      signUp, // ✅ Provider mein add kiya
+      signIn, 
+      signUp, 
       signOut 
     }}>
       {!loading && children}
