@@ -45,6 +45,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
       setLoading(false);
+
+      // ✅ FIXED: Login hote hi page refresh hoga taaki black screen/small UI issue khatam ho jaye
+      if (_event === 'SIGNED_IN') {
+        window.location.reload();
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -103,6 +108,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       toast.success('Logged out successfully');
+      // Logout par bhi refresh kar dena behtar hai
+      window.location.reload();
     } catch (error: any) {
       toast.error('Error signing out');
     }
