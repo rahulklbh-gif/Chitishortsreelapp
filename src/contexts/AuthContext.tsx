@@ -47,19 +47,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Google Sign-In Logic with YouTube Permissions
+  // 2. Google Sign-In Logic - YouTube Scopes Removed for Better Trust
   const signInWithGoogle = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          // IMPORTANT: Space-separated scopes for YouTube Upload
-          scopes: 'openid email profile https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly',
+          // ✅ YouTube permissions hata di hain taaki "Unverified" warning na aaye
+          scopes: 'openid email profile', 
           queryParams: {
             access_type: 'offline',
-            prompt: 'consent', // Forces Google to show the permission screen
+            prompt: 'select_account', // Consent screen ki jagah account selection dikhayega
           },
-          redirectTo: window.location.origin
+          // ✅ Aapka domain link yahan add kiya hai
+          redirectTo: 'https://chitishort.store'
         }
       });
 
@@ -95,4 +96,4 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-};
+}; 
