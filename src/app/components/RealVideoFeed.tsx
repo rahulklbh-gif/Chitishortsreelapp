@@ -25,7 +25,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const viewedVideos = useRef<Set<string>>(new Set());
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
 
-  // 🚀 PERFORMANCE: Pre-warm domains
   useEffect(() => {
     const domains = ['https://cdnjs.cloudflare.com', 'https://cdn.chitishort.store'];
     domains.forEach(domain => {
@@ -44,7 +43,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     if (currentUser) fetchFollows();
   }, [currentUser]);
 
-  // --- REAL-TIME COMMENT COUNT UPDATE ---
   useEffect(() => {
     const channel = supabase
       .channel('schema-db-changes')
@@ -66,20 +64,19 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     };
   }, []);
 
-  // --- VIEW RECORDING ---
   useEffect(() => {
     const recordView = async () => {
       if (!videos || videos.length === 0 || !videos[activeIndex] || !currentUser) return;
       const currentVideoId = videos[activeIndex].id;
       const currentUserId = currentUser.id;
-      if (viewedVideos.current.has(currentVideoId)) return;
+      if (viewedVideos.current.has(currentUserId + currentVideoId)) return;
 
       try {
         await supabase.rpc('increment_views', { 
           post_id: currentVideoId, 
           viewer_id: currentUserId 
         });
-        viewedVideos.current.add(currentVideoId);
+        viewedVideos.current.add(currentUserId + currentVideoId);
       } catch (err) {
         console.error("View error:", err);
       }
@@ -89,66 +86,78 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
-  // --- FETCH VIDEOS (MODIFIED WITH ALERTS & SIMPLE FETCH) ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
 
-      // ✅ SUDHAR: Maine Join hata kar select('*') kiya hai taaki profile error na aaye
+      // ✅ FIX: Using safe profile join logic
       const { data, error } = await supabase
        .from('posts')
-       .select('*')
+       .select(`
+          *,
+          profiles:user_id (
+            username,
+            full_name,
+            avatar_url
+          )
+        `)
        .order('created_at', { ascending: false });
 
       if (error) {
-        alert("Database Error: " + error.message);
-        throw error;
+        console.error("Join fetch failed, falling back to simple fetch:", error);
+        // Agar join fail ho jaye (Relationship error), toh simple fetch karein taaki black screen na aaye
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('posts')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (fallbackError) throw fallbackError;
+        processVideos(fallbackData || [], videoIdFromUrl);
+      } else {
+        processVideos(data || [], videoIdFromUrl);
       }
       
-      if (data && data.length > 0) {
-        // ✅ ALERT: Ye batayega ki kitne videos mile
-        alert("Success! " + data.length + " videos database se mil gaye!");
-
-        let updatedVideos = data.map((video: any) => {
-          const freshName = video.user_name || 'user';
-          const freshAvatar = video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
-          
-          const rawUrl = video.video_url || video.url || "";
-          const finalUrl = rawUrl.replace(
-            /pub-[a-zA-Z0-9]+\.r2\.dev/g, 
-            'cdn.chitishort.store'
-          );
-
-          return {
-            ...video,
-            video_url: finalUrl,
-            user_name: freshName,
-            user_avatar: freshAvatar,
-            likes_count: video.likes_count || 0,
-            comments_count: video.comments_count || 0,
-            shares_count: video.shares_count || 0
-          };
-        });
-
-        if (videoIdFromUrl) {
-          const targetIndex = updatedVideos.findIndex(v => v.id === videoIdFromUrl);
-          if (targetIndex !== -1) {
-            const targetVideo = updatedVideos.splice(targetIndex, 1)[0];
-            updatedVideos = [targetVideo, ...updatedVideos];
-          }
-        }
-
-        setVideos(updatedVideos);
-      } else {
-        // ❌ ALERT: Agar table bilkul khali hai
-        alert("Database fetch toh hua, par posts table khali hai!");
-      }
     } catch (error) { 
       console.error('Error fetching videos:', error); 
     } finally { 
       setLoading(false); 
     }
+  };
+
+  const processVideos = (data: any[], videoIdFromUrl: string | null) => {
+    let updatedVideos = data.map((video: any) => {
+      // ✅ Dono jagah se check karega: Profile join aur Video table
+      const freshName = video.profiles?.username || video.profiles?.full_name || video.user_name || 'user';
+      const freshAvatar = video.profiles?.avatar_url || 
+                         video.user_avatar || 
+                         'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
+      
+      const rawUrl = video.video_url || video.url || "";
+      const finalUrl = rawUrl.replace(
+        /pub-[a-zA-Z0-9]+\.r2\.dev/g, 
+        'cdn.chitishort.store'
+      );
+
+      return {
+        ...video,
+        video_url: finalUrl,
+        user_name: freshName,
+        user_avatar: freshAvatar,
+        likes_count: video.likes_count || 0,
+        comments_count: video.comments_count || 0,
+        shares_count: video.shares_count || 0
+      };
+    });
+
+    if (videoIdFromUrl) {
+      const targetIndex = updatedVideos.findIndex(v => v.id === videoIdFromUrl);
+      if (targetIndex !== -1) {
+        const targetVideo = updatedVideos.splice(targetIndex, 1)[0];
+        updatedVideos = [targetVideo, ...updatedVideos];
+      }
+    }
+    setVideos(updatedVideos);
   };
 
   const fetchFollows = async () => {
@@ -247,7 +256,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             className="relative h-screen w-full snap-start snap-always bg-black"
             onClick={togglePlayPause} 
           >
-            
             {shouldRender ? (
               <OptimizedVideoPlayer
                 videoUrl={video.video_url}
