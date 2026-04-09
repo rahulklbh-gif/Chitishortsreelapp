@@ -25,7 +25,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const viewedVideos = useRef<Set<string>>(new Set());
   const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
 
-  // ðŸš€ PERFORMANCE: Pre-warm domains
+  // 🚀 PERFORMANCE: Pre-warm domains
   useEffect(() => {
     const domains = ['https://cdnjs.cloudflare.com', 'https://cdn.chitishort.store'];
     domains.forEach(domain => {
@@ -89,35 +89,31 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
-  // --- FETCH VIDEOS (Fix: Priority to Profile Join) ---
+  // --- FETCH VIDEOS (MODIFIED WITH ALERTS & SIMPLE FETCH) ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
 
+      // ✅ SUDHAR: Maine Join hata kar select('*') kiya hai taaki profile error na aaye
       const { data, error } = await supabase
        .from('posts')
-       .select(`
-          *,
-          profiles:user_id (
-            username,
-            full_name,
-            avatar_url
-          )
-        `)
+       .select('*')
        .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        alert("Database Error: " + error.message);
+        throw error;
+      }
       
-      if (data) {
+      if (data && data.length > 0) {
+        // ✅ ALERT: Ye batayega ki kitne videos mile
+        alert("Success! " + data.length + " videos database se mil gaye!");
+
         let updatedVideos = data.map((video: any) => {
-          const freshName = video.profiles?.username || video.profiles?.full_name || video.user_name || 'user';
+          const freshName = video.user_name || 'user';
+          const freshAvatar = video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
           
-          const freshAvatar = video.profiles?.avatar_url || 
-                               video.user_avatar || 
-                               'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
-          
-          // âœ… LINK FIX: Automatically use fast CDN domain
           const rawUrl = video.video_url || video.url || "";
           const finalUrl = rawUrl.replace(
             /pub-[a-zA-Z0-9]+\.r2\.dev/g, 
@@ -144,6 +140,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         }
 
         setVideos(updatedVideos);
+      } else {
+        // ❌ ALERT: Agar table bilkul khali hai
+        alert("Database fetch toh hua, par posts table khali hai!");
       }
     } catch (error) { 
       console.error('Error fetching videos:', error); 
@@ -258,7 +257,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 avatarUrl={video.user_avatar}
                 caption={video.caption}
                 filterName={video.filter_name || 'none'}
-                // ðŸš€ FIXED: Pass new props for text and mirroring
                 textOverlays={video.text_overlays}
                 isFrontCamera={video.is_front_camera}
               />
@@ -276,7 +274,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             )}
 
-            {/* UI LAYER */}
             <div className="absolute bottom-0 left-0 right-0 p-6 pt-20 bg-gradient-to-t from-black/95 via-transparent to-transparent text-white z-20 pointer-events-none">
               <div 
                 className="flex items-center gap-3 mb-3 pointer-events-auto cursor-pointer"
