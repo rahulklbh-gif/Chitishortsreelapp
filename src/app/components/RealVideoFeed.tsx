@@ -1,5 +1,4 @@
 "use client";
-
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { VideoActions } from './VideoActions';
@@ -16,7 +15,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
-
   const [isPlaying, setIsPlaying] = useState(true); 
   const [showPlayIcon, setShowPlayIcon] = useState(false); 
   
@@ -89,31 +87,37 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
-  // --- FETCH VIDEOS (MODIFIED WITH ALERTS & SIMPLE FETCH) ---
+  // --- FETCH VIDEOS (Relationship Join Logic Re-Integrated) ---
   const fetchVideos = async () => {
     try {
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
 
-      // ✅ SUDHAR: Maine Join hata kar select('*') kiya hai taaki profile error na aaye
+      // ✅ FIXED: Using Relationship Join for Profiles (As per your old logic)
       const { data, error } = await supabase
        .from('posts')
-       .select('*')
+       .select(`
+          *,
+          profiles:user_id (
+            username,
+            full_name,
+            avatar_url
+          )
+        `)
        .order('created_at', { ascending: false });
 
-      if (error) {
-        alert("Database Error: " + error.message);
-        throw error;
-      }
+      if (error) throw error;
       
-      if (data && data.length > 0) {
-        // ✅ ALERT: Ye batayega ki kitne videos mile
-        alert("Success! " + data.length + " videos database se mil gaye!");
-
+      if (data) {
         let updatedVideos = data.map((video: any) => {
-          const freshName = video.user_name || 'user';
-          const freshAvatar = video.user_avatar || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
+          // ✅ Profile Pic & Name Logic: Using Join Data
+          const freshName = video.profiles?.username || video.profiles?.full_name || video.user_name || 'user';
           
+          const freshAvatar = video.profiles?.avatar_url || 
+                             video.user_avatar || 
+                             'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
+          
+          // CDN Link Fix
           const rawUrl = video.video_url || video.url || "";
           const finalUrl = rawUrl.replace(
             /pub-[a-zA-Z0-9]+\.r2\.dev/g, 
@@ -140,9 +144,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         }
 
         setVideos(updatedVideos);
-      } else {
-        // ❌ ALERT: Agar table bilkul khali hai
-        alert("Database fetch toh hua, par posts table khali hai!");
       }
     } catch (error) { 
       console.error('Error fetching videos:', error); 
