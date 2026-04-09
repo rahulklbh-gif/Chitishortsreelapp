@@ -43,10 +43,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
-      setLoading(false);
-
-      // ✅ FIXED: Login hote hi sirf EK BAAR reload hoga, loop nahi banega
+      
+      // ✅ SIGNED_IN par loading ko turant false karein aur reload sambhalein
       if (_event === 'SIGNED_IN') {
+        setLoading(false); 
         const hasReloaded = sessionStorage.getItem('auth_reloaded');
         if (!hasReloaded) {
           sessionStorage.setItem('auth_reloaded', 'true');
@@ -54,16 +54,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Logout hone par flag saaf kar dein taaki agli baar login par fir refresh ho sake
       if (_event === 'SIGNED_OUT') {
+        setLoading(false);
         sessionStorage.removeItem('auth_reloaded');
       }
+      
+      setLoading(false);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Google Sign-In Logic - YouTube Scopes Removed
+  // 2. Google Sign-In Logic
   const signInWithGoogle = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -114,7 +116,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       toast.success('Logged out successfully');
-      // Logout par bhi session storage clean kar dena chahiye
       sessionStorage.removeItem('auth_reloaded');
       window.location.reload();
     } catch (error: any) {
@@ -132,7 +133,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp, 
       signOut 
     }}>
-      {!loading && children}
+      {/* ✅ Yahan change kiya hai: Loading hone par bhi children render honge */}
+      {/* Isse feed component ko render hone se koi rok nahi payega */}
+      {children}
     </AuthContext.Provider>
   );
 }
