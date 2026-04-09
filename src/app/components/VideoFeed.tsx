@@ -3,13 +3,13 @@
 import { useEffect, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
-import { Loader2, Zap, Music2, Send } from 'lucide-react'; // ✅ Send icon add kiya
-import { useAuth } from '@/contexts/AuthContext'; // ✅ Auth check ke liye
-import { useNavigate } from 'react-router-dom'; // ✅ Navigation ke liye
+import { Loader2, Zap, Music2, Send } from 'lucide-react'; 
+import { useAuth } from '@/contexts/AuthContext'; 
+import { useNavigate } from 'react-router-dom'; 
 
 export default function VideoFeed() {
-  const { user: currentUser } = useAuth(); // ✅ User check
-  const navigate = useNavigate(); // ✅ Navigate function
+  const { user: currentUser } = useAuth(); 
+  const navigate = useNavigate(); 
   const [posts, setPosts] = useState<any[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -18,6 +18,9 @@ export default function VideoFeed() {
   useEffect(() => {
     const fetchPosts = async () => {
       try {
+        // ✅ Login status ke hisab se loading state update karein
+        setLoading(true); 
+        
         const { data, error } = await supabase
           .from('posts')
           .select(`
@@ -42,8 +45,10 @@ export default function VideoFeed() {
         setLoading(false);
       }
     };
+
     fetchPosts();
-  }, []);
+    // ✅ SUDHAR: currentUser ko add kiya taaki login/logout par videos turant reload hon
+  }, [currentUser]); 
 
   useEffect(() => {
     const container = containerRef.current;
@@ -67,7 +72,7 @@ export default function VideoFeed() {
 
   return (
     <div className="relative h-screen w-full bg-black">
-      {/* ✅ INSTAGRAM STYLE HEADER: Sirf isko add kiya hai (Purane code ko bina chhede) */}
+      {/* INSTAGRAM STYLE HEADER */}
       <div className="absolute top-0 left-0 right-0 p-4 pt-8 flex items-center justify-between z-[100] bg-gradient-to-b from-black/60 to-transparent">
         <h1 className="text-xl font-black italic tracking-tighter text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]">
           CHITI <span className="text-blue-500">SHORTS</span>
@@ -75,17 +80,14 @@ export default function VideoFeed() {
         
         <div className="flex items-center gap-3">
           {currentUser ? (
-            /* ✅ LOGIN HONE PAR: Message Icon (Send) */
             <button 
               onClick={() => navigate('/chats')} 
-              className="p-2 bg-black/20 backdrop-blur-md rounded-full border border-white/10 active:scale-90 transition-all shadow-lg"
+              className="p-2 bg-black/20 backdrop-blur-md rounded-full border border-white/10 active:scale-90 transition-all shadow-lg relative"
             >
               <Send size={22} className="text-white -rotate-12" />
-              {/* Message Alert Dot */}
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full border border-black animate-pulse"></span>
             </button>
           ) : (
-            /* ✅ LOGOUT HONE PAR: Sign In Button */
             <button 
               onClick={() => navigate('/auth')} 
               className="px-4 py-1.5 bg-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all"
@@ -96,7 +98,7 @@ export default function VideoFeed() {
         </div>
       </div>
 
-      {/* VIDEO CONTAINER: Bilkul aapka purana logic */}
+      {/* VIDEO CONTAINER */}
       <div ref={containerRef} className="h-full w-full overflow-y-scroll snap-y snap-mandatory no-scrollbar">
         {posts.length > 0 ? (
           posts.map((post, index) => {
@@ -159,4 +161,4 @@ export default function VideoFeed() {
       </div>
     </div>
   );
-} 
+}
