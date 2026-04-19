@@ -91,7 +91,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
 
-      // ✅ PROFILE JOIN: Isse updated photo aur naam milega
+      // ✅ RANDOM LOGIC: Database se data lekar client-side shuffle kar rahe hain
+      // profiles join hamesha rahega taaki updated pic/name dikhe
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -101,20 +102,23 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             full_name,
             avatar_url
           )
-        `)
-       .order('created_at', { ascending: false });
+        `);
 
       if (error) {
         console.error("Join fetch failed, falling back to simple fetch:", error);
         const { data: fallbackData, error: fallbackError } = await supabase
           .from('posts')
-          .select('*')
-          .order('created_at', { ascending: false });
+          .select('*');
         
         if (fallbackError) throw fallbackError;
-        processVideos(fallbackData || [], videoIdFromUrl);
+        
+        // Shuffle fallback data
+        const shuffledFallback = [...(fallbackData || [])].sort(() => Math.random() - 0.5);
+        processVideos(shuffledFallback, videoIdFromUrl);
       } else {
-        processVideos(data || [], videoIdFromUrl);
+        // ✅ Sabse main kaam: Yahan data shuffle ho raha hai
+        const shuffledData = [...(data || [])].sort(() => Math.random() - 0.5);
+        processVideos(shuffledData, videoIdFromUrl);
       }
       
     } catch (error) { 
@@ -126,7 +130,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
   const processVideos = (data: any[], videoIdFromUrl: string | null) => {
     let updatedVideos = data.map((video: any) => {
-      // ✅ Updated logic: Profiles table ko priority dena
       const freshName = video.profiles?.username || video.profiles?.full_name || video.user_name || 'user';
       const freshAvatar = video.profiles?.avatar_url || 
                          video.user_avatar || 
@@ -149,6 +152,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       };
     });
 
+    // Agar URL mein specific video hai, toh usko pehle rakho, baki shuffle rehne do
     if (videoIdFromUrl) {
       const targetIndex = updatedVideos.findIndex(v => v.id === videoIdFromUrl);
       if (targetIndex !== -1) {
