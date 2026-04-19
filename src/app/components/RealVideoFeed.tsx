@@ -91,7 +91,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
 
-      // ✅ FIX: Using safe profile join logic
+      // ✅ PROFILE JOIN: Isse updated photo aur naam milega
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -106,7 +106,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
       if (error) {
         console.error("Join fetch failed, falling back to simple fetch:", error);
-        // Agar join fail ho jaye (Relationship error), toh simple fetch karein taaki black screen na aaye
         const { data: fallbackData, error: fallbackError } = await supabase
           .from('posts')
           .select('*')
@@ -127,7 +126,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
   const processVideos = (data: any[], videoIdFromUrl: string | null) => {
     let updatedVideos = data.map((video: any) => {
-      // ✅ Dono jagah se check karega: Profile join aur Video table
+      // ✅ Updated logic: Profiles table ko priority dena
       const freshName = video.profiles?.username || video.profiles?.full_name || video.user_name || 'user';
       const freshAvatar = video.profiles?.avatar_url || 
                          video.user_avatar || 
