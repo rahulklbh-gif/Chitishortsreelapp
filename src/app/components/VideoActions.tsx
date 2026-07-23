@@ -5,10 +5,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+
 // ✅ Modal Import (Barkaraar hai)
 import { ShareModal } from '@/app/components/ShareModal';
-// ✅ Watch Party Import (Add ho gaya)
-import { WatchPartyManager } from '@/app/components/WatchPartyManager';
+
+// ✅ WatchPartyManager Import (Default Import to avoid Vercel build error)
+import WatchPartyManager from '@/app/components/WatchPartyManager';
 
 export function VideoActions({ 
   videoId, 
@@ -174,7 +176,7 @@ export function VideoActions({
         </span>
       </button>
 
-      {/* ✅ Watch Party Component Add kar diya hai */}
+      {/* ✅ Watch Party Button Added */}
       <WatchPartyManager 
         videoId={videoId} 
         videoUrl={videoUrl || ""} 
