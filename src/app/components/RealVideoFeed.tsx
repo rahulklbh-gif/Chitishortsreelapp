@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { VideoActions } from './VideoActions';
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
+import { WatchPartyManager } from './WatchPartyManager'; // 👈 Step 1: Import Added
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Music2, Play as PlayIcon, Pause } from 'lucide-react'; 
@@ -91,8 +92,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       setLoading(true);
       const videoIdFromUrl = searchParams.get('video');
 
-      // ✅ RANDOM LOGIC: Database se data lekar client-side shuffle kar rahe hain
-      // profiles join hamesha rahega taaki updated pic/name dikhe
       const { data, error } = await supabase
        .from('posts')
        .select(`
@@ -112,11 +111,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         
         if (fallbackError) throw fallbackError;
         
-        // Shuffle fallback data
         const shuffledFallback = [...(fallbackData || [])].sort(() => Math.random() - 0.5);
         processVideos(shuffledFallback, videoIdFromUrl);
       } else {
-        // ✅ Sabse main kaam: Yahan data shuffle ho raha hai
         const shuffledData = [...(data || [])].sort(() => Math.random() - 0.5);
         processVideos(shuffledData, videoIdFromUrl);
       }
@@ -132,8 +129,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     let updatedVideos = data.map((video: any) => {
       const freshName = video.profiles?.username || video.profiles?.full_name || video.user_name || 'user';
       const freshAvatar = video.profiles?.avatar_url || 
-                         video.user_avatar || 
-                         'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
+                          video.user_avatar || 
+                          'https://abs.twimg.com/sticky/default_profile_images/default_profile_normal.png';
       
       const rawUrl = video.video_url || video.url || "";
       const finalUrl = rawUrl.replace(
@@ -152,7 +149,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       };
     });
 
-    // Agar URL mein specific video hai, toh usko pehle rakho, baki shuffle rehne do
     if (videoIdFromUrl) {
       const targetIndex = updatedVideos.findIndex(v => v.id === videoIdFromUrl);
       if (targetIndex !== -1) {
@@ -318,7 +314,8 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             </div>
 
-            <div className="absolute right-3 bottom-24 z-20" onClick={(e) => e.stopPropagation()}>
+            {/* 👇 Step 2: Added WatchPartyManager here */}
+            <div className="absolute right-3 bottom-24 z-20 flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
               <VideoActions 
                 videoId={video.id} 
                 initialLikes={video.likes_count || 0}
@@ -328,6 +325,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 videoUrl={video.video_url}
                 onComment={() => onComment(video.id, video.user_id)} 
                 onShare={() => handleVideoShare(video)} 
+              />
+              
+              <WatchPartyManager 
+                videoId={video.id} 
+                videoUrl={video.video_url} 
               />
             </div>
           </div>
