@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { VideoActions } from './VideoActions';
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
+import WatchPartyManager from './WatchPartyManager'; // 👈 WatchParty Auto-Join Import
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Music2, Play as PlayIcon, Pause } from 'lucide-react'; 
@@ -20,6 +21,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [isPlaying, setIsPlaying] = useState(true); 
   const [showPlayIcon, setShowPlayIcon] = useState(false); 
   
+  // 🔴 Watch Party Link Handling State
+  const [activePartyRoom, setActivePartyRoom] = useState<string | null>(null);
+
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewedVideos = useRef<Set<string>>(new Set());
@@ -34,6 +38,15 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       document.head.appendChild(link);
     });
   }, []);
+
+  // 🔴 URL SE PARTY ROOM AUTO-DETECT LOGIC (DOST LINK CLICK KAREGA TOH AUTO JOIN HOGA)
+  useEffect(() => {
+    const partyRoom = searchParams.get('partyRoom');
+    if (partyRoom && partyRoom !== 'undefined') {
+      setActivePartyRoom(partyRoom);
+      toast.info("Watch Party Room Mein Connect Ho Rahe Hain...");
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     fetchVideos();
@@ -328,6 +341,18 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
           </div>
         );
       })}
+
+      {/* 🔴 AUTO JOIN WATCH PARTY OVERLAY POPUP FOR FRIENDS */}
+      {activePartyRoom && videos.length > 0 && (
+        <WatchPartyManager
+          roomId={activePartyRoom}
+          videoId={videos[activeIndex]?.id || ""}
+          videoUrl={videos[activeIndex]?.video_url || ""}
+          userId={currentUser?.id}
+          userName={currentUser?.user_metadata?.username || currentUser?.email?.split('@')[0]}
+          onClose={() => setActivePartyRoom(null)}
+        />
+      )}
     </div>
   );
 }
