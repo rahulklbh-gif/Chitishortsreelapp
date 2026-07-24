@@ -2,7 +2,7 @@
 
 /**
  * FILE: components/WatchPartyManager.tsx
- * VERSION: 1.3.0 (STABLE ROOM JOIN & PERMISSION CRASH FIX)
+ * VERSION: 2.0.0 (FULL WATCH PARTY SYNC & REMOTE CAMERA FIX)
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -41,21 +41,22 @@ interface WatchPartyManagerProps {
   userId?: string;
   userName?: string;
   onClose?: () => void;
-  onRemoteVideoControl?: (action: 'play' | 'pause' | 'seek', time?: number, videoUrl?: string) => void;
-  currentVideoState?: { isPlaying: boolean; currentTime: number; videoUrl: string };
+  onRemoteVideoControl?: (targetVideoId: string) => void;
 }
 
+// 🟢 Camera Feed Bubble Component with Auto-Stream Attach Fix
 function RemoteVideoBubble({ stream, name, isLocal = false }: { stream: MediaStream | null; name: string; isLocal?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
+      videoRef.current.play().catch(e => console.log("Play err", e));
     }
   }, [stream]);
 
   return (
-    <div className="relative w-16 h-16 sm:w-20 sm:h-20 bg-zinc-950 rounded-full border-2 border-pink-500 overflow-hidden shadow-xl flex-shrink-0">
+    <div className="relative w-16 h-16 sm:w-20 sm:h-20 bg-zinc-950 rounded-full border-2 border-pink-500 overflow-hidden shadow-xl flex-shrink-0 z-[9991]">
       {stream ? (
         <video 
           ref={videoRef}
@@ -96,14 +97,14 @@ export default function WatchPartyManager({
   const [activePeers, setActivePeers] = useState<Array<{ peerId: string; name: string; stream: MediaStream | null }>>([]);
   const [floatingEmojis, setFloatingEmojis] = useState<Array<{ id: string; char: string; left: number }>>([]);
   const [isJoined, setIsJoined] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false);
+  const [isMinimized, setIsMinimized] = useState(true); // Default Floating Mode
   const [isConnecting, setIsConnecting] = useState(false);
   
-  // Media Controls
+  // Controls
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
 
-  // References (Prevents State-reset on re-renders)
+  // References
   const channelRef = useRef<any>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionsRef = useRef<{ [key: string]: RTCPeerConnection }>({});
@@ -137,7 +138,7 @@ export default function WatchPartyManager({
     }
   }, [propRoomId, videoId]);
 
-  // Safe Camera Initialization
+  // Safe Camera Stream Access
   const initLocalStream = async () => {
     try {
       if (localStreamRef.current) return localStreamRef.current;
@@ -149,8 +150,8 @@ export default function WatchPartyManager({
       localStreamRef.current = stream;
       return stream;
     } catch (err) {
-      console.warn("Camera or Microphone access error:", err);
-      toast.info("Audio/Video permission error - Joining in Viewer Mode");
+      console.warn("Camera or Microphone permission denied:", err);
+      toast.info("Viewer Mode Active");
       return null;
     }
   };
@@ -165,17 +166,18 @@ export default function WatchPartyManager({
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
     }
 
+    // 🟢 Remote Track Receiver
     pc.ontrack = (event) => {
-      const remoteStream = event.streams[0];
-      setActivePeers(prev => {
-        const index = prev.findIndex(p => p.peerId === targetPeerId);
-        if (index > -1) {
-          const updated = [...prev];
-          updated[index] = { ...updated[index], stream: remoteStream };
-          return updated;
-        }
-        return [...prev, { peerId: targetPeerId, name: peerName, stream: remoteStream }];
-      });
+      const [remoteStream] = event.streams;
+      if (remoteStream) {
+        setActivePeers(prev => {
+          const exists = prev.some(p => p.peerId === targetPeerId);
+          if (exists) {
+            return prev.map(p => p.peerId === targetPeerId ? { ...p, stream: remoteStream } : p);
+          }
+          return [...prev, { peerId: targetPeerId, name: peerName, stream: remoteStream }];
+        });
+      }
     };
 
     pc.onicecandidate = (event) => {
@@ -195,15 +197,24 @@ export default function WatchPartyManager({
     return pc;
   };
 
-  // Main Join Function with Lock Protection
+  // 🟢 Synchronize Scroll/Video change to other friends
+  useEffect(() => {
+    if (isJoined && channelRef.current && videoId) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'video-scroll',
+        payload: { senderId: effectiveUserId, videoId }
+      });
+    }
+  }, [videoId, isJoined]);
+
+  // Auto-Join / Start Watch Party
   const joinPartyRoom = async () => {
     if (isJoined || isConnecting || !roomId) return;
 
     try {
       setIsConnecting(true);
       const stream = await initLocalStream();
-      
-      // Force State to Joined first to prevent UI reset
       setIsJoined(true);
 
       const channel = supabase.channel(`party_room:${roomId}`, {
@@ -220,7 +231,7 @@ export default function WatchPartyManager({
         .on('presence', { event: 'join' }, ({ newPresences }) => {
           newPresences.forEach((presence: any) => {
             if (presence.userId !== effectiveUserId) {
-              toast.success(`${presence.name || 'Friend'} connected! 🎉`);
+              toast.success(`${presence.name || 'Friend'} Joined Watch Party! 🎉`);
               setActivePeers(prev => {
                 if (prev.some(p => p.peerId === presence.userId)) return prev;
                 return [...prev, { peerId: presence.userId, name: presence.name, stream: null }];
@@ -231,7 +242,7 @@ export default function WatchPartyManager({
         })
         .on('presence', { event: 'leave' }, ({ leftPresences }) => {
           leftPresences.forEach((presence: any) => {
-            toast.info(`${presence.name || 'Friend'} left watch party.`);
+            toast.info(`${presence.name || 'Friend'} left party.`);
             if (peerConnectionsRef.current[presence.userId]) {
               peerConnectionsRef.current[presence.userId].close();
               delete peerConnectionsRef.current[presence.userId];
@@ -240,6 +251,7 @@ export default function WatchPartyManager({
           });
         });
 
+      // Signal Handler
       channel.on('broadcast', { event: 'signal' }, async ({ payload }) => {
         if (payload.to !== effectiveUserId) return;
 
@@ -260,14 +272,15 @@ export default function WatchPartyManager({
           try {
             await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
           } catch (e) {
-            console.warn("Failed ICE Candidate", e);
+            console.warn("ICE candidate error", e);
           }
         }
       });
 
-      channel.on('broadcast', { event: 'video-control' }, ({ payload }) => {
-        if (payload.senderId !== effectiveUserId && onRemoteVideoControl) {
-          onRemoteVideoControl(payload.action, payload.time, payload.videoUrl);
+      // Sync Scroll Receiver
+      channel.on('broadcast', { event: 'video-scroll' }, ({ payload }) => {
+        if (payload.senderId !== effectiveUserId && payload.videoId && onRemoteVideoControl) {
+          onRemoteVideoControl(payload.videoId);
         }
       });
 
@@ -278,18 +291,24 @@ export default function WatchPartyManager({
       channel.subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
           await channel.track({ userId: effectiveUserId, name: effectiveUserName, joinedAt: new Date() });
-          toast.success("Watch Party Active! Send invite link to friends.");
         }
       });
 
     } catch (err) {
-      console.error("Failed to join party:", err);
-      toast.error("Joining failed, please try again");
+      console.error("Watch Party Error:", err);
+      toast.error("Could not start party");
       setIsJoined(false);
     } finally {
       setIsConnecting(false);
     }
   };
+
+  // Auto-connect if URL has partyRoom
+  useEffect(() => {
+    if (roomId && !isJoined && !isConnecting) {
+      joinPartyRoom();
+    }
+  }, [roomId]);
 
   const handleWebRTCOfferRequest = async (targetId: string, peerName: string, stream: MediaStream | null) => {
     const pc = createPeerConnection(targetId, peerName, stream);
@@ -347,16 +366,13 @@ export default function WatchPartyManager({
   };
 
   const copyPartyRoomLink = async () => {
-    if (!roomId || roomId === 'undefined') {
-      toast.error("Room ID generating...");
-      return;
-    }
+    if (!roomId) return;
     const inviteUrl = `${window.location.origin}/?partyRoom=${roomId}&video=${videoId}`;
     try {
       if (navigator.share) {
         await navigator.share({
-          title: 'Chiti Shorts - Watch Party',
-          text: 'Aao mere sath video dekho aur baat karo!',
+          title: 'Chiti Shorts Watch Party',
+          text: 'Aao mere sath video dekho aur live camera par baat karo!',
           url: inviteUrl
         });
       } else {
@@ -364,7 +380,7 @@ export default function WatchPartyManager({
         toast.success("Watch Party Link Copied!");
       }
     } catch (err) {
-      console.log("Share cancelled");
+      console.log("Cancelled share");
     }
   };
 
@@ -381,25 +397,37 @@ export default function WatchPartyManager({
 
   return (
     <>
-      {/* 🚀 1. FLOATING FEED CAMERA BUBBLES OVER VIDEO */}
+      {/* 🚀 1. FLOATING BUBBLES ON FEED (VISIBLE TO BOTH USER AND FRIENDS) */}
       {isJoined && (
         <div className="fixed top-16 right-4 z-[9990] flex flex-col gap-2 items-end pointer-events-auto">
+          {/* Local User Bubble */}
           <RemoteVideoBubble stream={localStreamRef.current} name="YOU" isLocal={true} />
 
+          {/* Connected Remote Friends' Bubbles */}
           {activePeers.map(peer => (
             <RemoteVideoBubble key={peer.peerId} stream={peer.stream} name={peer.name} />
           ))}
 
-          <button 
-            onClick={() => setIsMinimized(!isMinimized)}
-            className="p-2 bg-black/60 border border-white/20 rounded-full text-white backdrop-blur-md shadow-lg"
-          >
-            {isMinimized ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
-          </button>
+          {/* Toggle Expand Panel & Call End Button */}
+          <div className="flex items-center gap-1.5 mt-1">
+            <button 
+              onClick={() => setIsMinimized(!isMinimized)}
+              className="p-2 bg-black/70 border border-white/20 rounded-full text-white backdrop-blur-md shadow-lg"
+            >
+              {isMinimized ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
+            </button>
+            <button 
+              onClick={handleCloseOrLeave}
+              className="p-2 bg-red-600 border border-red-400 rounded-full text-white backdrop-blur-md shadow-lg"
+              title="Leave Party"
+            >
+              <PhoneOff size={14} />
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Floating Emojis Canvas */}
+      {/* Floating Emojis Layer */}
       <div className="fixed inset-0 pointer-events-none z-[9995] overflow-hidden">
         {floatingEmojis.map(e => (
           <div
@@ -415,12 +443,11 @@ export default function WatchPartyManager({
         ))}
       </div>
 
-      {/* 🚀 2. CENTERED CONTROLLER MODAL */}
+      {/* 🚀 2. EXPANDABLE CONTROLLER MODAL */}
       {(!isMinimized || !isJoined) && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 pointer-events-auto">
           <div className="relative w-full max-w-sm bg-zinc-900 border border-zinc-700/80 rounded-3xl p-5 shadow-2xl flex flex-col items-center gap-4 text-white overflow-hidden">
             
-            {/* Header Controls */}
             <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
               {isJoined && (
                 <button 
@@ -438,7 +465,6 @@ export default function WatchPartyManager({
               </button>
             </div>
 
-            {/* Header Title */}
             <div className="flex flex-col items-center text-center gap-1.5 mt-1">
               <div className="p-3 bg-purple-600/30 rounded-full border border-purple-500/50">
                 <Sparkles className="w-8 h-8 text-yellow-300 animate-pulse" />
@@ -449,7 +475,6 @@ export default function WatchPartyManager({
               </p>
             </div>
 
-            {/* Local Preview inside Modal when Joined */}
             {isJoined && (
               <div className="flex items-center justify-center gap-3 w-full my-2 py-2">
                 <RemoteVideoBubble stream={localStreamRef.current} name="YOU" isLocal={true} />
@@ -464,27 +489,25 @@ export default function WatchPartyManager({
                 <button 
                   onClick={joinPartyRoom}
                   disabled={isConnecting}
-                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 py-3.5 rounded-2xl font-black uppercase text-xs tracking-wider flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-purple-900/30 text-white disabled:opacity-50"
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 py-3.5 rounded-2xl font-black uppercase text-xs tracking-wider flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg text-white"
                 >
                   <Sparkles size={16}/> {isConnecting ? 'Connecting...' : 'Start Watch Party Now'}
                 </button>
               </div>
             ) : (
               <div className="w-full flex flex-col items-center gap-3">
-                {/* Emojis Slider */}
                 <div className="flex justify-between items-center w-full bg-black/50 p-2 border border-white/10 rounded-2xl overflow-x-auto no-scrollbar gap-1">
                   {EMOTI_REACTIONS.map(emoji => (
                     <button
                       key={emoji.name}
                       onClick={() => sendEmojiReaction(emoji.char)}
-                      className="text-2xl active:scale-150 transition-transform hover:-translate-y-1 duration-150 shrink-0 px-1"
+                      className="text-2xl active:scale-150 transition-transform duration-150 shrink-0 px-1"
                     >
                       {emoji.char}
                     </button>
                   ))}
                 </div>
 
-                {/* Media Control Actions */}
                 <div className="flex items-center justify-between w-full bg-zinc-800/80 p-2.5 rounded-2xl border border-white/10 mt-1">
                   <div className="flex gap-2">
                     <button 
@@ -504,13 +527,13 @@ export default function WatchPartyManager({
                   <div className="flex gap-2">
                     <button 
                       onClick={copyPartyRoomLink}
-                      className="px-3.5 py-3 bg-blue-600 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-md shadow-blue-900/30"
+                      className="px-3.5 py-3 bg-blue-600 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-md"
                     >
                       <Share2 size={14}/> Invite
                     </button>
                     <button 
                       onClick={handleCloseOrLeave}
-                      className="px-3 py-3 bg-red-600 text-white rounded-xl font-bold text-xs flex items-center gap-1 active:scale-95 transition-all shadow-md shadow-red-900/30"
+                      className="px-3 py-3 bg-red-600 text-white rounded-xl font-bold text-xs flex items-center gap-1 active:scale-95 transition-all shadow-md"
                     >
                       <PhoneOff size={14}/> Leave
                     </button>
