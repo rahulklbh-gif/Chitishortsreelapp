@@ -2,8 +2,7 @@
 
 /**
  * FILE: components/WatchPartyManager.tsx
- * VERSION: 1.2.0 (LIVE CAMERA FIX & FLOATING FACE BUBBLES)
- * STATUS: SECURE REALTIME WEBRTC SIGNALING + FLOATING OVERLAY
+ * VERSION: 1.3.0 (STABLE ROOM JOIN & PERMISSION CRASH FIX)
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
@@ -46,7 +45,6 @@ interface WatchPartyManagerProps {
   currentVideoState?: { isPlaying: boolean; currentTime: number; videoUrl: string };
 }
 
-// Sub-component to ensure Video Element gets srcObject attached properly (Camera Black Screen Fix)
 function RemoteVideoBubble({ stream, name, isLocal = false }: { stream: MediaStream | null; name: string; isLocal?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -85,8 +83,7 @@ export default function WatchPartyManager({
   userId: propUserId,
   userName: propUserName,
   onClose,
-  onRemoteVideoControl,
-  currentVideoState
+  onRemoteVideoControl
 }: WatchPartyManagerProps) {
   
   const { user } = useAuth();
@@ -97,23 +94,24 @@ export default function WatchPartyManager({
   // States
   const [roomId, setRoomId] = useState<string>('');
   const [activePeers, setActivePeers] = useState<Array<{ peerId: string; name: string; stream: MediaStream | null }>>([]);
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [floatingEmojis, setFloatingEmojis] = useState<Array<{ id: string; char: string; left: number }>>([]);
   const [isJoined, setIsJoined] = useState(false);
-  const [isMinimized, setIsMinimized] = useState(false); // Floating Feed Bubbles Toggle
+  const [isMinimized, setIsMinimized] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
   
   // Media Controls
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
 
-  // References
+  // References (Prevents State-reset on re-renders)
   const channelRef = useRef<any>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionsRef = useRef<{ [key: string]: RTCPeerConnection }>({});
 
   const stopAllMediaTracks = useCallback(() => {
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
-      setLocalStream(null);
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
     }
     Object.keys(peerConnectionsRef.current).forEach(peerId => {
       peerConnectionsRef.current[peerId].close();
@@ -121,9 +119,10 @@ export default function WatchPartyManager({
     peerConnectionsRef.current = {};
     setActivePeers([]);
     setIsJoined(false);
-  }, [localStream]);
+    setIsConnecting(false);
+  }, []);
 
-  // Setup Room ID
+  // Room ID Initializer
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const existingRoom = urlParams.get('partyRoom');
@@ -138,18 +137,20 @@ export default function WatchPartyManager({
     }
   }, [propRoomId, videoId]);
 
-  // Camera Access
+  // Safe Camera Initialization
   const initLocalStream = async () => {
     try {
+      if (localStreamRef.current) return localStreamRef.current;
+      
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 320, height: 320, frameRate: 20 },
         audio: true
       });
-      setLocalStream(stream);
+      localStreamRef.current = stream;
       return stream;
     } catch (err) {
-      console.warn("Camera or microphone permission error:", err);
-      toast.error("Camera permissions required for Watch Party");
+      console.warn("Camera or Microphone access error:", err);
+      toast.info("Audio/Video permission error - Joining in Viewer Mode");
       return null;
     }
   };
@@ -194,86 +195,100 @@ export default function WatchPartyManager({
     return pc;
   };
 
+  // Main Join Function with Lock Protection
   const joinPartyRoom = async () => {
-    if (isJoined || !roomId || roomId === 'undefined') return;
+    if (isJoined || isConnecting || !roomId) return;
 
-    const stream = await initLocalStream();
-    setIsJoined(true);
+    try {
+      setIsConnecting(true);
+      const stream = await initLocalStream();
+      
+      // Force State to Joined first to prevent UI reset
+      setIsJoined(true);
 
-    const channel = supabase.channel(`party_room:${roomId}`, {
-      config: { presence: { key: effectiveUserId } }
-    });
-    channelRef.current = channel;
+      const channel = supabase.channel(`party_room:${roomId}`, {
+        config: { presence: { key: effectiveUserId } }
+      });
+      channelRef.current = channel;
 
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const currentPeerIds = Object.keys(state).filter(id => id !== effectiveUserId);
-        setActivePeers(prev => prev.filter(p => currentPeerIds.includes(p.peerId)));
-      })
-      .on('presence', { event: 'join' }, ({ newPresences }) => {
-        newPresences.forEach((presence: any) => {
-          if (presence.userId !== effectiveUserId) {
-            toast.success(`${presence.name || 'Friend'} connected! 🎉`);
-            setActivePeers(prev => {
-              if (prev.some(p => p.peerId === presence.userId)) return prev;
-              return [...prev, { peerId: presence.userId, name: presence.name, stream: null }];
+      channel
+        .on('presence', { event: 'sync' }, () => {
+          const state = channel.presenceState();
+          const currentPeerIds = Object.keys(state).filter(id => id !== effectiveUserId);
+          setActivePeers(prev => prev.filter(p => currentPeerIds.includes(p.peerId)));
+        })
+        .on('presence', { event: 'join' }, ({ newPresences }) => {
+          newPresences.forEach((presence: any) => {
+            if (presence.userId !== effectiveUserId) {
+              toast.success(`${presence.name || 'Friend'} connected! 🎉`);
+              setActivePeers(prev => {
+                if (prev.some(p => p.peerId === presence.userId)) return prev;
+                return [...prev, { peerId: presence.userId, name: presence.name, stream: null }];
+              });
+              handleWebRTCOfferRequest(presence.userId, presence.name, stream);
+            }
+          });
+        })
+        .on('presence', { event: 'leave' }, ({ leftPresences }) => {
+          leftPresences.forEach((presence: any) => {
+            toast.info(`${presence.name || 'Friend'} left watch party.`);
+            if (peerConnectionsRef.current[presence.userId]) {
+              peerConnectionsRef.current[presence.userId].close();
+              delete peerConnectionsRef.current[presence.userId];
+            }
+            setActivePeers(prev => prev.filter(p => p.peerId !== presence.userId));
+          });
+        });
+
+      channel.on('broadcast', { event: 'signal' }, async ({ payload }) => {
+        if (payload.to !== effectiveUserId) return;
+
+        const pc = peerConnectionsRef.current[payload.from] || createPeerConnection(payload.from, "Friend", stream);
+
+        if (payload.sdp) {
+          await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          if (payload.sdp.type === 'offer') {
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            channel.send({
+              type: 'broadcast',
+              event: 'signal',
+              payload: { to: payload.from, from: effectiveUserId, sdp: answer }
             });
-            handleWebRTCOfferRequest(presence.userId, presence.name, stream);
           }
-        });
-      })
-      .on('presence', { event: 'leave' }, ({ leftPresences }) => {
-        leftPresences.forEach((presence: any) => {
-          toast.info(`${presence.name || 'Friend'} left watch party.`);
-          if (peerConnectionsRef.current[presence.userId]) {
-            peerConnectionsRef.current[presence.userId].close();
-            delete peerConnectionsRef.current[presence.userId];
+        } else if (payload.candidate) {
+          try {
+            await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+          } catch (e) {
+            console.warn("Failed ICE Candidate", e);
           }
-          setActivePeers(prev => prev.filter(p => p.peerId !== presence.userId));
-        });
+        }
       });
 
-    channel.on('broadcast', { event: 'signal' }, async ({ payload }) => {
-      if (payload.to !== effectiveUserId) return;
-
-      const pc = peerConnectionsRef.current[payload.from] || createPeerConnection(payload.from, "Friend", stream);
-
-      if (payload.sdp) {
-        await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
-        if (payload.sdp.type === 'offer') {
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          channel.send({
-            type: 'broadcast',
-            event: 'signal',
-            payload: { to: payload.from, from: effectiveUserId, sdp: answer }
-          });
+      channel.on('broadcast', { event: 'video-control' }, ({ payload }) => {
+        if (payload.senderId !== effectiveUserId && onRemoteVideoControl) {
+          onRemoteVideoControl(payload.action, payload.time, payload.videoUrl);
         }
-      } else if (payload.candidate) {
-        try {
-          await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
-        } catch (e) {
-          console.warn("Failed ICE Candidate", e);
+      });
+
+      channel.on('broadcast', { event: 'emoji-blast' }, ({ payload }) => {
+        triggerLocalFloatingReaction(payload.emoji);
+      });
+
+      channel.subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ userId: effectiveUserId, name: effectiveUserName, joinedAt: new Date() });
+          toast.success("Watch Party Active! Send invite link to friends.");
         }
-      }
-    });
+      });
 
-    channel.on('broadcast', { event: 'video-control' }, ({ payload }) => {
-      if (payload.senderId !== effectiveUserId && onRemoteVideoControl) {
-        onRemoteVideoControl(payload.action, payload.time, payload.videoUrl);
-      }
-    });
-
-    channel.on('broadcast', { event: 'emoji-blast' }, ({ payload }) => {
-      triggerLocalFloatingReaction(payload.emoji);
-    });
-
-    channel.subscribe(async (status) => {
-      if (status === 'SUBSCRIBED') {
-        await channel.track({ userId: effectiveUserId, name: effectiveUserName, joinedAt: new Date() });
-      }
-    });
+    } catch (err) {
+      console.error("Failed to join party:", err);
+      toast.error("Joining failed, please try again");
+      setIsJoined(false);
+    } finally {
+      setIsConnecting(false);
+    }
   };
 
   const handleWebRTCOfferRequest = async (targetId: string, peerName: string, stream: MediaStream | null) => {
@@ -312,8 +327,8 @@ export default function WatchPartyManager({
   };
 
   const toggleMute = () => {
-    if (localStream) {
-      const audioTrack = localStream.getAudioTracks()[0];
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
       if (audioTrack) {
         audioTrack.enabled = !audioEnabled;
         setAudioEnabled(!audioEnabled);
@@ -322,8 +337,8 @@ export default function WatchPartyManager({
   };
 
   const toggleVideo = () => {
-    if (localStream) {
-      const videoTrack = localStream.getVideoTracks()[0];
+    if (localStreamRef.current) {
+      const videoTrack = localStreamRef.current.getVideoTracks()[0];
       if (videoTrack) {
         videoTrack.enabled = !videoEnabled;
         setVideoEnabled(!videoEnabled);
@@ -333,7 +348,7 @@ export default function WatchPartyManager({
 
   const copyPartyRoomLink = async () => {
     if (!roomId || roomId === 'undefined') {
-      toast.error("Room ID creating...");
+      toast.error("Room ID generating...");
       return;
     }
     const inviteUrl = `${window.location.origin}/?partyRoom=${roomId}&video=${videoId}`;
@@ -346,7 +361,7 @@ export default function WatchPartyManager({
         });
       } else {
         await navigator.clipboard.writeText(inviteUrl);
-        toast.success("Party Link Copied!");
+        toast.success("Watch Party Link Copied!");
       }
     } catch (err) {
       console.log("Share cancelled");
@@ -366,18 +381,15 @@ export default function WatchPartyManager({
 
   return (
     <>
-      {/* 🚀 1. FLOATING FEED CAMERA BUBBLES (Directly floats over Video Feed when minimized or in party) */}
+      {/* 🚀 1. FLOATING FEED CAMERA BUBBLES OVER VIDEO */}
       {isJoined && (
         <div className="fixed top-16 right-4 z-[9990] flex flex-col gap-2 items-end pointer-events-auto">
-          {/* Local Camera Bubble */}
-          <RemoteVideoBubble stream={localStream} name="YOU" isLocal={true} />
+          <RemoteVideoBubble stream={localStreamRef.current} name="YOU" isLocal={true} />
 
-          {/* Connected Friends Camera Bubbles */}
           {activePeers.map(peer => (
             <RemoteVideoBubble key={peer.peerId} stream={peer.stream} name={peer.name} />
           ))}
 
-          {/* Quick Expand Menu Control */}
           <button 
             onClick={() => setIsMinimized(!isMinimized)}
             className="p-2 bg-black/60 border border-white/20 rounded-full text-white backdrop-blur-md shadow-lg"
@@ -387,7 +399,7 @@ export default function WatchPartyManager({
         </div>
       )}
 
-      {/* Floating Emojis Layer */}
+      {/* Floating Emojis Canvas */}
       <div className="fixed inset-0 pointer-events-none z-[9995] overflow-hidden">
         {floatingEmojis.map(e => (
           <div
@@ -403,12 +415,12 @@ export default function WatchPartyManager({
         ))}
       </div>
 
-      {/* 🚀 2. CENTERED WATCH PARTY CONTROLLER MODAL */}
+      {/* 🚀 2. CENTERED CONTROLLER MODAL */}
       {(!isMinimized || !isJoined) && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 pointer-events-auto">
           <div className="relative w-full max-w-sm bg-zinc-900 border border-zinc-700/80 rounded-3xl p-5 shadow-2xl flex flex-col items-center gap-4 text-white overflow-hidden">
             
-            {/* Close / Minimize Controls */}
+            {/* Header Controls */}
             <div className="absolute top-4 right-4 flex items-center gap-2 z-10">
               {isJoined && (
                 <button 
@@ -426,7 +438,7 @@ export default function WatchPartyManager({
               </button>
             </div>
 
-            {/* Header */}
+            {/* Header Title */}
             <div className="flex flex-col items-center text-center gap-1.5 mt-1">
               <div className="p-3 bg-purple-600/30 rounded-full border border-purple-500/50">
                 <Sparkles className="w-8 h-8 text-yellow-300 animate-pulse" />
@@ -437,10 +449,10 @@ export default function WatchPartyManager({
               </p>
             </div>
 
-            {/* Camera Bubbles Preview in Modal */}
+            {/* Local Preview inside Modal when Joined */}
             {isJoined && (
               <div className="flex items-center justify-center gap-3 w-full my-2 py-2">
-                <RemoteVideoBubble stream={localStream} name="YOU" isLocal={true} />
+                <RemoteVideoBubble stream={localStreamRef.current} name="YOU" isLocal={true} />
                 {activePeers.map(peer => (
                   <RemoteVideoBubble key={peer.peerId} stream={peer.stream} name={peer.name} />
                 ))}
@@ -451,9 +463,10 @@ export default function WatchPartyManager({
               <div className="w-full flex flex-col gap-3 mt-2">
                 <button 
                   onClick={joinPartyRoom}
-                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 py-3.5 rounded-2xl font-black uppercase text-xs tracking-wider flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-purple-900/30 text-white"
+                  disabled={isConnecting}
+                  className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 py-3.5 rounded-2xl font-black uppercase text-xs tracking-wider flex items-center justify-center gap-2 active:scale-95 transition-all shadow-lg shadow-purple-900/30 text-white disabled:opacity-50"
                 >
-                  <Sparkles size={16}/> Start Watch Party Now
+                  <Sparkles size={16}/> {isConnecting ? 'Connecting...' : 'Start Watch Party Now'}
                 </button>
               </div>
             ) : (
@@ -471,7 +484,7 @@ export default function WatchPartyManager({
                   ))}
                 </div>
 
-                {/* Media Control Panel */}
+                {/* Media Control Actions */}
                 <div className="flex items-center justify-between w-full bg-zinc-800/80 p-2.5 rounded-2xl border border-white/10 mt-1">
                   <div className="flex gap-2">
                     <button 
