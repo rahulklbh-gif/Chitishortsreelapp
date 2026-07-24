@@ -151,14 +151,16 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
 
   return (
     <div className="relative w-full h-full bg-black flex items-center justify-center overflow-hidden">
-      <img src={video.thumbnail} className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-30" />
+      <img src={video.thumbnail} className="absolute inset-0 w-full h-full object-cover blur-2xl opacity-30" alt="" />
       <div className="relative z-10 w-full h-full">
         {renderVideo()}
         {currentFilter.vfx === 'lightning' && <div className="absolute inset-0 bg-blue-400/10 animate-pulse pointer-events-none z-20" />}
       </div>
+
       <button onClick={toggleMute} className="absolute top-20 right-3 w-10 h-10 bg-black/50 rounded-full flex items-center justify-center z-30 border border-white/10">
         {isMuted ? <VolumeX className="w-5 h-5 text-white" /> : <Volume2 className="w-5 h-5 text-white" />}
       </button>
+
       <div className="absolute bottom-24 left-3 right-20 z-20 pointer-events-none">
         <div className="space-y-3 pointer-events-auto">
           <div className="flex items-center gap-2">
@@ -175,15 +177,21 @@ export function VideoPlayer({ video, isActive, onComment }: VideoPlayerProps) {
           </div>
         </div>
       </div>
-      <VideoActions 
-        videoId={video.id} 
-        initialLikes={video.likes} 
-        videoOwnerId={video.user_id} 
-        videoUrl={actualVideoUrl} 
-        onComment={onComment} 
-        onShare={handleShare} 
-        onFollow={handleFollow} 
-      />
+
+      {/* ✅ Action Buttons Right Panel */}
+      <div className="absolute right-3 bottom-24 z-30" onClick={(e) => e.stopPropagation()}>
+        <VideoActions 
+          videoId={video.id} 
+          initialLikes={video.likes} 
+          initialComments={video.comments}
+          initialShares={video.shares}
+          videoOwnerId={video.user_id} 
+          videoUrl={actualVideoUrl} 
+          onComment={onComment} 
+          onShare={handleShare} 
+          onFollow={handleFollow} 
+        />
+      </div>
     </div>
   );
 }
