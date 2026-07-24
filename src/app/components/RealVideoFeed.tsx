@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { VideoActions } from './VideoActions';
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
-import { WatchPartyManager } from './WatchPartyManager'; // 👈 Step 1: Import Added
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { Loader2, Music2, Play as PlayIcon, Pause } from 'lucide-react'; 
@@ -314,7 +313,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
               </div>
             </div>
 
-            {/* 👇 Step 2: Added WatchPartyManager here */}
             <div className="absolute right-3 bottom-24 z-20 flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
               <VideoActions 
                 videoId={video.id} 
@@ -325,11 +323,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
                 videoUrl={video.video_url}
                 onComment={() => onComment(video.id, video.user_id)} 
                 onShare={() => handleVideoShare(video)} 
-              />
-              
-              <WatchPartyManager 
-                videoId={video.id} 
-                videoUrl={video.video_url} 
               />
             </div>
           </div>
