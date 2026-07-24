@@ -1,15 +1,13 @@
 "use client";
 
-import { Heart, MessageCircle, Share2 } from 'lucide-react';
+import { Heart, MessageCircle, Share2, PartyPopper } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react'; 
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
-// ✅ Modal Import (Barkaraar hai)
+// Modal Import
 import { ShareModal } from '@/app/components/ShareModal';
-
-// ✅ WatchPartyManager Import (Default Import to avoid Vercel build error)
 import WatchPartyManager from '@/app/components/WatchPartyManager';
 
 export function VideoActions({ 
@@ -20,10 +18,9 @@ export function VideoActions({
   videoOwnerId, 
   onComment, 
   onShare,
-  videoUrl: rawVideoUrl // ✅ Parent se URL lene ke liye
+  videoUrl: rawVideoUrl 
 }: any) {
   
-  // ✅ SMART LINK FIX: Link ko fast CDN mein badalne ke liye
   const videoUrl = rawVideoUrl?.replace(
     /pub-[a-zA-Z0-9]+\.r2\.dev/g, 
     'cdn.chitishort.store'
@@ -33,17 +30,15 @@ export function VideoActions({
   const [isLiked, setIsLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(initialLikes || 0);
   
-  // States for dynamic counts
   const [commentCount, setCommentCount] = useState(initialComments || 0);
   const [shareCount, setShareCount] = useState(initialShares || 0);
   
   const [isUpdating, setIsUpdating] = useState(false);
   const [hearts, setHearts] = useState<any[]>([]);
 
-  // ✅ Modal State (Barkaraar hai)
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isPartyOpen, setIsPartyOpen] = useState(false);
 
-  // Like check logic (Aapka original logic)
   const checkIfLiked = useCallback(async () => {
     if (!user || !videoId) return;
     try {
@@ -57,7 +52,6 @@ export function VideoActions({
     } catch (err) { console.error("Check like error:", err); }
   }, [user?.id, videoId]);
 
-  // Syncing initial props with local state
   useEffect(() => {
     checkIfLiked();
     setLikeCount(initialLikes ?? 0);
@@ -65,7 +59,6 @@ export function VideoActions({
     setShareCount(initialShares ?? 0);
   }, [videoId, initialLikes, initialComments, initialShares, checkIfLiked]);
 
-  // --- 1. HANDLE LIKE (Aapka Original Function - No Change) ---
   const handleLike = async () => {
     if (!user) { toast.error("Pehle login karein!"); return; }
     if (isUpdating) return;
@@ -119,12 +112,10 @@ export function VideoActions({
     }
   };
 
-  // --- 2. HANDLE COMMENT (Aapka Original logic) ---
   const handleCommentClick = async () => {
     onComment(videoId, videoOwnerId);
   };
 
-  // --- 3. HANDLE SHARE (Aapka Original logic) ---
   const handleShareInternal = async () => {
     try {
       setIsShareModalOpen(true);
@@ -142,7 +133,18 @@ export function VideoActions({
         <div key={heart.id} className="absolute bottom-10 text-red-500 text-2xl animate-bounce-up pointer-events-none" style={{ left: `${heart.left}px` }}>❤️</div>
       ))}
 
-      {/* Like Button */}
+      {/* 1. WATCH PARTY BUTTON (Like button ke upar clean icon) */}
+      <button 
+        onClick={() => setIsPartyOpen(true)} 
+        className="flex flex-col items-center group outline-none bg-transparent border-none"
+      >
+        <div className="p-2 rounded-full bg-purple-600/30 backdrop-blur-sm active:scale-125 transition-transform text-purple-300 border border-purple-400/40">
+          <PartyPopper className="w-8 h-8 text-yellow-300 animate-pulse" strokeWidth={2.2} />
+        </div>
+        <span className="text-white text-[10px] font-bold drop-shadow-md mt-0.5">Party 🎉</span>
+      </button>
+
+      {/* 2. LIKE BUTTON */}
       <button onClick={handleLike} className="flex flex-col items-center group outline-none focus:outline-none bg-transparent border-none">
         <div className={`p-2 rounded-full transition-transform active:scale-150 duration-200 ${isLiked ? 'scale-110' : 'scale-100'}`}>
           <Heart className={`w-9 h-9 ${isLiked ? 'fill-red-500 text-red-500' : 'text-white'}`} strokeWidth={2.5} />
@@ -150,7 +152,7 @@ export function VideoActions({
         <span className="text-white text-[12px] font-black drop-shadow-md">{likeCount}</span>
       </button>
 
-      {/* Reply (Comment) Button */}
+      {/* 3. COMMENT BUTTON */}
       <button 
         onClick={handleCommentClick} 
         className="flex flex-col items-center group outline-none bg-transparent border-none"
@@ -163,7 +165,7 @@ export function VideoActions({
         </span>
       </button>
 
-      {/* Share Button */}
+      {/* 4. SHARE BUTTON */}
       <button 
         onClick={handleShareInternal} 
         className="flex flex-col items-center group outline-none bg-transparent border-none"
@@ -176,13 +178,16 @@ export function VideoActions({
         </span>
       </button>
 
-      {/* ✅ Watch Party Button Added */}
-      <WatchPartyManager 
-        videoId={videoId} 
-        videoUrl={videoUrl || ""} 
-      />
+      {/* Modal / Manager State Trigger */}
+      {isPartyOpen && (
+        <WatchPartyManager 
+          videoId={videoId} 
+          videoUrl={videoUrl || ""} 
+          onClose={() => setIsPartyOpen(false)}
+        />
+      )}
 
-      {/* ✅ Share Modal (videoUrl replace hokar yahan jayega) */}
+      {/* Share Modal */}
       <ShareModal 
         isOpen={isShareModalOpen} 
         onClose={() => setIsShareModalOpen(false)} 
