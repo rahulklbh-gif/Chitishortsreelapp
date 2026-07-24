@@ -6,7 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 
-// Modal Import
+// Modal Imports
 import { ShareModal } from '@/app/components/ShareModal';
 import WatchPartyManager from '@/app/components/WatchPartyManager';
 
@@ -21,6 +21,7 @@ export function VideoActions({
   videoUrl: rawVideoUrl 
 }: any) {
   
+  // CDN Link Format Conversion
   const videoUrl = rawVideoUrl?.replace(
     /pub-[a-zA-Z0-9]+\.r2\.dev/g, 
     'cdn.chitishort.store'
@@ -36,9 +37,11 @@ export function VideoActions({
   const [isUpdating, setIsUpdating] = useState(false);
   const [hearts, setHearts] = useState<any[]>([]);
 
+  // Modals States
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isPartyOpen, setIsPartyOpen] = useState(false);
 
+  // Like status check
   const checkIfLiked = useCallback(async () => {
     if (!user || !videoId) return;
     try {
@@ -59,6 +62,7 @@ export function VideoActions({
     setShareCount(initialShares ?? 0);
   }, [videoId, initialLikes, initialComments, initialShares, checkIfLiked]);
 
+  // Handle Like logic
   const handleLike = async () => {
     if (!user) { toast.error("Pehle login karein!"); return; }
     if (isUpdating) return;
@@ -133,15 +137,18 @@ export function VideoActions({
         <div key={heart.id} className="absolute bottom-10 text-red-500 text-2xl animate-bounce-up pointer-events-none" style={{ left: `${heart.left}px` }}>❤️</div>
       ))}
 
-      {/* 1. WATCH PARTY BUTTON (Like button ke upar clean icon) */}
+      {/* 1. WATCH PARTY BUTTON (Clean Icon on Right Action Panel) */}
       <button 
-        onClick={() => setIsPartyOpen(true)} 
-        className="flex flex-col items-center group outline-none bg-transparent border-none"
+        onClick={(e) => {
+          e.stopPropagation();
+          setIsPartyOpen(true);
+        }} 
+        className="flex flex-col items-center group outline-none bg-transparent border-none active:scale-110 transition-transform"
       >
-        <div className="p-2 rounded-full bg-purple-600/30 backdrop-blur-sm active:scale-125 transition-transform text-purple-300 border border-purple-400/40">
+        <div className="p-2.5 rounded-full bg-purple-600/40 backdrop-blur-md active:scale-125 transition-transform text-purple-300 border border-purple-400/50 shadow-lg shadow-purple-950/50">
           <PartyPopper className="w-8 h-8 text-yellow-300 animate-pulse" strokeWidth={2.2} />
         </div>
-        <span className="text-white text-[10px] font-bold drop-shadow-md mt-0.5">Party 🎉</span>
+        <span className="text-white text-[10px] font-bold drop-shadow-md mt-1">Party 🎉</span>
       </button>
 
       {/* 2. LIKE BUTTON */}
@@ -178,16 +185,18 @@ export function VideoActions({
         </span>
       </button>
 
-      {/* Modal / Manager State Trigger */}
+      {/* WATCH PARTY MODAL OVERLAY */}
       {isPartyOpen && (
         <WatchPartyManager 
           videoId={videoId} 
           videoUrl={videoUrl || ""} 
+          userId={user?.id}
+          userName={user?.user_metadata?.username || user?.email?.split('@')[0]}
           onClose={() => setIsPartyOpen(false)}
         />
       )}
 
-      {/* Share Modal */}
+      {/* SHARE MODAL */}
       <ShareModal 
         isOpen={isShareModalOpen} 
         onClose={() => setIsShareModalOpen(false)} 
