@@ -1,3 +1,5 @@
+"use client";
+
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
@@ -71,7 +73,7 @@ export function ChatRoom() {
   const [friendProfile, setFriendProfile] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false); 
-  const [isTyping, setIsTyping] = useState(false); // ✅ Typing Logic
+  const [isTyping, setIsTyping] = useState(false);
   const [now, setNow] = useState(new Date()); 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -80,13 +82,47 @@ export function ChatRoom() {
   const sentAudioRef = useRef<HTMLAudioElement>(null);
   const receivedAudioRef = useRef<HTMLAudioElement>(null);
 
-  // ✅ VIBRATION & SOUND LOGIC
+  // 🔴 LINK FORMATTER & CLICKABLE CONVERTER (WATCH PARTY LINK FIX)
+  const renderFormattedMessage = (content: string, isMe: boolean) => {
+    if (!content) return null;
+
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = content.split(urlRegex);
+
+    return parts.map((part, idx) => {
+      if (part.match(urlRegex)) {
+        return (
+          <a
+            key={idx}
+            href={part}
+            onClick={(e) => {
+              e.stopPropagation();
+              // Internal navigation if URL belongs to app
+              if (part.includes(window.location.host)) {
+                e.preventDefault();
+                const targetUrl = new URL(part);
+                navigate(`${targetUrl.pathname}${targetUrl.search}`);
+              }
+            }}
+            className={`font-black underline break-all inline-block my-0.5 px-1.5 py-0.5 rounded ${
+              isMe 
+                ? 'text-yellow-200 hover:text-white bg-blue-700/50' 
+                : 'text-blue-600 hover:text-blue-800 bg-blue-50'
+            }`}
+          >
+            {part}
+          </a>
+        );
+      }
+      return <span key={idx}>{part}</span>;
+    });
+  };
+
   const playSound = (type: 'sent' | 'received') => {
     const audio = type === 'sent' ? sentAudioRef.current : receivedAudioRef.current;
     if (audio) {
       audio.currentTime = 0;
       audio.play().catch(() => {
-        // Agar sound block hua toh vibrate karega
         if (navigator.vibrate) navigator.vibrate(50);
       });
     }
@@ -114,7 +150,6 @@ export function ChatRoom() {
       fetchMessages();
       markAsRead();
       
-      // ✅ TYPING INDICATOR (PRESENCE)
       const typingChannel = supabase.channel(`typing-${roomId}`)
         .on('presence', { event: 'sync' }, () => {
           const state: any = typingChannel.presenceState();
@@ -129,7 +164,7 @@ export function ChatRoom() {
 
       const messageChannel = supabase.channel(`room-${roomId}`)
         .on('postgres_changes', { 
-          event: '*', // Listen for Inserts, Updates (Likes) and Deletes
+          event: '*',
           schema: 'public', 
           table: 'chat_messages', 
           filter: `room_id=eq.${roomId}` 
@@ -190,7 +225,6 @@ export function ChatRoom() {
     setMessages(data || []);
   };
 
-  // ✅ LIKE MESSAGE LOGIC
   const handleLikeMessage = async (msgId: string, currentLikes: boolean) => {
     await supabase.from('chat_messages').update({ is_liked: !currentLikes }).eq('id', msgId);
     if (navigator.vibrate) navigator.vibrate(20);
@@ -292,73 +326,79 @@ export function ChatRoom() {
 
       {/* Chat Area */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#f9f9f9]">
-        {messages.map((msg) => (
-          <div 
-            key={msg.id} 
-            className={`flex ${msg.sender_id === user?.id ? 'justify-end' : 'justify-start'}`}
-            onContextMenu={(e) => { e.preventDefault(); handleDeleteMessage(msg.id, msg.sender_id); }}
-          >
-            <div className={`group relative max-w-[75%] shadow-sm overflow-visible ${
-              msg.sender_id === user?.id ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none border border-gray-100'
-            } ${msg.media_url ? 'p-1' : 'px-4 py-2.5'}`}>
-              
-              {msg.media_url && (
-                <div className="relative rounded-xl overflow-hidden bg-black mb-1 w-48 aspect-[9/16] shadow-inner group/vid cursor-pointer active:scale-95 transition-transform">
-                  {msg.media_type === 'photo' ? (
-                    <img src={msg.media_url} className="w-full h-full object-cover" crossOrigin="anonymous" onClick={() => window.open(msg.media_url, '_blank')} />
-                  ) : (
-                    <div className="w-full h-full relative" onClick={() => msg.post_id ? navigate(`/?video=${msg.post_id}`) : null}>
-                      <video src={msg.media_url} className="w-full h-full object-cover" playsInline controls={!msg.post_id} preload="metadata" crossOrigin="anonymous" />
-                      {msg.post_id && (
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center">
-                          <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30">
-                            <Play size={20} className="text-white fill-white ml-1" />
+        {messages.map((msg) => {
+          const isMe = msg.sender_id === user?.id;
+
+          return (
+            <div 
+              key={msg.id} 
+              className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+              onContextMenu={(e) => { e.preventDefault(); handleDeleteMessage(msg.id, msg.sender_id); }}
+            >
+              <div className={`group relative max-w-[80%] shadow-sm overflow-visible ${
+                isMe ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none' : 'bg-white text-gray-800 rounded-2xl rounded-tl-none border border-gray-100'
+              } ${msg.media_url ? 'p-1' : 'px-4 py-2.5'}`}>
+                
+                {msg.media_url && (
+                  <div className="relative rounded-xl overflow-hidden bg-black mb-1 w-48 aspect-[9/16] shadow-inner group/vid cursor-pointer active:scale-95 transition-transform">
+                    {msg.media_type === 'photo' ? (
+                      <img src={msg.media_url} className="w-full h-full object-cover" crossOrigin="anonymous" onClick={() => window.open(msg.media_url, '_blank')} />
+                    ) : (
+                      <div className="w-full h-full relative" onClick={() => msg.post_id ? navigate(`/?video=${msg.post_id}`) : null}>
+                        <video src={msg.media_url} className="w-full h-full object-cover" playsInline controls={!msg.post_id} preload="metadata" crossOrigin="anonymous" />
+                        {msg.post_id && (
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent flex items-center justify-center">
+                            <div className="w-10 h-10 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30">
+                              <Play size={20} className="text-white fill-white ml-1" />
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* 🔴 Clickable Watch Party & Normal Link Rendering */}
+                {msg.content && (
+                  <p className={`text-sm leading-relaxed ${msg.media_url ? 'px-2 pb-1 pt-1 font-medium' : ''}`}>
+                    {renderFormattedMessage(msg.content, isMe)}
+                  </p>
+                )}
+                
+                <div className={`flex items-center justify-end gap-1 px-2 pb-1 ${msg.media_url ? 'mt-0' : 'mt-1'}`}>
+                  <span className={`text-[8px] block ${isMe ? 'text-blue-100' : 'text-gray-400'}`}>
+                    {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  
+                  {isMe && (
+                    <span className="ml-1">
+                      {msg.is_read ? <CheckCheck size={12} className="text-blue-200" /> : <Check size={12} className="text-blue-100 opacity-70" />}
+                    </span>
                   )}
                 </div>
-              )}
 
-              {msg.content && <p className={`text-sm leading-relaxed ${msg.media_url ? 'px-2 pb-1 pt-1 font-medium' : ''}`}>{msg.content}</p>}
-              
-              <div className={`flex items-center justify-end gap-1 px-2 pb-1 ${msg.media_url ? 'mt-0' : 'mt-1'}`}>
-                 <span className={`text-[8px] block ${msg.sender_id === user?.id ? 'text-blue-100' : 'text-gray-400'}`}>
-                  {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
+                {isMe && msg.is_read && msg.read_at && (
+                  <p className="text-[7px] text-right px-2 text-blue-200 opacity-80 -mt-1 pb-1">
+                    Seen {getTimeAgo(msg.read_at)}
+                  </p>
+                )}
+
+                <button 
+                  onClick={() => handleLikeMessage(msg.id, msg.is_liked)}
+                  className={`absolute -bottom-2 ${isMe ? '-left-2' : '-right-2'} p-1 rounded-full bg-white shadow-md border border-gray-100 transition-transform active:scale-125`}
+                >
+                  <Heart size={12} className={`${msg.is_liked ? 'fill-red-500 text-red-500' : 'text-gray-300'}`} />
+                </button>
                 
-                {/* ✅ DOUBLE TICK LOGIC */}
-                {msg.sender_id === user?.id && (
-                  <span className="ml-1">
-                    {msg.is_read ? <CheckCheck size={12} className="text-blue-200" /> : <Check size={12} className="text-blue-100 opacity-70" />}
-                  </span>
+                {isMe && (
+                  <button onClick={() => handleDeleteMessage(msg.id, msg.sender_id)} className="absolute top-2 right-2 p-1.5 bg-black/40 backdrop-blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    <Trash2 size={12} className="text-white" />
+                  </button>
                 )}
               </div>
-
-              {/* ✅ READ TIME LOGIC (Seen 2m ago) */}
-              {msg.sender_id === user?.id && msg.is_read && msg.read_at && (
-                <p className="text-[7px] text-right px-2 text-blue-200 opacity-80 -mt-1 pb-1">
-                  Seen {getTimeAgo(msg.read_at)}
-                </p>
-              )}
-
-              {/* ✅ LIKE ICON LOGIC */}
-              <button 
-                onClick={() => handleLikeMessage(msg.id, msg.is_liked)}
-                className={`absolute -bottom-2 ${msg.sender_id === user?.id ? '-left-2' : '-right-2'} p-1 rounded-full bg-white shadow-md border border-gray-100 transition-transform active:scale-125`}
-              >
-                <Heart size={12} className={`${msg.is_liked ? 'fill-red-500 text-red-500' : 'text-gray-300'}`} />
-              </button>
-              
-              {msg.sender_id === user?.id && (
-                <button onClick={() => handleDeleteMessage(msg.id, msg.sender_id)} className="absolute top-2 right-2 p-1.5 bg-black/40 backdrop-blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                  <Trash2 size={12} className="text-white" />
-                </button>
-              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
 
@@ -380,4 +420,4 @@ export function ChatRoom() {
       </div>
     </div>
   );
-} 
+}
