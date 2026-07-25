@@ -30,7 +30,7 @@ const WatchPartyContext = createContext<WatchPartyContextType>({
   remoteVideoId: null,
 });
 
-// 🟢 Clean Camera Bubble (No Cut, Mirror Fix)
+// 🟢 Camera Bubble with Uniform Front-Camera Mirroring & Audio Echo Shield
 function RemoteVideoBubble({ stream, isLocal = false }: { stream: MediaStream | null; isLocal?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -48,8 +48,9 @@ function RemoteVideoBubble({ stream, isLocal = false }: { stream: MediaStream | 
           ref={videoRef}
           autoPlay 
           playsInline 
-          muted={isLocal}
-          className={`w-full h-full object-cover ${isLocal ? 'scale-x-[-1]' : 'scale-x-100'}`}
+          muted={isLocal} // Local track hamesha muted taaki audio feedback loop / howling na ho
+          // 🚀 FIX 1: Donor & Receiver donon par mirror orientation exact same rahegi
+          className="w-full h-full object-cover scale-x-[-1]"
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-zinc-800 text-zinc-400 animate-pulse">
@@ -115,24 +116,45 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [stopAllMedia]);
 
-  // Clean Microphone Stream (Echo Cancellation & Noise Suppression)
+  // 🚀 FIX 2: Enhanced Hardware Audio Processing for Echo & High Pitch Noise Shield
   const initLocalStream = async () => {
     try {
       if (localStreamRef.current) return localStreamRef.current;
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 320, height: 320, frameRate: 20 },
+        video: { 
+          width: { ideal: 320 }, 
+          height: { ideal: 320 }, 
+          frameRate: { max: 24 },
+          facingMode: 'user'
+        },
         audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true
+          echoCancellation: { exact: true },
+          noiseSuppression: { exact: true },
+          autoGainControl: { exact: true },
+          // High-frequency whistling sound filtering
+          // @ts-ignore
+          googEchoCancellation: true,
+          googAutoGainControl: true,
+          googNoiseSuppression: true,
+          googHighpassFilter: true
         }
       });
       localStreamRef.current = stream;
       return stream;
     } catch (err) {
       console.warn("Camera/Mic Permission error:", err);
-      toast.error("Camera/Mic access failed");
-      return null;
+      // Fallback with standard constraints
+      try {
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: true
+        });
+        localStreamRef.current = fallbackStream;
+        return fallbackStream;
+      } catch (fallbackErr) {
+        toast.error("Camera/Mic access failed");
+        return null;
+      }
     }
   };
 
