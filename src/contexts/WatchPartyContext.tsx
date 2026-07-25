@@ -5,7 +5,6 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { PhoneOff, Mic, MicOff, Video, VideoOff, Share2 } from 'lucide-react';
-import { useNavigate, useLocation } from 'react-router-dom';
 
 const RTC_ICE_CONFIG = {
   iceServers: [
@@ -31,7 +30,7 @@ const WatchPartyContext = createContext<WatchPartyContextType>({
   remoteVideoId: null,
 });
 
-// 🟢 Clean Video Bubble (Name Banner Removed & Mirror Correction)
+// 🟢 Clean Camera Bubble (No Cut, Mirror Fix)
 function RemoteVideoBubble({ stream, isLocal = false }: { stream: MediaStream | null; isLocal?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -63,8 +62,6 @@ function RemoteVideoBubble({ stream, isLocal = false }: { stream: MediaStream | 
 
 export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) => {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
 
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [activePeers, setActivePeers] = useState<Array<{ peerId: string; name: string; stream: MediaStream | null }>>([]);
@@ -80,42 +77,6 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
 
   const effectiveUserId = user?.id || `user_${Math.random().toString(36).substring(2, 7)}`;
   const effectiveUserName = user?.user_metadata?.username || user?.email?.split('@')[0] || "Friend";
-
-  // 🔊 Audio Ducking Engine (Speech Detection to Auto-Lower Video Volume)
-  const setupAudioDucking = (stream: MediaStream) => {
-    try {
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const analyser = audioContext.createAnalyser();
-      const microphone = audioContext.createMediaStreamSource(stream);
-      const javascriptNode = audioContext.createScriptProcessor(2048, 1, 1);
-
-      analyser.smoothingTimeConstant = 0.8;
-      analyser.fftSize = 1024;
-
-      microphone.connect(analyser);
-      analyser.connect(javascriptNode);
-      javascriptNode.connect(audioContext.destination);
-
-      javascriptNode.onaudioprocess = () => {
-        const array = new Uint8Array(analyser.frequencyBinCount);
-        analyser.getByteFrequencyData(array);
-        let values = 0;
-        for (let i = 0; i < array.length; i++) {
-          values += array[i];
-        }
-        const average = values / array.length;
-
-        const allVideos = document.querySelectorAll('video');
-        if (average > 15) { // User or Friend speaking
-          allVideos.forEach(v => { if (!v.muted) v.volume = 0.3; }); // Drop to 30%
-        } else {
-          allVideos.forEach(v => { if (!v.muted) v.volume = 1.0; }); // Restore to 100%
-        }
-      };
-    } catch (e) {
-      console.warn("Audio Context Ducking Warning:", e);
-    }
-  };
 
   const stopAllMedia = useCallback(() => {
     if (localStreamRef.current) {
@@ -134,13 +95,13 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     setActiveRoomId(null);
   }, []);
 
-  // 30-Second Grace Timer on Background
+  // 30-Second Grace Disconnect Timer (Minimise / Background)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
         disconnectTimerRef.current = setTimeout(() => {
           stopAllMedia();
-          toast.info("Watch party disconnected due to inactivity.");
+          toast.info("Watch party disconnected due to 30s inactivity.");
         }, 30000);
       } else {
         if (disconnectTimerRef.current) {
@@ -154,20 +115,19 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [stopAllMedia]);
 
-  // 🟢 Fixed Clean Mic Stream (Echo Cancellation & Noise Reduction)
+  // Clean Microphone Stream (Echo Cancellation & Noise Suppression)
   const initLocalStream = async () => {
     try {
       if (localStreamRef.current) return localStreamRef.current;
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 320, height: 320, frameRate: 20 },
         audio: {
-          echoCancellation: true, // Echo Hatao
-          noiseSuppression: true, // BackNoise Hatao
-          autoGainControl: true   // Mic Balance
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
         }
       });
       localStreamRef.current = stream;
-      setupAudioDucking(stream);
       return stream;
     } catch (err) {
       console.warn("Camera/Mic Permission error:", err);
@@ -189,7 +149,6 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     pc.ontrack = (event) => {
       const [remoteStream] = event.streams;
       if (remoteStream) {
-        setupAudioDucking(remoteStream);
         setActivePeers(prev => {
           const exists = prev.some(p => p.peerId === targetId);
           if (exists) {
@@ -273,15 +232,9 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
       }
     });
 
-    // 🔴 Full Universal Screen Sync Receiver
     channel.on('broadcast', { event: 'app-sync' }, ({ payload }) => {
-      if (payload.senderId !== effectiveUserId) {
-        if (payload.path && payload.path !== location.pathname) {
-          navigate(payload.path);
-        }
-        if (payload.videoId) {
-          setRemoteVideoId(payload.videoId);
-        }
+      if (payload.senderId !== effectiveUserId && payload.videoId) {
+        setRemoteVideoId(payload.videoId);
       }
     });
 
@@ -305,7 +258,6 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     }
   };
 
-  // 🔴 Full Universal Screen Sync Transmitter (TV Remote Logic)
   const broadcastVideoChange = (videoId: string, path?: string) => {
     if (channelRef.current && activeRoomId) {
       channelRef.current.send({
@@ -314,7 +266,7 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
         payload: { 
           senderId: effectiveUserId, 
           videoId,
-          path: path || location.pathname 
+          path: path || window.location.pathname 
         }
       });
     }
