@@ -30,7 +30,7 @@ const WatchPartyContext = createContext<WatchPartyContextType>({
   remoteVideoId: null,
 });
 
-// 🟢 Camera Bubble with Uniform Front-Camera Mirroring & Audio Echo Shield
+// 🟢 Camera Bubble: Local Selfie Mirror & Remote Straight View Fix
 function RemoteVideoBubble({ stream, isLocal = false }: { stream: MediaStream | null; isLocal?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
@@ -48,9 +48,9 @@ function RemoteVideoBubble({ stream, isLocal = false }: { stream: MediaStream | 
           ref={videoRef}
           autoPlay 
           playsInline 
-          muted={isLocal} // Local track hamesha muted taaki audio feedback loop / howling na ho
-          // 🚀 FIX 1: Donor & Receiver donon par mirror orientation exact same rahegi
-          className="w-full h-full object-cover scale-x-[-1]"
+          muted={isLocal}
+          // 🚀 FIX: Local User = Mirror Flipped (-1), Remote Friend = Straight Normal (1)
+          className={`w-full h-full object-cover ${isLocal ? 'scale-x-[-1]' : 'scale-x-100'}`}
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-zinc-800 text-zinc-400 animate-pulse">
@@ -116,7 +116,7 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [stopAllMedia]);
 
-  // 🚀 FIX 2: Enhanced Hardware Audio Processing for Echo & High Pitch Noise Shield
+  // Enhanced Hardware Audio Processing for Echo & Noise Shield
   const initLocalStream = async () => {
     try {
       if (localStreamRef.current) return localStreamRef.current;
@@ -131,7 +131,6 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
           echoCancellation: { exact: true },
           noiseSuppression: { exact: true },
           autoGainControl: { exact: true },
-          // High-frequency whistling sound filtering
           // @ts-ignore
           googEchoCancellation: true,
           googAutoGainControl: true,
@@ -143,7 +142,6 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
       return stream;
     } catch (err) {
       console.warn("Camera/Mic Permission error:", err);
-      // Fallback with standard constraints
       try {
         const fallbackStream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -254,9 +252,15 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
       }
     });
 
+    // 🔴 Full App Screen & Video Sync Receiver
     channel.on('broadcast', { event: 'app-sync' }, ({ payload }) => {
-      if (payload.senderId !== effectiveUserId && payload.videoId) {
-        setRemoteVideoId(payload.videoId);
+      if (payload.senderId !== effectiveUserId) {
+        if (payload.path && payload.path !== window.location.pathname) {
+          window.location.href = payload.path;
+        }
+        if (payload.videoId) {
+          setRemoteVideoId(payload.videoId);
+        }
       }
     });
 
@@ -280,6 +284,7 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     }
   };
 
+  // 🔴 Universal Remote Screen Broadcast Engine
   const broadcastVideoChange = (videoId: string, path?: string) => {
     if (channelRef.current && activeRoomId) {
       channelRef.current.send({
