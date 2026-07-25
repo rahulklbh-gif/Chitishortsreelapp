@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { WatchPartyProvider } from '@/contexts/WatchPartyContext'; // 👈 WatchParty Provider Import
 import { Toaster } from 'sonner';
 import { BottomNavigation } from '@/app/components/BottomNavigation';
 import { RealVideoFeed } from '@/app/components/RealVideoFeed';
@@ -153,10 +154,12 @@ function AppContent() {
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <AppContent />
-        <Toaster position="top-center" richColors closeButton theme="dark" />
-      </Router>
+      <WatchPartyProvider> {/* 🔴 Root Global Persistent Connection Context Wrapper */}
+        <Router>
+          <AppContent />
+          <Toaster position="top-center" richColors closeButton theme="dark" />
+        </Router>
+      </WatchPartyProvider>
     </AuthProvider>
   );
 }
