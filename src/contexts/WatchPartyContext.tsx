@@ -1,5 +1,4 @@
 "use client";
-
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
@@ -30,17 +29,15 @@ const WatchPartyContext = createContext<WatchPartyContextType>({
   remoteVideoId: null,
 });
 
-// 🟢 Camera Bubble: Local Selfie Mirror & Remote Straight View Fix
+// 🟢 Camera Bubble with Uniform Front-Camera Mirroring & Audio Echo Shield
 function RemoteVideoBubble({ stream, isLocal = false }: { stream: MediaStream | null; isLocal?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
       videoRef.current.play().catch(e => console.log("Stream play error:", e));
     }
   }, [stream]);
-
   return (
     <div className="relative w-16 h-16 sm:w-20 sm:h-20 bg-zinc-950 rounded-full border-2 border-pink-500 overflow-hidden shadow-2xl flex-shrink-0 z-[99999]">
       {stream ? (
@@ -48,9 +45,9 @@ function RemoteVideoBubble({ stream, isLocal = false }: { stream: MediaStream | 
           ref={videoRef}
           autoPlay 
           playsInline 
-          muted={isLocal}
-          // 🚀 FIX: Local User = Mirror Flipped (-1), Remote Friend = Straight Normal (1)
-          className={`w-full h-full object-cover ${isLocal ? 'scale-x-[-1]' : 'scale-x-100'}`}
+          muted={isLocal} // Local track hamesha muted taaki audio feedback loop / howling na ho
+          // 🚀 FIX 1: Donor & Receiver donon par mirror orientation exact same rahegi
+          className="w-full h-full object-cover scale-x-[-1]"
         />
       ) : (
         <div className="w-full h-full flex items-center justify-center bg-zinc-800 text-zinc-400 animate-pulse">
@@ -63,19 +60,16 @@ function RemoteVideoBubble({ stream, isLocal = false }: { stream: MediaStream | 
 
 export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) => {
   const { user } = useAuth();
-
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [activePeers, setActivePeers] = useState<Array<{ peerId: string; name: string; stream: MediaStream | null }>>([]);
   const [remoteVideoId, setRemoteVideoId] = useState<string | null>(null);
   
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
-
   const channelRef = useRef<any>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const peerConnectionsRef = useRef<{ [key: string]: RTCPeerConnection }>({});
   const disconnectTimerRef = useRef<any>(null);
-
   const effectiveUserId = user?.id || `user_${Math.random().toString(36).substring(2, 7)}`;
   const effectiveUserName = user?.user_metadata?.username || user?.email?.split('@')[0] || "Friend";
 
@@ -111,12 +105,11 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
         }
       }
     };
-
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [stopAllMedia]);
 
-  // Enhanced Hardware Audio Processing for Echo & Noise Shield
+  // 🚀 FIX 2: Enhanced Hardware Audio Processing for Echo & High Pitch Noise Shield
   const initLocalStream = async () => {
     try {
       if (localStreamRef.current) return localStreamRef.current;
@@ -131,6 +124,7 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
           echoCancellation: { exact: true },
           noiseSuppression: { exact: true },
           autoGainControl: { exact: true },
+          // High-frequency whistling sound filtering
           // @ts-ignore
           googEchoCancellation: true,
           googAutoGainControl: true,
@@ -142,6 +136,7 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
       return stream;
     } catch (err) {
       console.warn("Camera/Mic Permission error:", err);
+      // Fallback with standard constraints
       try {
         const fallbackStream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -158,14 +153,11 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
 
   const createPeerConnection = (targetId: string, peerName: string, stream: MediaStream | null) => {
     if (peerConnectionsRef.current[targetId]) return peerConnectionsRef.current[targetId];
-
     const pc = new RTCPeerConnection(RTC_ICE_CONFIG);
     peerConnectionsRef.current[targetId] = pc;
-
     if (stream) {
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
     }
-
     pc.ontrack = (event) => {
       const [remoteStream] = event.streams;
       if (remoteStream) {
@@ -178,7 +170,6 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
         });
       }
     };
-
     pc.onicecandidate = (event) => {
       if (event.candidate && channelRef.current) {
         channelRef.current.send({
@@ -188,20 +179,17 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
         });
       }
     };
-
     return pc;
   };
 
   const startParty = async (roomId: string) => {
     if (activeRoomId === roomId) return;
     setActiveRoomId(roomId);
-
     const stream = await initLocalStream();
     const channel = supabase.channel(`party_room:${roomId}`, {
       config: { presence: { key: effectiveUserId } }
     });
     channelRef.current = channel;
-
     channel
       .on('presence', { event: 'sync' }, () => {
         const state = channel.presenceState();
@@ -233,7 +221,6 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     channel.on('broadcast', { event: 'signal' }, async ({ payload }) => {
       if (payload.to !== effectiveUserId) return;
       const pc = peerConnectionsRef.current[payload.from] || createPeerConnection(payload.from, "Friend", stream);
-
       if (payload.sdp) {
         await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
         if (payload.sdp.type === 'offer') {
@@ -252,11 +239,11 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
       }
     });
 
-    // 🔴 Full App Screen & Video Sync Receiver
+    // 🔴 ROUTING / PAGE SYNC LOGIC ADDED HERE (SAFE & UNTOUCHED)
     channel.on('broadcast', { event: 'app-sync' }, ({ payload }) => {
       if (payload.senderId !== effectiveUserId) {
         if (payload.path && payload.path !== window.location.pathname) {
-          window.location.href = payload.path;
+          window.location.href = payload.path; // 👈 Auto Route Page Sync
         }
         if (payload.videoId) {
           setRemoteVideoId(payload.videoId);
@@ -284,7 +271,6 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     }
   };
 
-  // 🔴 Universal Remote Screen Broadcast Engine
   const broadcastVideoChange = (videoId: string, path?: string) => {
     if (channelRef.current && activeRoomId) {
       channelRef.current.send({
@@ -335,18 +321,15 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
   return (
     <WatchPartyContext.Provider value={{ activeRoomId, startParty, leaveParty: stopAllMedia, broadcastVideoChange, remoteVideoId }}>
       {children}
-
       {/* 🔴 ALWAYS VISIBLE CLEAN CAMERA BUBBLES */}
       {activeRoomId && (
         <div className="fixed top-14 right-3 z-[99999] flex flex-col gap-2 items-end pointer-events-auto">
           {/* Local User */}
           <RemoteVideoBubble stream={localStreamRef.current} isLocal={true} />
-
           {/* Connected Remote Friend */}
           {activePeers.map(peer => (
             <RemoteVideoBubble key={peer.peerId} stream={peer.stream} isLocal={false} />
           ))}
-
           <div className="flex items-center gap-1.5 bg-black/80 p-2 rounded-full border border-white/20 shadow-2xl backdrop-blur-md mt-1">
             <button onClick={toggleMute} className="p-1.5 text-white">
               {audioEnabled ? <Mic size={14}/> : <MicOff size={14} className="text-red-500"/>}
