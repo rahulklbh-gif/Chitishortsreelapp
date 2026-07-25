@@ -1,19 +1,23 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { VideoActions } from './VideoActions';
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
-import WatchPartyManager from './WatchPartyManager'; // 👈 WatchParty Auto-Join Import
+import WatchPartyManager from './WatchPartyManager';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
+import { useWatchParty } from '@/contexts/WatchPartyContext'; // 👈 Watch Party Engine Import
 import { Loader2, Music2, Play as PlayIcon, Pause } from 'lucide-react'; 
 import { toast } from 'sonner'; 
 
 export function RealVideoFeed({ onComment }: { onComment: (videoId: string, videoOwnerId: string) => void }) {
   const { user: currentUser } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
+  const { startParty, broadcastVideoChange, remoteVideoId } = useWatchParty(); // 👈 Watch Party Hooks
+
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -27,7 +31,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
   const viewedVideos = useRef<Set<string>>(new Set());
-  const videoRefs = useRef<{ [key: string]: HTMLVideoElement | null }>({});
+  const isRemoteScrolling = useRef(false); // Loop Protection Flag
 
   useEffect(() => {
     const domains = ['https://cdnjs.cloudflare.com', 'https://cdn.chitishort.store'];
@@ -44,9 +48,10 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     const partyRoom = searchParams.get('partyRoom');
     if (partyRoom && partyRoom !== 'undefined') {
       setActivePartyRoom(partyRoom);
+      startParty(partyRoom);
       toast.info("Watch Party Room Mein Connect Ho Rahe Hain...");
     }
-  }, [searchParams]);
+  }, [searchParams, startParty]);
 
   useEffect(() => {
     fetchVideos();
@@ -182,15 +187,42 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { console.error(err); }
   };
 
+  // 🔴 AAPKE SCROLL PAR SABHI DOSTON KO REAL-TIME SYNC SIGNAL BHEJNA
   const handleScroll = () => {
     if (!containerRef.current) return;
+
+    if (isRemoteScrolling.current) {
+      isRemoteScrolling.current = false;
+      return;
+    }
+
     const { scrollTop, clientHeight } = containerRef.current;
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
       setIsPlaying(true); 
+
+      if (videos[index]) {
+        // Broadcast Video ID & Route to Remote Party Members
+        broadcastVideoChange(videos[index].id, location.pathname);
+      }
     }
   };
+
+  // 🔴 REMOTE FRIEND KE SCROLL SIGNAL PAR APNI VIDEO AUTO-MOVE KARNA
+  useEffect(() => {
+    if (remoteVideoId && videos.length > 0) {
+      const targetIdx = videos.findIndex(v => v.id === remoteVideoId);
+      if (targetIdx !== -1 && containerRef.current) {
+        isRemoteScrolling.current = true;
+        containerRef.current.scrollTo({
+          top: targetIdx * window.innerHeight,
+          behavior: 'smooth'
+        });
+        setActiveIndex(targetIdx);
+      }
+    }
+  }, [remoteVideoId, videos]);
 
   const togglePlayPause = () => {
     setIsPlaying(!isPlaying);
@@ -347,9 +379,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         <WatchPartyManager
           roomId={activePartyRoom}
           videoId={videos[activeIndex]?.id || ""}
-          videoUrl={videos[activeIndex]?.video_url || ""}
-          userId={currentUser?.id}
-          userName={currentUser?.user_metadata?.username || currentUser?.email?.split('@')[0]}
           onClose={() => setActivePartyRoom(null)}
         />
       )}
