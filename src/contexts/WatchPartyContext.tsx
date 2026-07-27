@@ -29,15 +29,45 @@ const WatchPartyContext = createContext<WatchPartyContextType>({
   remoteVideoId: null,
 });
 
-// 🟢 Camera Bubble with Uniform Front-Camera Mirroring & Audio Echo Shield
+// 🟢 Camera Bubble with Uniform Mirroring, Echo Shield & 2x Voice Audio Boost
 function RemoteVideoBubble({ stream, isLocal = false }: { stream: MediaStream | null; isLocal?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
       videoRef.current.play().catch(e => console.log("Stream play error:", e));
+
+      // 🔊 2X VOICE BOOST FOR REMOTE FRIEND (Audio Gain Processing)
+      if (!isLocal && stream.getAudioTracks().length > 0) {
+        try {
+          const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioCtx) {
+            const ctx = new AudioCtx();
+            const source = ctx.createMediaStreamSource(stream);
+            const gainNode = ctx.createGain();
+            
+            // 🚀 2.0x Gain Boost (Friend's Voice 2x louder than video)
+            gainNode.gain.value = 2.0; 
+            
+            source.connect(gainNode);
+            gainNode.connect(ctx.destination);
+            audioCtxRef.current = ctx;
+          }
+        } catch (err) {
+          console.warn("2x Voice boost initialisation failed:", err);
+        }
+      }
     }
-  }, [stream]);
+
+    return () => {
+      if (audioCtxRef.current) {
+        audioCtxRef.current.close().catch(() => {});
+      }
+    };
+  }, [stream, isLocal]);
+
   return (
     <div className="relative w-16 h-16 sm:w-20 sm:h-20 bg-zinc-950 rounded-full border-2 border-pink-500 overflow-hidden shadow-2xl flex-shrink-0 z-[99999]">
       {stream ? (
@@ -45,8 +75,7 @@ function RemoteVideoBubble({ stream, isLocal = false }: { stream: MediaStream | 
           ref={videoRef}
           autoPlay 
           playsInline 
-          muted={isLocal} // Local track hamesha muted taaki audio feedback loop / howling na ho
-          // 🚀 FIX 1: Donor & Receiver donon par mirror orientation exact same rahegi
+          muted={isLocal} // Local track muted to prevent acoustic feedback loop
           className="w-full h-full object-cover scale-x-[-1]"
         />
       ) : (
@@ -90,7 +119,7 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     setActiveRoomId(null);
   }, []);
 
-  // 30-Second Grace Disconnect Timer (Minimise / Background)
+  // 30-Second Grace Disconnect Timer
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.hidden) {
@@ -109,22 +138,21 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [stopAllMedia]);
 
-  // 🚀 FIX 2: Enhanced Hardware Audio Processing for Echo & High Pitch Noise Shield
+  // 🚀 LIGHTWEIGHT BANDWIDTH & NOISE-FREE MIC SETTINGS (Fixes network slowdown)
   const initLocalStream = async () => {
     try {
       if (localStreamRef.current) return localStreamRef.current;
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
-          width: { ideal: 320 }, 
-          height: { ideal: 320 }, 
-          frameRate: { max: 24 },
+          width: { ideal: 240, max: 320 }, 
+          height: { ideal: 240, max: 320 }, 
+          frameRate: { max: 15 }, // Optimized FPS for network savings
           facingMode: 'user'
         },
         audio: {
           echoCancellation: { exact: true },
           noiseSuppression: { exact: true },
           autoGainControl: { exact: true },
-          // High-frequency whistling sound filtering
           // @ts-ignore
           googEchoCancellation: true,
           googAutoGainControl: true,
@@ -136,7 +164,6 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
       return stream;
     } catch (err) {
       console.warn("Camera/Mic Permission error:", err);
-      // Fallback with standard constraints
       try {
         const fallbackStream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -239,11 +266,10 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
       }
     });
 
-    // 🔴 ROUTING / PAGE SYNC LOGIC ADDED HERE (SAFE & UNTOUCHED)
     channel.on('broadcast', { event: 'app-sync' }, ({ payload }) => {
       if (payload.senderId !== effectiveUserId) {
         if (payload.path && payload.path !== window.location.pathname) {
-          window.location.href = payload.path; // 👈 Auto Route Page Sync
+          window.location.href = payload.path; 
         }
         if (payload.videoId) {
           setRemoteVideoId(payload.videoId);
@@ -321,12 +347,9 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
   return (
     <WatchPartyContext.Provider value={{ activeRoomId, startParty, leaveParty: stopAllMedia, broadcastVideoChange, remoteVideoId }}>
       {children}
-      {/* 🔴 ALWAYS VISIBLE CLEAN CAMERA BUBBLES */}
       {activeRoomId && (
         <div className="fixed top-14 right-3 z-[99999] flex flex-col gap-2 items-end pointer-events-auto">
-          {/* Local User */}
           <RemoteVideoBubble stream={localStreamRef.current} isLocal={true} />
-          {/* Connected Remote Friend */}
           {activePeers.map(peer => (
             <RemoteVideoBubble key={peer.peerId} stream={peer.stream} isLocal={false} />
           ))}
