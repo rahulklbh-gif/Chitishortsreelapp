@@ -7,7 +7,7 @@ import { OptimizedVideoPlayer } from './OptimizedVideoPlayer';
 import WatchPartyManager from './WatchPartyManager';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
-import { useWatchParty } from '@/contexts/WatchPartyContext'; // 👈 Watch Party Engine Import
+import { useWatchParty } from '@/contexts/WatchPartyContext'; 
 import { Loader2, Music2, Play as PlayIcon, Pause } from 'lucide-react'; 
 import { toast } from 'sonner'; 
 
@@ -16,7 +16,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { startParty, broadcastVideoChange, remoteVideoId } = useWatchParty(); // 👈 Watch Party Hooks
+  const { startParty, broadcastVideoChange, remoteVideoId } = useWatchParty(); 
 
   const [videos, setVideos] = useState<any[]>([]); 
   const [loading, setLoading] = useState(true);
@@ -32,6 +32,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const containerRef = useRef<HTMLDivElement>(null);
   const viewedVideos = useRef<Set<string>>(new Set());
   const isRemoteScrolling = useRef(false); // Loop Protection Flag
+  const scrollTimeoutRef = useRef<any>(null);
 
   useEffect(() => {
     const domains = ['https://cdnjs.cloudflare.com', 'https://cdn.chitishort.store'];
@@ -43,7 +44,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     });
   }, []);
 
-  // 🔴 URL SE PARTY ROOM AUTO-DETECT LOGIC (DOST LINK CLICK KAREGA TOH AUTO JOIN HOGA)
+  // 🔴 URL SE PARTY ROOM AUTO-DETECT LOGIC
   useEffect(() => {
     const partyRoom = searchParams.get('partyRoom');
     if (partyRoom && partyRoom !== 'undefined') {
@@ -155,9 +156,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         'cdn.chitishort.store'
       );
 
+      // Thumbnail Image Check
+      const posterImage = video.thumbnail_url || video.cover_url || video.poster || "";
+
       return {
         ...video,
         video_url: finalUrl,
+        poster_url: posterImage,
         user_name: freshName,
         user_avatar: freshAvatar,
         likes_count: video.likes_count || 0,
@@ -187,7 +192,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { console.error(err); }
   };
 
-  // 🔴 AAPKE SCROLL PAR SABHI DOSTON KO REAL-TIME SYNC SIGNAL BHEJNA
+  // 🔴 AAPKE SCROLL PAR SABHI DOSTON KO REAL-TIME SYNC SIGNAL BHEJNA (Optimized with Debounce/RAF)
   const handleScroll = () => {
     if (!containerRef.current) return;
 
@@ -198,13 +203,16 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
     const { scrollTop, clientHeight } = containerRef.current;
     const index = Math.round(scrollTop / clientHeight);
+    
     if (index !== activeIndex) {
       setActiveIndex(index);
       setIsPlaying(true); 
 
       if (videos[index]) {
-        // Broadcast Video ID & Route to Remote Party Members
-        broadcastVideoChange(videos[index].id, location.pathname);
+        if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = setTimeout(() => {
+          broadcastVideoChange(videos[index].id, location.pathname);
+        }, 150); // Small throttle to prevent network flood during fast scroll
       }
     }
   };
@@ -287,21 +295,26 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       ref={containerRef}
       className="fixed inset-0 overflow-y-scroll snap-y snap-mandatory no-scrollbar bg-black scroll-smooth"
       onScroll={handleScroll}
-      style={{ WebkitOverflowScrolling: 'touch' }}
+      style={{ 
+        WebkitOverflowScrolling: 'touch',
+        willChange: 'transform' // Hardware acceleration for fast smooth scroll
+      }}
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
+        // Keep 1 video behind and 2 videos ahead rendered in memory for instant scrolling
         const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 2;
 
         return (
           <div 
             key={video.id} 
-            className="relative h-screen w-full snap-start snap-always bg-black"
+            className="relative h-screen w-full snap-start snap-always bg-black transform-gpu"
             onClick={togglePlayPause} 
           >
             {shouldRender ? (
               <OptimizedVideoPlayer
                 videoUrl={video.video_url}
+                posterUrl={video.poster_url} // Passed Thumbnail Poster URL
                 videoId={video.id}
                 isActive={isActive && isPlaying}
                 username={video.user_name}
