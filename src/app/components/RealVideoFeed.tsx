@@ -33,6 +33,9 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
   const viewedVideos = useRef<Set<string>>(new Set());
   const isRemoteScrolling = useRef(false); // Loop Protection Flag
   const scrollTimeoutRef = useRef<any>(null);
+  
+  // 🚀 Guard to prevent duplicate Toast notifications
+  const hasJoinedPartyRef = useRef(false);
 
   useEffect(() => {
     const domains = ['https://cdnjs.cloudflare.com', 'https://cdn.chitishort.store'];
@@ -44,13 +47,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     });
   }, []);
 
-  // 🔴 URL SE PARTY ROOM AUTO-DETECT LOGIC
+  // 🔴 URL SE PARTY ROOM AUTO-DETECT LOGIC (SINGLE EXECUTION TOAST)
   useEffect(() => {
     const partyRoom = searchParams.get('partyRoom');
-    if (partyRoom && partyRoom !== 'undefined') {
+    if (partyRoom && partyRoom !== 'undefined' && !hasJoinedPartyRef.current) {
+      hasJoinedPartyRef.current = true;
       setActivePartyRoom(partyRoom);
       startParty(partyRoom);
-      toast.info("Watch Party Room Mein Connect Ho Rahe Hain...");
+      toast.info("Watch Party Room Mein Connect Ho Rahe Hain...", { id: 'party-connect' });
     }
   }, [searchParams, startParty]);
 
@@ -192,7 +196,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     } catch (err) { console.error(err); }
   };
 
-  // 🔴 AAPKE SCROLL PAR SABHI DOSTON KO REAL-TIME SYNC SIGNAL BHEJNA (Optimized with Debounce/RAF)
+  // 🔴 AAPKE SCROLL PAR SABHI DOSTON KO REAL-TIME SYNC SIGNAL BHEJNA (Optimized with Debounce)
   const handleScroll = () => {
     if (!containerRef.current) return;
 
@@ -212,7 +216,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
         if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
         scrollTimeoutRef.current = setTimeout(() => {
           broadcastVideoChange(videos[index].id, location.pathname);
-        }, 150); // Small throttle to prevent network flood during fast scroll
+        }, 150);
       }
     }
   };
@@ -297,12 +301,11 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       onScroll={handleScroll}
       style={{ 
         WebkitOverflowScrolling: 'touch',
-        willChange: 'transform' // Hardware acceleration for fast smooth scroll
+        willChange: 'transform'
       }}
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
-        // Keep 1 video behind and 2 videos ahead rendered in memory for instant scrolling
         const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 2;
 
         return (
@@ -314,7 +317,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
             {shouldRender ? (
               <OptimizedVideoPlayer
                 videoUrl={video.video_url}
-                posterUrl={video.poster_url} // Passed Thumbnail Poster URL
+                posterUrl={video.poster_url}
                 videoId={video.id}
                 isActive={isActive && isPlaying}
                 username={video.user_name}
