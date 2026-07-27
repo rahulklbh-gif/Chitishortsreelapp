@@ -102,6 +102,7 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
   const effectiveUserId = user?.id || `user_${Math.random().toString(36).substring(2, 7)}`;
   const effectiveUserName = user?.user_metadata?.username || user?.email?.split('@')[0] || "Friend";
 
+  // 🔴 INSTANT RED BUTTON DISCONNECT + URL CLEANUP LOGIC
   const stopAllMedia = useCallback(() => {
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop());
@@ -117,6 +118,18 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     }
     setActivePeers([]);
     setActiveRoomId(null);
+    setRemoteVideoId(null);
+
+    // 🚀 Clean URL query params to prevent instant auto-reconnect loops
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (url.searchParams.has('partyRoom')) {
+        url.searchParams.delete('partyRoom');
+        window.history.replaceState({}, '', url.pathname + url.search);
+      }
+    }
+
+    toast.info("Watch party ended 🔴");
   }, []);
 
   // 30-Second Grace Disconnect Timer
@@ -138,7 +151,7 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [stopAllMedia]);
 
-  // 🚀 LIGHTWEIGHT BANDWIDTH & NOISE-FREE MIC SETTINGS (Fixes network slowdown)
+  // 🚀 HARDWARE ECHO SHIELD & NOISE-FREE MIC SETTINGS
   const initLocalStream = async () => {
     try {
       if (localStreamRef.current) return localStreamRef.current;
@@ -146,13 +159,15 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
         video: { 
           width: { ideal: 240, max: 320 }, 
           height: { ideal: 240, max: 320 }, 
-          frameRate: { max: 15 }, // Optimized FPS for network savings
+          frameRate: { max: 15 },
           facingMode: 'user'
         },
         audio: {
           echoCancellation: { exact: true },
           noiseSuppression: { exact: true },
           autoGainControl: { exact: true },
+          channelCount: 1, // Mono channel to stop acoustic squealing/whistling
+          sampleRate: 16000, // Optimized audio bandwidth for crystal clear speech
           // @ts-ignore
           googEchoCancellation: true,
           googAutoGainControl: true,
@@ -363,7 +378,7 @@ export const WatchPartyProvider = ({ children }: { children: React.ReactNode }) 
             <button onClick={copyPartyLink} className="p-1.5 text-blue-400">
               <Share2 size={14}/>
             </button>
-            <button onClick={stopAllMedia} className="p-1.5 bg-red-600 text-white rounded-full">
+            <button onClick={stopAllMedia} className="p-1.5 bg-red-600 text-white rounded-full active:scale-95 transition-transform">
               <PhoneOff size={14}/>
             </button>
           </div>
