@@ -100,19 +100,24 @@ export function ChatListPage() {
         }
       });
 
-    // ⚡ Realtime Chat Room Listener (Auto Re-order on message)
-    const roomChannel = supabase
-      .channel('chat_rooms_realtime_feed')
+    // ⚡ FIXED: DUAL REALTIME LISTENER (Rooms + New Messages Sync)
+    const realtimeChannel = supabase
+      .channel('chat_list_realtime_sync')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'chat_rooms' },
         () => { fetchRooms(); }
       )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'chat_messages' },
+        () => { fetchRooms(); } // Naya text aate hi instant top shift
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(presenceChannel);
-      supabase.removeChannel(roomChannel);
+      supabase.removeChannel(realtimeChannel);
     };
   }, [user]);
 
