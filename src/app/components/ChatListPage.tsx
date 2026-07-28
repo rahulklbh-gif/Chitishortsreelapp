@@ -20,6 +20,17 @@ function formatLastSeen(lastSeenTimestamp: string | null) {
   return `Active ${diffInDays}d ago`;
 }
 
+// 🚀 Robust Online Engine (Flicker Proof for Feed Swiping)
+function checkIsOnline(userId: string, lastSeen: string | null, onlineSet: Set<string>) {
+  if (!userId) return false;
+  if (onlineSet.has(userId)) return true;
+  if (lastSeen) {
+    const diffInMs = new Date().getTime() - new Date(lastSeen).getTime();
+    if (diffInMs < 120000) return true; // 2 minutes heartbeat buffer (Flawless in Feed)
+  }
+  return false;
+}
+
 function UserAvatar({ userId, username, isOnline }: { userId: string, username: string, isOnline: boolean }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
@@ -74,7 +85,7 @@ export function ChatListPage() {
 
     fetchRooms();
 
-    // 🌐 GLOBAL PRESENCE CHANNEL
+    // 🌐 GLOBAL PRESENCE LISTENER
     const presenceChannel = supabase.channel('global-app-presence', {
       config: { presence: { key: user.id } }
     });
@@ -90,21 +101,24 @@ export function ChatListPage() {
         }
       });
 
-    // ⚡ REALTIME LISTENER FOR INSTANT CHAT ROOM SORTING & BLUE DOT
-    const roomChannel = supabase
-      .channel('chat_rooms_realtime_feed')
+    // ⚡ REALTIME DUAL LISTENER (For Messages & Chat Room Re-ordering)
+    const realtimeChannel = supabase
+      .channel('chat_list_realtime_sync')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'chat_rooms' },
-        () => {
-          fetchRooms(); // Naya message aate hi re-fetch karke sabse upar daal do
-        }
+        () => { fetchRooms(); }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'chat_messages' },
+        () => { fetchRooms(); }
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(presenceChannel);
-      supabase.removeChannel(roomChannel);
+      supabase.removeChannel(realtimeChannel);
     };
   }, [user]);
 
@@ -135,7 +149,7 @@ export function ChatListPage() {
           user2:profiles!chat_rooms_user2_id_fkey(id, username, last_seen)
         `)
         .or(`user1_id.eq.${user?.id},user2_id.eq.${user?.id}`)
-        .order('last_message_time', { ascending: false }); // 🔥 Latest Message Pehle Aayega
+        .order('last_message_time', { ascending: false }); // 🔥 Latest Message Top Par Aayega
 
       if (!error) setRooms(data || []);
     } catch (err) { console.error(err); } 
@@ -160,12 +174,12 @@ export function ChatListPage() {
     }
   };
 
-  // 🔴 Active/Online Friends Tray Sort Logic: Online Users First
+  // 🔴 Active/Online Friends Tray Sort
   const activeOnlineRooms = [...rooms].sort((a, b) => {
     const userA = a.user1_id === user?.id ? a.user2 : a.user1;
     const userB = b.user1_id === user?.id ? b.user2 : b.user1;
-    const isAOnline = onlineUsers.has(userA?.id);
-    const isBOnline = onlineUsers.has(userB?.id);
+    const isAOnline = checkIsOnline(userA?.id, userA?.last_seen, onlineUsers);
+    const isBOnline = checkIsOnline(userB?.id, userB?.last_seen, onlineUsers);
 
     if (isAOnline && !isBOnline) return -1;
     if (!isAOnline && isBOnline) return 1;
@@ -185,12 +199,12 @@ export function ChatListPage() {
         <Send size={20} className="text-black cursor-pointer" />
       </div>
 
-      {/* 🚀 Top Active Friends Horizontal Row */}
+      {/* 🚀 Top Active Friends Tray */}
       {activeOnlineRooms.length > 0 && searchQuery.length < 2 && (
         <div className="px-4 py-3 flex items-center gap-4 overflow-x-auto no-scrollbar border-b border-gray-50">
           {activeOnlineRooms.map((room) => {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
-            const isOnline = onlineUsers.has(otherUser?.id);
+            const isOnline = checkIsOnline(otherUser?.id, otherUser?.last_seen, onlineUsers);
 
             return (
               <div 
@@ -208,7 +222,7 @@ export function ChatListPage() {
         </div>
       )}
 
-      {/* Search Input */}
+      {/* Search Bar */}
       <div className="p-4 pb-2">
         <div className="flex items-center gap-3 bg-gray-100 p-3 rounded-2xl border border-gray-200">
           <Search size={18} className="text-gray-400" />
@@ -221,7 +235,7 @@ export function ChatListPage() {
         </div>
       </div>
 
-      {/* Tabs Bar */}
+      {/* Tabs */}
       {searchQuery.length < 2 && (
         <div className="px-4 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
           {(['all', 'primary', 'general', 'requests'] as const).map((tab) => (
@@ -240,13 +254,13 @@ export function ChatListPage() {
         </div>
       )}
 
-      {/* Chat List Sorted By Last Message Time */}
+      {/* Chat List */}
       <div className="px-4 space-y-1 mt-2">
         {searchQuery.length >= 2 ? (
           <div>
             <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Suggested People</h2>
             {searchResults.map((person) => {
-              const isOnline = onlineUsers.has(person.id);
+              const isOnline = checkIsOnline(person.id, person.last_seen, onlineUsers);
               return (
                 <div key={person.id} onClick={() => startChat(person.id)} className="flex items-center justify-between py-3">
                   <div className="flex items-center gap-4">
@@ -264,34 +278,36 @@ export function ChatListPage() {
         ) : (
           rooms.map((room) => {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
-            const isOnline = onlineUsers.has(otherUser?.id);
+            const isOnline = checkIsOnline(otherUser?.id, otherUser?.last_seen, onlineUsers);
             
-            // 🚀 Highlight logic: Last message received from friend and unread
+            // 🔴 RED HIGHLIGHT LOGIC: Jab tak message user ne read nahi kiya ho
             const isUnread = room.last_sender_id !== user?.id && room.is_read === false;
 
             return (
               <div 
                 key={room.id} 
                 onClick={() => navigate(`/chat/${room.id}?friend=${otherUser?.id}`)} 
-                className={`flex items-center gap-4 py-3 active:bg-gray-50 transition-colors cursor-pointer ${isUnread ? 'bg-blue-50/40' : ''}`}
+                className={`flex items-center gap-4 py-3 active:bg-gray-50 transition-colors cursor-pointer ${isUnread ? 'bg-red-50/50' : ''}`}
               >
                 <UserAvatar userId={otherUser?.id} username={otherUser?.username} isOnline={isOnline} />
                 <div className="flex-1 border-b border-gray-50 pb-3 flex items-center justify-between pr-2">
                   <div className="flex-1 min-w-0">
-                    <h3 className={`text-sm ${isUnread ? 'font-black text-black' : 'font-bold text-gray-900'}`}>
+                    <h3 className={`text-sm ${isUnread ? 'font-black text-red-600' : 'font-bold text-gray-900'}`}>
                       {otherUser?.username}
                     </h3>
-                    <p className={`text-xs truncate ${isUnread ? 'font-bold text-blue-600' : 'text-gray-500'}`}>
+                    
+                    {/* 🔴 UNREAD MESSAGE RED TEXT COLOR */}
+                    <p className={`text-xs truncate ${isUnread ? 'font-black text-red-600' : 'text-gray-500'}`}>
                       {room.last_message || 'Tap to chat'} 
-                      <span className="text-gray-400 text-[10px] ml-2">
+                      <span className="text-gray-400 font-normal text-[10px] ml-2">
                         · {isOnline ? 'Active now' : formatLastSeen(otherUser?.last_seen)}
                       </span>
                     </p>
                   </div>
                   
-                  {/* 🚀 Instagram Blue Dot Badge */}
+                  {/* 🔴 RED DOT BADGE FOR UNREAD MESSAGES */}
                   {isUnread && (
-                    <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                    <div className="w-3 h-3 bg-red-600 rounded-full shadow-[0_0_8px_rgba(220,38,38,0.6)] animate-pulse" />
                   )}
                 </div>
               </div>
