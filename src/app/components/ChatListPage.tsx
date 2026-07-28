@@ -20,13 +20,12 @@ function formatLastSeen(lastSeenTimestamp: string | null) {
   return `Active ${diffInDays}d ago`;
 }
 
-// 🚀 Robust Online Engine (Flicker Proof for Feed Swiping)
 function checkIsOnline(userId: string, lastSeen: string | null, onlineSet: Set<string>) {
   if (!userId) return false;
   if (onlineSet.has(userId)) return true;
   if (lastSeen) {
     const diffInMs = new Date().getTime() - new Date(lastSeen).getTime();
-    if (diffInMs < 120000) return true; // 2 minutes heartbeat buffer (Flawless in Feed)
+    if (diffInMs < 120000) return true; // 2 minutes heartbeat window
   }
   return false;
 }
@@ -85,7 +84,7 @@ export function ChatListPage() {
 
     fetchRooms();
 
-    // 🌐 GLOBAL PRESENCE LISTENER
+    // 🌐 GLOBAL PRESENCE CHANNEL
     const presenceChannel = supabase.channel('global-app-presence', {
       config: { presence: { key: user.id } }
     });
@@ -101,24 +100,21 @@ export function ChatListPage() {
         }
       });
 
-    // ⚡ REALTIME DUAL LISTENER (For Messages & Chat Room Re-ordering)
-    const realtimeChannel = supabase
-      .channel('chat_list_realtime_sync')
+    // ⚡ REALTIME LISTENER FOR CHAT ROOMS & INSTANT MESSAGE UPDATES
+    const roomChannel = supabase
+      .channel('chat_rooms_realtime_feed')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'chat_rooms' },
-        () => { fetchRooms(); }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'chat_messages' },
-        () => { fetchRooms(); }
+        () => {
+          fetchRooms(); // Naya text ya video message aate hi instant top re-fetch
+        }
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(presenceChannel);
-      supabase.removeChannel(realtimeChannel);
+      supabase.removeChannel(roomChannel);
     };
   }, [user]);
 
@@ -149,7 +145,7 @@ export function ChatListPage() {
           user2:profiles!chat_rooms_user2_id_fkey(id, username, last_seen)
         `)
         .or(`user1_id.eq.${user?.id},user2_id.eq.${user?.id}`)
-        .order('last_message_time', { ascending: false }); // 🔥 Latest Message Top Par Aayega
+        .order('last_message_time', { ascending: false }); // 🔥 RECENT CHAT ALWAYS TOP (Latest Time First)
 
       if (!error) setRooms(data || []);
     } catch (err) { console.error(err); } 
@@ -174,8 +170,8 @@ export function ChatListPage() {
     }
   };
 
-  // 🔴 Active/Online Friends Tray Sort
-  const activeOnlineRooms = [...rooms].sort((a, b) => {
+  // 🚀 Top Tray Sort: Online Friends First for Top Bubble Row
+  const topActiveRooms = [...rooms].sort((a, b) => {
     const userA = a.user1_id === user?.id ? a.user2 : a.user1;
     const userB = b.user1_id === user?.id ? b.user2 : b.user1;
     const isAOnline = checkIsOnline(userA?.id, userA?.last_seen, onlineUsers);
@@ -199,10 +195,10 @@ export function ChatListPage() {
         <Send size={20} className="text-black cursor-pointer" />
       </div>
 
-      {/* 🚀 Top Active Friends Tray */}
-      {activeOnlineRooms.length > 0 && searchQuery.length < 2 && (
+      {/* 🚀 Top Active Friends Horizontal Row */}
+      {topActiveRooms.length > 0 && searchQuery.length < 2 && (
         <div className="px-4 py-3 flex items-center gap-4 overflow-x-auto no-scrollbar border-b border-gray-50">
-          {activeOnlineRooms.map((room) => {
+          {topActiveRooms.map((room) => {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
             const isOnline = checkIsOnline(otherUser?.id, otherUser?.last_seen, onlineUsers);
 
@@ -222,7 +218,7 @@ export function ChatListPage() {
         </div>
       )}
 
-      {/* Search Bar */}
+      {/* Search Input */}
       <div className="p-4 pb-2">
         <div className="flex items-center gap-3 bg-gray-100 p-3 rounded-2xl border border-gray-200">
           <Search size={18} className="text-gray-400" />
@@ -235,7 +231,7 @@ export function ChatListPage() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs Bar */}
       {searchQuery.length < 2 && (
         <div className="px-4 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
           {(['all', 'primary', 'general', 'requests'] as const).map((tab) => (
@@ -254,7 +250,7 @@ export function ChatListPage() {
         </div>
       )}
 
-      {/* Chat List */}
+      {/* 🚀 Main Chat List: ALWAYS STRICTLY SORTED BY RECENT CHAT TIME */}
       <div className="px-4 space-y-1 mt-2">
         {searchQuery.length >= 2 ? (
           <div>
@@ -280,14 +276,14 @@ export function ChatListPage() {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
             const isOnline = checkIsOnline(otherUser?.id, otherUser?.last_seen, onlineUsers);
             
-            // 🔴 RED HIGHLIGHT LOGIC: Jab tak message user ne read nahi kiya ho
+            // 🔴 UNREAD LOGIC: Agar last message kisi aur ne bheja hai aur wo read nahi hua
             const isUnread = room.last_sender_id !== user?.id && room.is_read === false;
 
             return (
               <div 
                 key={room.id} 
                 onClick={() => navigate(`/chat/${room.id}?friend=${otherUser?.id}`)} 
-                className={`flex items-center gap-4 py-3 active:bg-gray-50 transition-colors cursor-pointer ${isUnread ? 'bg-red-50/50' : ''}`}
+                className={`flex items-center gap-4 py-3 active:bg-gray-50 transition-colors cursor-pointer ${isUnread ? 'bg-red-50/60 font-black' : ''}`}
               >
                 <UserAvatar userId={otherUser?.id} username={otherUser?.username} isOnline={isOnline} />
                 <div className="flex-1 border-b border-gray-50 pb-3 flex items-center justify-between pr-2">
@@ -296,7 +292,7 @@ export function ChatListPage() {
                       {otherUser?.username}
                     </h3>
                     
-                    {/* 🔴 UNREAD MESSAGE RED TEXT COLOR */}
+                    {/* 🔴 TEXT PREVIEW & RED UNREAD COLOR */}
                     <p className={`text-xs truncate ${isUnread ? 'font-black text-red-600' : 'text-gray-500'}`}>
                       {room.last_message || 'Tap to chat'} 
                       <span className="text-gray-400 font-normal text-[10px] ml-2">
@@ -305,9 +301,9 @@ export function ChatListPage() {
                     </p>
                   </div>
                   
-                  {/* 🔴 RED DOT BADGE FOR UNREAD MESSAGES */}
+                  {/* 🔴 RED PULSE GLOWING DOT FOR UNREAD MESSAGES */}
                   {isUnread && (
-                    <div className="w-3 h-3 bg-red-600 rounded-full shadow-[0_0_8px_rgba(220,38,38,0.6)] animate-pulse" />
+                    <div className="w-3 h-3 bg-red-600 rounded-full shadow-[0_0_10px_rgba(220,38,38,0.7)] animate-pulse" />
                   )}
                 </div>
               </div>
