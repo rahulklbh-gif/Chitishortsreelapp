@@ -100,7 +100,7 @@ export function ChatListPage() {
         }
       });
 
-    // ⚡ FIXED: DUAL REALTIME LISTENER (Rooms + New Messages Sync)
+    // ⚡ FIXED: DUAL REALTIME LISTENER (Rooms + Messages Delete/Insert Sync)
     const realtimeChannel = supabase
       .channel('chat_list_realtime_sync')
       .on(
@@ -110,8 +110,8 @@ export function ChatListPage() {
       )
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'chat_messages' },
-        () => { fetchRooms(); } // Naya text aate hi instant top shift
+        { event: '*', schema: 'public', table: 'chat_messages' },
+        () => { fetchRooms(); } // Naya message aane par ya delete hone par list sync
       )
       .subscribe();
 
@@ -272,8 +272,9 @@ export function ChatListPage() {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
             const isOnline = checkIsOnline(otherUser?.id, otherUser?.last_seen, onlineUsers);
             
-            // 📸 Unread check
-            const isUnread = room.last_sender_id !== user?.id && room.is_read === false;
+            // 🛑 Rule: 'Tap to chat' hone par kabhi bhi unread highlight nahi hoga
+            const isTapToChat = !room.last_message || room.last_message === 'Tap to chat';
+            const isUnread = !isTapToChat && room.last_sender_id !== user?.id && room.is_read === false;
 
             return (
               <div 
@@ -284,13 +285,13 @@ export function ChatListPage() {
                 <UserAvatar userId={otherUser?.id} username={otherUser?.username} isOnline={isOnline} />
                 <div className="flex-1 border-b border-gray-50 pb-3 flex items-center justify-between pr-2">
                   <div className="flex-1 min-w-0">
-                    {/* 📸 Username: Bold Black if unread */}
-                    <h3 className={`text-sm ${isUnread ? 'font-black text-black' : 'font-bold text-gray-800'}`}>
+                    {/* 🔴 Username: Bold Red 🔴 if unread, Bold Black if read */}
+                    <h3 className={`text-sm ${isUnread ? 'font-black text-red-600' : 'font-bold text-gray-800'}`}>
                       {otherUser?.username}
                     </h3>
                     
-                    {/* 📸 Message preview: Bold text if unread, normal if read */}
-                    <p className={`text-xs truncate ${isUnread ? 'font-black text-black' : 'text-gray-500'}`}>
+                    {/* 🔴 Message preview: Bold Red 🔴 if unread, Normal Gray if read or Tap to chat */}
+                    <p className={`text-xs truncate ${isUnread ? 'font-black text-red-600' : 'text-gray-500 font-normal'}`}>
                       {room.last_message || 'Tap to chat'} 
                       <span className="text-gray-400 font-normal text-[10px] ml-1.5">
                         · {formatLastSeen(room.last_message_time || otherUser?.last_seen)}
@@ -298,9 +299,9 @@ export function ChatListPage() {
                     </p>
                   </div>
                   
-                  {/* 🔵 Exact Instagram Style BLUE DOT for Unread Messages */}
+                  {/* 🔴 RED DOT for Unread Messages */}
                   {isUnread && (
-                    <div className="w-2.5 h-2.5 bg-blue-600 rounded-full flex-shrink-0" />
+                    <div className="w-2.5 h-2.5 bg-red-600 rounded-full flex-shrink-0 ml-2" />
                   )}
                 </div>
               </div>
