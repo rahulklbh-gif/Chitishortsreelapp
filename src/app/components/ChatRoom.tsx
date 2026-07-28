@@ -180,7 +180,7 @@ export function ChatRoom() {
           }
         });
 
-      // ⚡ REALTIME LISTENERS FOR INSERT, UPDATE, AND DELETE
+      // ⚡ REALTIME LISTENERS FOR INSTANT DELETE AND DOUBLE TICK (✓✓)
       const messageChannel = supabase.channel(`room-${roomId}`)
         .on('postgres_changes', { 
           event: '*',
@@ -203,9 +203,11 @@ export function ChatRoom() {
               if (payload.new.deleted_for && payload.new.deleted_for.includes(user.id)) {
                 return prev.filter(m => m.id !== payload.new.id);
               }
+              // 🔵 Double Tick ✓✓ Update Sync
               return prev.map(m => m.id === payload.new.id ? payload.new : m);
             });
           } else if (payload.eventType === 'DELETE') {
+            // 🗑️ Real-Time Delete Sync (Friend dwara Delete for Everyone karne par bina refresh ke gayab)
             setMessages((prev) => prev.filter(m => m.id !== payload.old.id));
           }
         })
@@ -282,7 +284,7 @@ export function ChatRoom() {
     }).eq('id', roomId);
   };
 
-  // 🚀 SMART DELETE LOGIC (Instant Chat List Preview Sync Fix)
+  // 🚀 SMART DELETE LOGIC (Instant UI Removal + Preview Sync)
   const handleDeleteMessage = async (messageId: string, senderId: string) => {
     if (!user) return;
     const isMe = senderId === user.id;
@@ -457,9 +459,14 @@ export function ChatRoom() {
                     {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                   
+                  {/* 🔵 Read Status: Double Tick (✓✓) when read, Single Tick (✓) when sent */}
                   {isMe && (
                     <span className="ml-1">
-                      {msg.is_read ? <CheckCheck size={12} className="text-blue-200" /> : <Check size={12} className="text-blue-100 opacity-70" />}
+                      {msg.is_read ? (
+                        <CheckCheck size={14} className="text-blue-200 font-extrabold" />
+                      ) : (
+                        <Check size={14} className="text-blue-100 opacity-70" />
+                      )}
                     </span>
                   )}
                 </div>
