@@ -6,8 +6,22 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, UserPlus, Send } from 'lucide-react';
 
-// ✅ Wahi logic jo CommentSheet mein kaam kar raha hai (Intact)
-function UserAvatar({ userId, username, showOnlineDot = false }: { userId: string, username: string, showOnlineDot?: boolean }) {
+// ⏱️ Helper function for "Active 5m ago" / "Active 2h ago"
+function formatLastSeen(lastSeenTimestamp: string | null) {
+  if (!lastSeenTimestamp) return 'Offline';
+  const now = new Date().getTime();
+  const past = new Date(lastSeenTimestamp).getTime();
+  const diffInMinutes = Math.floor((now - past) / (1000 * 60));
+
+  if (diffInMinutes < 1) return 'Active now';
+  if (diffInMinutes < 60) return `Active ${diffInMinutes}m ago`;
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) return `Active ${diffInHours}h ago`;
+  const diffInDays = Math.floor(diffInHours / 24);
+  return `Active ${diffInDays}d ago`;
+}
+
+function UserAvatar({ userId, username, isOnline }: { userId: string, username: string, isOnline: boolean }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -36,9 +50,9 @@ function UserAvatar({ userId, username, showOnlineDot = false }: { userId: strin
           onError={(e) => (e.currentTarget.style.display = 'none')}
         />
       )}
-      {/* 🟢 Instagram Online Status Dot */}
-      {showOnlineDot && (
-        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white" />
+      {/* 🟢 REAL-TIME ONLINE GREEN DOT (Sirf tabhi jab online ho) */}
+      {isOnline && (
+        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white shadow-sm" />
       )}
     </div>
   );
@@ -52,26 +66,48 @@ export function ChatListPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
 
-  // 🚀 Instagram Style Tabs Filter State
   const [activeTab, setActiveTab] = useState<'all' | 'primary' | 'general' | 'requests'>('all');
 
   useEffect(() => {
-    if (user) {
-      fetchRooms();
+    if (!user) return;
 
-      // ✅ Real-time subscription for unread highlights
-      const channel = supabase
-        .channel('room-updates')
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_rooms' }, () => {
-          fetchRooms();
-        })
-        .subscribe();
+    fetchRooms();
 
-      return () => {
-        supabase.removeChannel(channel);
-      };
-    }
+    // 🚀 1. REAL-TIME PRESENCE (Real Online/Offline Status Track Karna)
+    const presenceChannel = supabase.channel('online-users-presence', {
+      config: { presence: { key: user.id } }
+    });
+
+    presenceChannel
+      .on('presence', { event: 'sync' }, () => {
+        const state = presenceChannel.presenceState();
+        const activeIds = new Set(Object.keys(state));
+        setOnlineUserIds(activeIds);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await presenceChannel.track({ online_at: new Date().toISOString() });
+        }
+      });
+
+    // 🚀 2. REAL-TIME CHAT ROOMS & MESSAGES LISTENER (Bina refresh top par lane ke liye)
+    const roomChannel = supabase
+      .channel('chat_rooms_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'chat_rooms' },
+        () => {
+          fetchRooms(); // Auto refresh room order on new message
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(presenceChannel);
+      supabase.removeChannel(roomChannel);
+    };
   }, [user]);
 
   const handleSearch = async (query: string) => {
@@ -83,7 +119,7 @@ export function ChatListPage() {
     setIsSearching(true);
     const { data } = await supabase
       .from('profiles')
-      .select('id, username, avatar_url, full_name')
+      .select('id, username, avatar_url, full_name, last_seen')
       .ilike('username', `%${query}%`)
       .not('id', 'eq', user?.id)
       .limit(8);
@@ -95,9 +131,14 @@ export function ChatListPage() {
     try {
       const { data, error } = await supabase
         .from('chat_rooms')
-        .select(`*, user1:profiles!chat_rooms_user1_id_fkey(id, username), user2:profiles!chat_rooms_user2_id_fkey(id, username)`)
+        .select(`
+          *, 
+          user1:profiles!chat_rooms_user1_id_fkey(id, username, last_seen), 
+          user2:profiles!chat_rooms_user2_id_fkey(id, username, last_seen)
+        `)
         .or(`user1_id.eq.${user?.id},user2_id.eq.${user?.id}`)
-        .order('last_message_time', { ascending: false });
+        .order('last_message_time', { ascending: false }); // Sabse naya message sabse upar
+
       if (!error) setRooms(data || []);
     } catch (err) { console.error(err); } 
     finally { setLoading(false); }
@@ -121,9 +162,21 @@ export function ChatListPage() {
     }
   };
 
+  // 🚀 Sort Rooms: Pehle Online Users, fir Offline Users
+  const sortedRooms = [...rooms].sort((a, b) => {
+    const userA = a.user1_id === user?.id ? a.user2 : a.user1;
+    const userB = b.user1_id === user?.id ? b.user2 : b.user1;
+    const isAOnline = onlineUserIds.has(userA?.id);
+    const isBOnline = onlineUserIds.has(userB?.id);
+
+    if (isAOnline && !isBOnline) return -1;
+    if (!isAOnline && isBOnline) return 1;
+    return 0;
+  });
+
   return (
     <div className="fixed inset-0 z-[110] bg-white text-black overflow-y-auto">
-      {/* 🚀 Header */}
+      {/* Header */}
       <div className="p-4 pt-10 flex items-center justify-between sticky top-0 bg-white border-b border-gray-100 z-10">
         <div className="flex items-center gap-4">
           <ArrowLeft onClick={() => navigate('/')} className="cursor-pointer text-black" />
@@ -134,19 +187,21 @@ export function ChatListPage() {
         <Send size={20} className="text-black cursor-pointer" />
       </div>
 
-      {/* 🚀 Top Active Friends Horizontal Row */}
-      {rooms.length > 0 && searchQuery.length < 2 && (
+      {/* 🚀 Top Active/Online Friends Horizontal Row (Online Users Pehle Dikhenge) */}
+      {sortedRooms.length > 0 && searchQuery.length < 2 && (
         <div className="px-4 py-3 flex items-center gap-4 overflow-x-auto no-scrollbar border-b border-gray-50">
-          {rooms.map((room) => {
+          {sortedRooms.map((room) => {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
+            const isOnline = onlineUserIds.has(otherUser?.id);
+
             return (
               <div 
                 key={room.id}
                 onClick={() => navigate(`/chat/${room.id}?friend=${otherUser?.id}`)}
                 className="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer"
               >
-                <UserAvatar userId={otherUser?.id} username={otherUser?.username} showOnlineDot={true} />
-                <span className="text-[11px] text-gray-600 font-medium truncate max-w-[60px]">
+                <UserAvatar userId={otherUser?.id} username={otherUser?.username} isOnline={isOnline} />
+                <span className="text-[11px] text-gray-600 font-medium truncate max-w-[65px]">
                   @{otherUser?.username}
                 </span>
               </div>
@@ -168,7 +223,7 @@ export function ChatListPage() {
         </div>
       </div>
 
-      {/* 🚀 Instagram Style Tabs Bar (All / Primary / General / Requests) */}
+      {/* Instagram Tabs Bar */}
       {searchQuery.length < 2 && (
         <div className="px-4 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
           {(['all', 'primary', 'general', 'requests'] as const).map((tab) => (
@@ -192,50 +247,59 @@ export function ChatListPage() {
         {searchQuery.length >= 2 ? (
           <div>
             <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Suggested People</h2>
-            {searchResults.map((person) => (
-              <div key={person.id} onClick={() => startChat(person.id)} className="flex items-center justify-between py-3">
-                <div className="flex items-center gap-4">
-                  <UserAvatar userId={person.id} username={person.username} />
-                  <div>
-                    <p className="text-sm font-bold">@{person.username}</p>
-                    <p className="text-xs text-gray-500">{person.full_name}</p>
+            {searchResults.map((person) => {
+              const isOnline = onlineUserIds.has(person.id);
+              return (
+                <div key={person.id} onClick={() => startChat(person.id)} className="flex items-center justify-between py-3">
+                  <div className="flex items-center gap-4">
+                    <UserAvatar userId={person.id} username={person.username} isOnline={isOnline} />
+                    <div>
+                      <p className="text-sm font-bold">@{person.username}</p>
+                      <p className="text-xs text-gray-500">{isOnline ? 'Active now' : formatLastSeen(person.last_seen)}</p>
+                    </div>
                   </div>
+                  <UserPlus size={18} className="text-blue-500" />
                 </div>
-                <UserPlus size={18} className="text-blue-500" />
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           rooms.map((room) => {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
+            const isOnline = onlineUserIds.has(otherUser?.id);
             
-            // ✅ Highlight Logic: Agar last message kisi aur ne bheja aur read nahi hua
+            // 🚀 Highlight Logic: Agar samne wale ne naya message bheja aur read nahi hua
             const isUnread = room.last_sender_id !== user?.id && room.is_read === false;
 
             return (
               <div 
                 key={room.id} 
                 onClick={() => navigate(`/chat/${room.id}?friend=${otherUser?.id}`)} 
-                className={`flex items-center gap-4 py-3 active:bg-gray-50 transition-colors cursor-pointer ${isUnread ? 'bg-blue-50/30' : ''}`}
+                className={`flex items-center gap-4 py-3 active:bg-gray-50 transition-colors cursor-pointer ${isUnread ? 'bg-blue-50/40' : ''}`}
               >
-                <UserAvatar userId={otherUser?.id} username={otherUser?.username} showOnlineDot={true} />
+                <UserAvatar userId={otherUser?.id} username={otherUser?.username} isOnline={isOnline} />
                 <div className="flex-1 border-b border-gray-50 pb-3 flex items-center justify-between pr-2">
                   <div className="flex-1 min-w-0">
                     <h3 className={`text-sm ${isUnread ? 'font-black text-black' : 'font-bold text-gray-900'}`}>
                       {otherUser?.username}
                     </h3>
                     <p className={`text-xs truncate ${isUnread ? 'font-bold text-blue-600' : 'text-gray-500'}`}>
-                      {room.last_message || 'Tap to chat'}
+                      {room.last_message || 'Tap to chat'} 
+                      {!isUnread && (
+                        <span className="text-gray-400 text-[10px] ml-2">
+                          · {isOnline ? 'Active now' : formatLastSeen(otherUser?.last_seen)}
+                        </span>
+                      )}
                     </p>
                   </div>
                   
-                  {/* ✅ Instagram Blue Dot Badge */}
+                  {/* 🚀 Instagram Blue Dot Badge */}
                   {isUnread && (
-                    <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.4)]" />
+                    <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
                   )}
                 </div>
               </div>
-            )
+            );
           })
         )}
       </div>
