@@ -13,11 +13,11 @@ function formatLastSeen(lastSeenTimestamp: string | null) {
   const diffInMinutes = Math.floor((now - past) / (1000 * 60));
 
   if (diffInMinutes < 1) return 'Active now';
-  if (diffInMinutes < 60) return `Active ${diffInMinutes}m ago`;
+  if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
   const diffInHours = Math.floor(diffInMinutes / 60);
-  if (diffInHours < 24) return `Active ${diffInHours}h ago`;
+  if (diffInHours < 24) return `${diffInHours}h ago`;
   const diffInDays = Math.floor(diffInHours / 24);
-  return `Active ${diffInDays}d ago`;
+  return `${diffInDays}d ago`;
 }
 
 function checkIsOnline(userId: string, lastSeen: string | null, onlineSet: Set<string>) {
@@ -25,7 +25,7 @@ function checkIsOnline(userId: string, lastSeen: string | null, onlineSet: Set<s
   if (onlineSet.has(userId)) return true;
   if (lastSeen) {
     const diffInMs = new Date().getTime() - new Date(lastSeen).getTime();
-    if (diffInMs < 120000) return true; // 2 minutes heartbeat window
+    if (diffInMs < 120000) return true; 
   }
   return false;
 }
@@ -47,21 +47,21 @@ function UserAvatar({ userId, username, isOnline }: { userId: string, username: 
   }, [userId]);
 
   return (
-    <div className="relative w-12 h-12 flex-shrink-0">
-      <div className="absolute inset-0 w-12 h-12 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center text-gray-500 font-bold text-sm">
+    <div className="relative w-14 h-14 flex-shrink-0">
+      <div className="absolute inset-0 w-14 h-14 rounded-full bg-gradient-to-br from-gray-200 to-gray-300 flex items-center justify-center text-gray-500 font-bold text-sm">
         {username ? username[0].toUpperCase() : 'U'}
       </div>
       {avatarUrl && (
         <img 
           src={avatarUrl} 
-          className="absolute inset-0 w-12 h-12 rounded-full object-cover border border-gray-100"
+          className="absolute inset-0 w-14 h-14 rounded-full object-cover border border-gray-100"
           crossOrigin="anonymous"
           onError={(e) => (e.currentTarget.style.display = 'none')}
         />
       )}
-      {/* 🟢 Real-time Global Green Dot */}
+      {/* 🟢 Top Active Bubble Green Dot */}
       {isOnline && (
-        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white shadow-sm" />
+        <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white shadow-sm" />
       )}
     </div>
   );
@@ -84,7 +84,7 @@ export function ChatListPage() {
 
     fetchRooms();
 
-    // 🌐 GLOBAL PRESENCE CHANNEL
+    // 🌐 Real-time Online Channel
     const presenceChannel = supabase.channel('global-app-presence', {
       config: { presence: { key: user.id } }
     });
@@ -100,15 +100,13 @@ export function ChatListPage() {
         }
       });
 
-    // ⚡ REALTIME LISTENER FOR CHAT ROOMS & INSTANT MESSAGE UPDATES
+    // ⚡ Realtime Chat Room Listener (Auto Re-order on message)
     const roomChannel = supabase
       .channel('chat_rooms_realtime_feed')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'chat_rooms' },
-        () => {
-          fetchRooms(); // Naya text ya video message aate hi instant top re-fetch
-        }
+        () => { fetchRooms(); }
       )
       .subscribe();
 
@@ -145,7 +143,7 @@ export function ChatListPage() {
           user2:profiles!chat_rooms_user2_id_fkey(id, username, last_seen)
         `)
         .or(`user1_id.eq.${user?.id},user2_id.eq.${user?.id}`)
-        .order('last_message_time', { ascending: false }); // 🔥 RECENT CHAT ALWAYS TOP (Latest Time First)
+        .order('last_message_time', { ascending: false }); // 🔥 STRICT INSTAGRAM SORT: Most Recent Message First
 
       if (!error) setRooms(data || []);
     } catch (err) { console.error(err); } 
@@ -170,16 +168,10 @@ export function ChatListPage() {
     }
   };
 
-  // 🚀 Top Tray Sort: Online Friends First for Top Bubble Row
-  const topActiveRooms = [...rooms].sort((a, b) => {
-    const userA = a.user1_id === user?.id ? a.user2 : a.user1;
-    const userB = b.user1_id === user?.id ? b.user2 : b.user1;
-    const isAOnline = checkIsOnline(userA?.id, userA?.last_seen, onlineUsers);
-    const isBOnline = checkIsOnline(userB?.id, userB?.last_seen, onlineUsers);
-
-    if (isAOnline && !isBOnline) return -1;
-    if (!isAOnline && isBOnline) return 1;
-    return 0;
+  // 🚀 ONLY Top Horizontal Tray Filters for Online Friends
+  const topActiveTrayRooms = [...rooms].filter(room => {
+    const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
+    return checkIsOnline(otherUser?.id, otherUser?.last_seen, onlineUsers);
   });
 
   return (
@@ -195,12 +187,11 @@ export function ChatListPage() {
         <Send size={20} className="text-black cursor-pointer" />
       </div>
 
-      {/* 🚀 Top Active Friends Horizontal Row */}
-      {topActiveRooms.length > 0 && searchQuery.length < 2 && (
-        <div className="px-4 py-3 flex items-center gap-4 overflow-x-auto no-scrollbar border-b border-gray-50">
-          {topActiveRooms.map((room) => {
+      {/* 🚀 Top Active Tray (Right-slide bubbles - ONLY for online friends) */}
+      {topActiveTrayRooms.length > 0 && searchQuery.length < 2 && (
+        <div className="px-4 py-3 flex items-center gap-4 overflow-x-auto no-scrollbar border-b border-gray-100">
+          {topActiveTrayRooms.map((room) => {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
-            const isOnline = checkIsOnline(otherUser?.id, otherUser?.last_seen, onlineUsers);
 
             return (
               <div 
@@ -208,7 +199,7 @@ export function ChatListPage() {
                 onClick={() => navigate(`/chat/${room.id}?friend=${otherUser?.id}`)}
                 className="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer"
               >
-                <UserAvatar userId={otherUser?.id} username={otherUser?.username} isOnline={isOnline} />
+                <UserAvatar userId={otherUser?.id} username={otherUser?.username} isOnline={true} />
                 <span className="text-[11px] text-gray-600 font-medium truncate max-w-[65px]">
                   @{otherUser?.username}
                 </span>
@@ -231,7 +222,7 @@ export function ChatListPage() {
         </div>
       </div>
 
-      {/* Tabs Bar */}
+      {/* Tabs */}
       {searchQuery.length < 2 && (
         <div className="px-4 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
           {(['all', 'primary', 'general', 'requests'] as const).map((tab) => (
@@ -250,7 +241,7 @@ export function ChatListPage() {
         </div>
       )}
 
-      {/* 🚀 Main Chat List: ALWAYS STRICTLY SORTED BY RECENT CHAT TIME */}
+      {/* 🚀 Main Chat List: STRICTLY ORDERED BY RECENT MESSAGE TIME */}
       <div className="px-4 space-y-1 mt-2">
         {searchQuery.length >= 2 ? (
           <div>
@@ -276,34 +267,35 @@ export function ChatListPage() {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
             const isOnline = checkIsOnline(otherUser?.id, otherUser?.last_seen, onlineUsers);
             
-            // 🔴 UNREAD LOGIC: Agar last message kisi aur ne bheja hai aur wo read nahi hua
+            // 📸 Unread check
             const isUnread = room.last_sender_id !== user?.id && room.is_read === false;
 
             return (
               <div 
                 key={room.id} 
                 onClick={() => navigate(`/chat/${room.id}?friend=${otherUser?.id}`)} 
-                className={`flex items-center gap-4 py-3 active:bg-gray-50 transition-colors cursor-pointer ${isUnread ? 'bg-red-50/60 font-black' : ''}`}
+                className="flex items-center gap-4 py-3 active:bg-gray-50 transition-colors cursor-pointer"
               >
                 <UserAvatar userId={otherUser?.id} username={otherUser?.username} isOnline={isOnline} />
                 <div className="flex-1 border-b border-gray-50 pb-3 flex items-center justify-between pr-2">
                   <div className="flex-1 min-w-0">
-                    <h3 className={`text-sm ${isUnread ? 'font-black text-red-600' : 'font-bold text-gray-900'}`}>
+                    {/* 📸 Username: Bold Black if unread */}
+                    <h3 className={`text-sm ${isUnread ? 'font-black text-black' : 'font-bold text-gray-800'}`}>
                       {otherUser?.username}
                     </h3>
                     
-                    {/* 🔴 TEXT PREVIEW & RED UNREAD COLOR */}
-                    <p className={`text-xs truncate ${isUnread ? 'font-black text-red-600' : 'text-gray-500'}`}>
+                    {/* 📸 Message preview: Bold text if unread, normal if read */}
+                    <p className={`text-xs truncate ${isUnread ? 'font-black text-black' : 'text-gray-500'}`}>
                       {room.last_message || 'Tap to chat'} 
-                      <span className="text-gray-400 font-normal text-[10px] ml-2">
-                        · {isOnline ? 'Active now' : formatLastSeen(otherUser?.last_seen)}
+                      <span className="text-gray-400 font-normal text-[10px] ml-1.5">
+                        · {formatLastSeen(room.last_message_time || otherUser?.last_seen)}
                       </span>
                     </p>
                   </div>
                   
-                  {/* 🔴 RED PULSE GLOWING DOT FOR UNREAD MESSAGES */}
+                  {/* 🔵 Exact Instagram Style BLUE DOT for Unread Messages */}
                   {isUnread && (
-                    <div className="w-3 h-3 bg-red-600 rounded-full shadow-[0_0_10px_rgba(220,38,38,0.7)] animate-pulse" />
+                    <div className="w-2.5 h-2.5 bg-blue-600 rounded-full flex-shrink-0" />
                   )}
                 </div>
               </div>
