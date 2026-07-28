@@ -200,14 +200,12 @@ export function ChatRoom() {
             }
           } else if (payload.eventType === 'UPDATE') {
             setMessages((prev) => {
-              // Agar user me se koi Delete for me dabaye toh instant UI se filter kar do
               if (payload.new.deleted_for && payload.new.deleted_for.includes(user.id)) {
                 return prev.filter(m => m.id !== payload.new.id);
               }
               return prev.map(m => m.id === payload.new.id ? payload.new : m);
             });
           } else if (payload.eventType === 'DELETE') {
-            // Hard Delete (Delete for Everyone) hone par instant UI se hatao
             setMessages((prev) => prev.filter(m => m.id !== payload.old.id));
           }
         })
@@ -250,7 +248,6 @@ export function ChatRoom() {
 
   const fetchMessages = async () => {
     const { data } = await supabase.from('chat_messages').select('*').eq('room_id', roomId).order('created_at', { ascending: true });
-    // Filter out messages that current user deleted for themselves
     const activeMessages = (data || []).filter(m => !m.deleted_for || !m.deleted_for.includes(user?.id));
     setMessages(activeMessages);
   };
@@ -265,33 +262,52 @@ export function ChatRoom() {
     supabase.channel(`typing-${roomId}`).track({ user_id: user?.id, is_typing: val.length > 0 });
   };
 
-  // 🚀 SMART DELETE LOGIC (Instant UI Removal + Permissions)
+  // 🚀 HELPER: Sync remaining latest message with chat_rooms preview
+  const updateRoomLastMessageAfterDelete = async (remainingList: any[]) => {
+    const lastMsg = remainingList.length > 0 ? remainingList[remainingList.length - 1] : null;
+
+    let previewText = 'Tap to chat';
+    if (lastMsg) {
+      if (lastMsg.media_url) {
+        previewText = lastMsg.media_type === 'photo' ? '📷 Photo' : '🎥 Video Shared';
+      } else {
+        previewText = lastMsg.content || 'Message';
+      }
+    }
+
+    await supabase.from('chat_rooms').update({
+      last_message: previewText,
+      last_message_time: lastMsg ? lastMsg.created_at : new Date().toISOString(),
+      last_sender_id: lastMsg ? lastMsg.sender_id : null
+    }).eq('id', roomId);
+  };
+
+  // 🚀 SMART DELETE LOGIC (Instant Chat List Preview Sync Fix)
   const handleDeleteMessage = async (messageId: string, senderId: string) => {
     if (!user) return;
     const isMe = senderId === user.id;
 
     if (isMe) {
-      // 🗑️ DELETE FOR EVERYONE (Hard Delete from DB)
       const confirmDelete = window.confirm("Delete this message for EVERYONE?");
       if (!confirmDelete) return;
 
-      // Instant UI remove (bina refresh ke)
-      setMessages((prev) => prev.filter(m => m.id !== messageId));
+      const remainingMessages = messages.filter(m => m.id !== messageId);
+      setMessages(remainingMessages);
 
       const { error } = await supabase.from('chat_messages').delete().eq('id', messageId);
       if (error) {
         toast.error("Delete failed");
-        fetchMessages(); // Rollback if error
+        fetchMessages();
       } else {
         toast.success("Message deleted for everyone");
+        await updateRoomLastMessageAfterDelete(remainingMessages);
       }
     } else {
-      // 🗑️ DELETE FOR ME ONLY (Append user ID to deleted_for array)
       const confirmDelete = window.confirm("Delete this message for YOU ONLY?");
       if (!confirmDelete) return;
 
-      // Instant UI remove (bina refresh ke)
-      setMessages((prev) => prev.filter(m => m.id !== messageId));
+      const remainingMessages = messages.filter(m => m.id !== messageId);
+      setMessages(remainingMessages);
 
       const targetMsg = messages.find(m => m.id === messageId);
       const currentDeletedArray = targetMsg?.deleted_for || [];
@@ -304,9 +320,10 @@ export function ChatRoom() {
 
       if (error) {
         toast.error("Delete failed");
-        fetchMessages(); // Rollback if error
+        fetchMessages();
       } else {
         toast.success("Message deleted for you");
+        await updateRoomLastMessageAfterDelete(remainingMessages);
       }
     }
   };
@@ -461,7 +478,7 @@ export function ChatRoom() {
                   <Heart size={12} className={`${msg.is_liked ? 'fill-red-500 text-red-500' : 'text-gray-300'}`} />
                 </button>
                 
-                {/* 🗑️ Smart Delete Button (Visible for both sent and received messages) */}
+                {/* 🗑️ Smart Delete Button */}
                 <button 
                   onClick={() => handleDeleteMessage(msg.id, msg.sender_id)} 
                   className={`absolute top-2 ${isMe ? 'right-2' : 'left-2'} p-1.5 bg-black/40 backdrop-blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10`}
