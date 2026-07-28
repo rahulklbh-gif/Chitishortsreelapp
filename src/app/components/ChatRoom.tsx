@@ -5,7 +5,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { ArrowLeft, Send, Camera, Loader2, Trash2, Play, Volume2, Heart, Check, CheckCheck } from 'lucide-react'; 
+import { ArrowLeft, Send, Camera, Loader2, Trash2, Play, Heart, Check, CheckCheck } from 'lucide-react'; 
 import { toast } from 'sonner';
 
 // --- Cloudflare R2 Config ---
@@ -79,11 +79,11 @@ export function ChatRoom() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const statusInterval = useRef<any>(null);
+  const channelRef = useRef<any>(null);
 
   const sentAudioRef = useRef<HTMLAudioElement>(null);
   const receivedAudioRef = useRef<HTMLAudioElement>(null);
 
-  // 🔴 LINK FORMATTER & CLICKABLE CONVERTER
   const renderFormattedMessage = (content: string, isMe: boolean) => {
     if (!content) return null;
 
@@ -138,26 +138,30 @@ export function ChatRoom() {
     }
   };
 
-  // 🔵 REALTIME DOUBLE TICK (✓✓) READ TRIGGER
+  // 🔵 FIXED READ LOGIC: Updates DB + Broadcasts Event Realtime
   const markAsRead = async () => {
     if (!roomId || !user) return;
-    const { error } = await supabase
-      .from('chat_messages')
-      .update({ is_read: true, read_at: new Date().toISOString() })
-      .eq('room_id', roomId)
-      .neq('sender_id', user.id)
-      .eq('is_read', false);
+    
+    // DB Update
+    await supabase.from('chat_messages').update({ is_read: true, read_at: new Date().toISOString() }).eq('room_id', roomId).neq('sender_id', user.id).eq('is_read', false);
+    await supabase.from('chat_rooms').update({ is_read: true }).eq('id', roomId).neq('last_sender_id', user.id);
 
-    if (!error) {
-      await supabase.from('chat_rooms').update({ is_read: true }).eq('id', roomId).neq('last_sender_id', user.id);
+    // Instant Realtime Broadcast to sender's phone
+    if (channelRef.current) {
+      channelRef.current.send({
+        type: 'broadcast',
+        event: 'messages_read',
+        payload: { reader_id: user.id, room_id: roomId }
+      });
     }
   };
 
   useEffect(() => {
     if (roomId && user) {
       fetchFriendProfile();
-      fetchMessages();
-      markAsRead();
+      fetchMessages().then(() => {
+        markAsRead();
+      });
       
       const globalPresence = supabase.channel('global-app-presence', {
         config: { presence: { key: user.id } }
@@ -189,8 +193,10 @@ export function ChatRoom() {
           }
         });
 
-      // ⚡ REALTIME LISTENERS FOR INSTANT DELETE AND REALTIME DOUBLE TICK (✓✓)
-      const messageChannel = supabase.channel(`room-${roomId}`)
+      // ⚡ DUAL-SYNC REALTIME LISTENER FOR INSTANT DOUBLE TICK (✓✓)
+      const messageChannel = supabase.channel(`room-${roomId}`, {
+        config: { broadcast: { self: false } }
+      })
         .on('postgres_changes', { 
           event: '*',
           schema: 'public', 
@@ -212,15 +218,21 @@ export function ChatRoom() {
               if (payload.new.deleted_for && payload.new.deleted_for.includes(user.id)) {
                 return prev.filter(m => m.id !== payload.new.id);
               }
-              // 🔵 Real-Time Double Tick (✓✓) Instant Merge & Update
               return prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m);
             });
           } else if (payload.eventType === 'DELETE') {
-            // 🗑️ Real-Time Delete Sync
             setMessages((prev) => prev.filter(m => m.id !== payload.old.id));
           }
         })
+        // 🔵 BROADCAST EVENT: Instant Double Tick without DB latency
+        .on('broadcast', { event: 'messages_read' }, (payload) => {
+          if (payload.payload.reader_id !== user.id) {
+            setMessages((prev) => prev.map(m => ({ ...m, is_read: true })));
+          }
+        })
         .subscribe();
+
+      channelRef.current = messageChannel;
 
       updateMyStatus();
       statusInterval.current = setInterval(updateMyStatus, 20000);
@@ -273,7 +285,6 @@ export function ChatRoom() {
     supabase.channel(`typing-${roomId}`).track({ user_id: user?.id, is_typing: val.length > 0 });
   };
 
-  // 🚀 HELPER: Sync remaining latest message with chat_rooms preview
   const updateRoomLastMessageAfterDelete = async (remainingList: any[]) => {
     const lastMsg = remainingList.length > 0 ? remainingList[remainingList.length - 1] : null;
 
@@ -293,7 +304,6 @@ export function ChatRoom() {
     }).eq('id', roomId);
   };
 
-  // 🚀 SMART DELETE LOGIC
   const handleDeleteMessage = async (messageId: string, senderId: string) => {
     if (!user) return;
     const isMe = senderId === user.id;
