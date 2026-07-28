@@ -2,10 +2,9 @@
 
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
-import { User, Session, AuthError } from '@supabase/supabase-js';
+import { User, Session } from '@supabase/supabase-js';
 import { toast } from 'sonner';
 
-// 1. Context Interface - Defines what data is available in the app
 interface AuthContextType {
   user: User | null;
   session: Session | null;
@@ -24,7 +23,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check active sessions on page load
     const initializeAuth = async () => {
       try {
         const { data: { session: activeSession }, error } = await supabase.auth.getSession();
@@ -41,12 +39,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initializeAuth();
 
-    // Listen for auth changes (Login, Logout, Token Refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
       setSession(currentSession);
       setUser(currentSession?.user ?? null);
       
-      // ✅ SIGNED_IN par loading ko turant false karein aur reload sambhalein
       if (_event === 'SIGNED_IN') {
         setLoading(false); 
         const hasReloaded = sessionStorage.getItem('auth_reloaded');
@@ -67,36 +63,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 🚀 GLOBAL REAL-TIME PRESENCE (User App me Kahin Bhi Ho - Online Dikhega)
+  // 🚀 GLOBAL HEARTBEAT & REAL-TIME PRESENCE (Feed/App me kahi bhi ho -> ONLINE)
   useEffect(() => {
     if (!user?.id) return;
 
-    // Global Presence Channel for Online Status Tracking Across Entire App
+    // Function to update last_seen pulse in database
+    const pulseLastSeen = async () => {
+      try {
+        await supabase.from('profiles').update({ 
+          last_seen: new Date().toISOString() 
+        }).eq('id', user.id);
+      } catch (e) {}
+    };
+
+    // Immediate first pulse
+    pulseLastSeen();
+
+    // Pulse every 15 seconds as long as app/tab is open
+    const heartbeatInterval = setInterval(pulseLastSeen, 15000);
+
+    // Global Presence Channel
     const globalPresence = supabase.channel('global-app-presence', {
       config: { presence: { key: user.id } }
     });
 
     globalPresence.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
-        // Track Online Status
         await globalPresence.track({ 
           online_at: new Date().toISOString(),
           user_id: user.id
         });
-        
-        // Update DB Last Seen for Backup
-        await supabase.from('profiles').update({ 
-          last_seen: new Date().toISOString() 
-        }).eq('id', user.id);
       }
     });
 
     return () => {
+      clearInterval(heartbeatInterval);
       supabase.removeChannel(globalPresence);
     };
   }, [user?.id]);
 
-  // 2. Google Sign-In Logic (Intact)
   const signInWithGoogle = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -118,7 +123,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // 3. Email Sign-In Logic (Intact)
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -127,7 +131,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   };
 
-  // 4. Email Sign-Up Logic (Intact)
   const signUp = async (email: string, password: string, name: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -141,7 +144,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   };
 
-  // 5. Sign Out Logic (Intact)
   const signOut = async () => {
     try {
       const { error } = await supabase.auth.signOut();
@@ -164,13 +166,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signUp, 
       signOut 
     }}>
-      {/* ✅ Yahan change kiya hai: Loading hone par bhi children render honge */}
       {children}
     </AuthContext.Provider>
   );
 }
 
-// Custom hook to use Auth
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (context === undefined) {
