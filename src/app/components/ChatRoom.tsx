@@ -83,7 +83,7 @@ export function ChatRoom() {
   const sentAudioRef = useRef<HTMLAudioElement>(null);
   const receivedAudioRef = useRef<HTMLAudioElement>(null);
 
-  // 🔴 LINK FORMATTER & CLICKABLE CONVERTER (WATCH PARTY LINK FIX)
+  // 🔴 LINK FORMATTER & CLICKABLE CONVERTER
   const renderFormattedMessage = (content: string, isMe: boolean) => {
     if (!content) return null;
 
@@ -150,7 +150,7 @@ export function ChatRoom() {
       fetchMessages();
       markAsRead();
       
-      // 🚀 GLOBAL REAL-TIME ONLINE TRACKER FOR FRIEND
+      // 🚀 GLOBAL REAL-TIME ONLINE TRACKER
       const globalPresence = supabase.channel('global-app-presence', {
         config: { presence: { key: user.id } }
       });
@@ -255,7 +255,7 @@ export function ChatRoom() {
     supabase.channel(`typing-${roomId}`).track({ user_id: user?.id, is_typing: val.length > 0 });
   };
 
-  // 🚀 FIXED: PREVIEW TEXT OVERWRITE & INSTANT RE-ORDERING
+  // 🚀 FIXED & SYNCED: Message insert hone par SQL Trigger automatic handle karega
   const handleSendMessage = async (e?: React.FormEvent, mediaUrl?: string, mediaType?: 'video' | 'photo') => {
     if (e) e.preventDefault();
     if (!newMessage.trim() && !mediaUrl) return;
@@ -263,13 +263,8 @@ export function ChatRoom() {
     const currentMsg = newMessage.trim();
     setNewMessage(''); 
     supabase.channel(`typing-${roomId}`).track({ user_id: user?.id, is_typing: false });
-    
-    // 📸 Actual Message Preview String Generation
-    let lastMessagePreview = currentMsg;
-    if (mediaUrl) {
-      lastMessagePreview = mediaType === 'photo' ? '📷 Sent a photo' : '🎥 Sent a video';
-    }
 
+    // 📸 Message Insert (Is par ab SQL Trigger 'chat_rooms' me exact text & timestamp update kar dega)
     const { error } = await supabase.from('chat_messages').insert([{
       room_id: roomId,
       sender_id: user?.id,
@@ -282,9 +277,10 @@ export function ChatRoom() {
     if (!error) {
       playSound('sent'); 
       
-      // 🚀 Direct Database Pulse: Forces chat room to jump to 1st Position in ChatListPage
+      // Explicit Backup Sync: Agar DB Trigger slow ho toh direct update fallback
+      const previewText = mediaUrl ? (mediaType === 'photo' ? '📷 Photo' : '🎥 Video Shared') : currentMsg;
       await supabase.from('chat_rooms').update({
-        last_message: lastMessagePreview,
+        last_message: previewText,
         last_message_time: new Date().toISOString(),
         last_sender_id: user?.id,
         is_read: false
@@ -389,7 +385,6 @@ export function ChatRoom() {
                   </div>
                 )}
 
-                {/* 🔴 Clickable Watch Party & Normal Link Rendering */}
                 {msg.content && (
                   <p className={`text-sm leading-relaxed ${msg.media_url ? 'px-2 pb-1 pt-1 font-medium' : ''}`}>
                     {renderFormattedMessage(msg.content, isMe)}
