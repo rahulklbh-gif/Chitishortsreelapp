@@ -138,10 +138,19 @@ export function ChatRoom() {
     }
   };
 
+  // 🔵 REAL-TIME DOUBLE TICK MARK LOGIC
   const markAsRead = async () => {
     if (!roomId || !user) return;
-    await supabase.from('chat_messages').update({ is_read: true, read_at: new Date().toISOString() }).eq('room_id', roomId).neq('sender_id', user.id).eq('is_read', false);
-    await supabase.from('chat_rooms').update({ is_read: true }).eq('id', roomId).neq('last_sender_id', user.id);
+    const { error } = await supabase
+      .from('chat_messages')
+      .update({ is_read: true, read_at: new Date().toISOString() })
+      .eq('room_id', roomId)
+      .neq('sender_id', user.id)
+      .eq('is_read', false);
+
+    if (!error) {
+      await supabase.from('chat_rooms').update({ is_read: true }).eq('id', roomId).neq('last_sender_id', user.id);
+    }
   };
 
   useEffect(() => {
@@ -180,7 +189,7 @@ export function ChatRoom() {
           }
         });
 
-      // ⚡ REALTIME LISTENERS FOR INSTANT DELETE AND DOUBLE TICK (✓✓)
+      // ⚡ REALTIME LISTENERS FOR INSTANT DELETE AND REAL-TIME DOUBLE TICK (✓✓)
       const messageChannel = supabase.channel(`room-${roomId}`)
         .on('postgres_changes', { 
           event: '*',
@@ -203,11 +212,11 @@ export function ChatRoom() {
               if (payload.new.deleted_for && payload.new.deleted_for.includes(user.id)) {
                 return prev.filter(m => m.id !== payload.new.id);
               }
-              // 🔵 Double Tick ✓✓ Update Sync
-              return prev.map(m => m.id === payload.new.id ? payload.new : m);
+              // 🔵 Real-Time Double Tick (✓✓) Instant State Sync
+              return prev.map(m => m.id === payload.new.id ? { ...m, ...payload.new } : m);
             });
           } else if (payload.eventType === 'DELETE') {
-            // 🗑️ Real-Time Delete Sync (Friend dwara Delete for Everyone karne par bina refresh ke gayab)
+            // 🗑️ Real-Time Delete Sync
             setMessages((prev) => prev.filter(m => m.id !== payload.old.id));
           }
         })
@@ -264,7 +273,6 @@ export function ChatRoom() {
     supabase.channel(`typing-${roomId}`).track({ user_id: user?.id, is_typing: val.length > 0 });
   };
 
-  // 🚀 HELPER: Sync remaining latest message with chat_rooms preview
   const updateRoomLastMessageAfterDelete = async (remainingList: any[]) => {
     const lastMsg = remainingList.length > 0 ? remainingList[remainingList.length - 1] : null;
 
@@ -284,7 +292,6 @@ export function ChatRoom() {
     }).eq('id', roomId);
   };
 
-  // 🚀 SMART DELETE LOGIC (Instant UI Removal + Preview Sync)
   const handleDeleteMessage = async (messageId: string, senderId: string) => {
     if (!user) return;
     const isMe = senderId === user.id;
