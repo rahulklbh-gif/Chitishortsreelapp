@@ -74,6 +74,7 @@ export function ChatRoom() {
   const [isUploading, setIsUploading] = useState(false);
   const [isAudioUnlocked, setIsAudioUnlocked] = useState(false); 
   const [isTyping, setIsTyping] = useState(false);
+  const [isFriendOnlineGlobal, setIsFriendOnlineGlobal] = useState(false);
   const [now, setNow] = useState(new Date()); 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -97,7 +98,6 @@ export function ChatRoom() {
             href={part}
             onClick={(e) => {
               e.stopPropagation();
-              // Internal navigation if URL belongs to app
               if (part.includes(window.location.host)) {
                 e.preventDefault();
                 const targetUrl = new URL(part);
@@ -150,6 +150,25 @@ export function ChatRoom() {
       fetchMessages();
       markAsRead();
       
+      // 🚀 GLOBAL REAL-TIME ONLINE TRACKER FOR FRIEND
+      const globalPresence = supabase.channel('global-app-presence', {
+        config: { presence: { key: user.id } }
+      });
+
+      globalPresence
+        .on('presence', { event: 'sync' }, () => {
+          const state = globalPresence.presenceState();
+          const onlineUsers = new Set(Object.keys(state));
+          if (friendId) {
+            setIsFriendOnlineGlobal(onlineUsers.has(friendId));
+          }
+        })
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            await globalPresence.track({ online_at: new Date().toISOString() });
+          }
+        });
+
       const typingChannel = supabase.channel(`typing-${roomId}`)
         .on('presence', { event: 'sync' }, () => {
           const state: any = typingChannel.presenceState();
@@ -201,6 +220,7 @@ export function ChatRoom() {
         supabase.removeChannel(messageChannel);
         supabase.removeChannel(profileSubscription);
         supabase.removeChannel(typingChannel);
+        supabase.removeChannel(globalPresence);
       };
     }
   }, [roomId, friendId, user?.id]);
@@ -242,6 +262,8 @@ export function ChatRoom() {
     setNewMessage(''); 
     supabase.channel(`typing-${roomId}`).track({ user_id: user?.id, is_typing: false });
     
+    const displayMsgContent = mediaUrl ? (mediaType === 'photo' ? '📷 Photo' : '🎥 Video') : currentMsg;
+
     const { error } = await supabase.from('chat_messages').insert([{
       room_id: roomId,
       sender_id: user?.id,
@@ -253,8 +275,9 @@ export function ChatRoom() {
 
     if (!error) {
       playSound('sent'); 
+      // 🚀 REAL-TIME RE-ORDER FIX: Chat list me chat ko top par bhejne ke liye room timestamp update
       await supabase.from('chat_rooms').update({
-        last_message: mediaUrl ? (mediaType === 'photo' ? '📷 Photo' : '🎥 Video') : currentMsg,
+        last_message: displayMsgContent,
         last_message_time: new Date().toISOString(),
         last_sender_id: user?.id,
         is_read: false
@@ -302,7 +325,8 @@ export function ChatRoom() {
     }
   };
 
-  const status = getTimeAgo(friendProfile?.last_seen);
+  const lastSeenStatus = getTimeAgo(friendProfile?.last_seen);
+  const isOnline = isFriendOnlineGlobal || lastSeenStatus === "Online";
   
   return (
     <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black" onClick={unlockAudio}>
@@ -314,12 +338,12 @@ export function ChatRoom() {
         <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer text-black" />
         <div className="relative">
           <UserAvatar userId={friendId || ''} username={friendProfile?.username || 'U'} />
-          {status === "Online" && <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>}
+          {isOnline && <span className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>}
         </div>
         <div className="flex-1">
           <h3 className="text-sm font-bold text-gray-900">{friendProfile?.full_name || friendProfile?.username || 'User'}</h3>
-          <p className={`text-[10px] font-bold ${isTyping ? 'text-blue-500 animate-pulse' : (status === "Online" ? 'text-green-600' : 'text-gray-400')}`}>
-            {isTyping ? "typing..." : (status === "Online" ? "Online" : `Active ${status}`)}
+          <p className={`text-[10px] font-bold ${isTyping ? 'text-blue-500 animate-pulse' : (isOnline ? 'text-green-600' : 'text-gray-400')}`}>
+            {isTyping ? "typing..." : (isOnline ? "Online" : `Active ${lastSeenStatus}`)}
           </p>
         </div>
       </div>
