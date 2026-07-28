@@ -150,7 +150,6 @@ export function ChatRoom() {
       fetchMessages();
       markAsRead();
       
-      // 🚀 GLOBAL REAL-TIME ONLINE TRACKER
       const globalPresence = supabase.channel('global-app-presence', {
         config: { presence: { key: user.id } }
       });
@@ -181,6 +180,7 @@ export function ChatRoom() {
           }
         });
 
+      // ⚡ REALTIME LISTENERS FOR INSERT, UPDATE, AND DELETE
       const messageChannel = supabase.channel(`room-${roomId}`)
         .on('postgres_changes', { 
           event: '*',
@@ -191,6 +191,7 @@ export function ChatRoom() {
           if (payload.eventType === 'INSERT') {
             setMessages((prev) => {
               if (prev.find(m => m.id === payload.new.id)) return prev;
+              if (payload.new.deleted_for && payload.new.deleted_for.includes(user.id)) return prev;
               return [...prev, payload.new];
             });
             if (payload.new.sender_id !== user.id) {
@@ -198,8 +199,15 @@ export function ChatRoom() {
               markAsRead();
             }
           } else if (payload.eventType === 'UPDATE') {
-            setMessages((prev) => prev.map(m => m.id === payload.new.id ? payload.new : m));
+            setMessages((prev) => {
+              // Agar user me se koi Delete for me dabaye toh instant UI se filter kar do
+              if (payload.new.deleted_for && payload.new.deleted_for.includes(user.id)) {
+                return prev.filter(m => m.id !== payload.new.id);
+              }
+              return prev.map(m => m.id === payload.new.id ? payload.new : m);
+            });
           } else if (payload.eventType === 'DELETE') {
+            // Hard Delete (Delete for Everyone) hone par instant UI se hatao
             setMessages((prev) => prev.filter(m => m.id !== payload.old.id));
           }
         })
@@ -242,7 +250,9 @@ export function ChatRoom() {
 
   const fetchMessages = async () => {
     const { data } = await supabase.from('chat_messages').select('*').eq('room_id', roomId).order('created_at', { ascending: true });
-    setMessages(data || []);
+    // Filter out messages that current user deleted for themselves
+    const activeMessages = (data || []).filter(m => !m.deleted_for || !m.deleted_for.includes(user?.id));
+    setMessages(activeMessages);
   };
 
   const handleLikeMessage = async (msgId: string, currentLikes: boolean) => {
@@ -255,7 +265,52 @@ export function ChatRoom() {
     supabase.channel(`typing-${roomId}`).track({ user_id: user?.id, is_typing: val.length > 0 });
   };
 
-  // 🚀 FIXED & SYNCED: Message insert hone par SQL Trigger automatic handle karega
+  // 🚀 SMART DELETE LOGIC (Instant UI Removal + Permissions)
+  const handleDeleteMessage = async (messageId: string, senderId: string) => {
+    if (!user) return;
+    const isMe = senderId === user.id;
+
+    if (isMe) {
+      // 🗑️ DELETE FOR EVERYONE (Hard Delete from DB)
+      const confirmDelete = window.confirm("Delete this message for EVERYONE?");
+      if (!confirmDelete) return;
+
+      // Instant UI remove (bina refresh ke)
+      setMessages((prev) => prev.filter(m => m.id !== messageId));
+
+      const { error } = await supabase.from('chat_messages').delete().eq('id', messageId);
+      if (error) {
+        toast.error("Delete failed");
+        fetchMessages(); // Rollback if error
+      } else {
+        toast.success("Message deleted for everyone");
+      }
+    } else {
+      // 🗑️ DELETE FOR ME ONLY (Append user ID to deleted_for array)
+      const confirmDelete = window.confirm("Delete this message for YOU ONLY?");
+      if (!confirmDelete) return;
+
+      // Instant UI remove (bina refresh ke)
+      setMessages((prev) => prev.filter(m => m.id !== messageId));
+
+      const targetMsg = messages.find(m => m.id === messageId);
+      const currentDeletedArray = targetMsg?.deleted_for || [];
+      const updatedArray = [...new Set([...currentDeletedArray, user.id])];
+
+      const { error } = await supabase
+        .from('chat_messages')
+        .update({ deleted_for: updatedArray })
+        .eq('id', messageId);
+
+      if (error) {
+        toast.error("Delete failed");
+        fetchMessages(); // Rollback if error
+      } else {
+        toast.success("Message deleted for you");
+      }
+    }
+  };
+
   const handleSendMessage = async (e?: React.FormEvent, mediaUrl?: string, mediaType?: 'video' | 'photo') => {
     if (e) e.preventDefault();
     if (!newMessage.trim() && !mediaUrl) return;
@@ -264,20 +319,18 @@ export function ChatRoom() {
     setNewMessage(''); 
     supabase.channel(`typing-${roomId}`).track({ user_id: user?.id, is_typing: false });
 
-    // 📸 Message Insert (Is par ab SQL Trigger 'chat_rooms' me exact text & timestamp update kar dega)
     const { error } = await supabase.from('chat_messages').insert([{
       room_id: roomId,
       sender_id: user?.id,
       content: currentMsg,
       media_url: mediaUrl || null,
       media_type: mediaType || (mediaUrl ? 'video' : null),
-      is_read: false
+      is_read: false,
+      deleted_for: []
     }]);
 
     if (!error) {
       playSound('sent'); 
-      
-      // Explicit Backup Sync: Agar DB Trigger slow ho toh direct update fallback
       const previewText = mediaUrl ? (mediaType === 'photo' ? '📷 Photo' : '🎥 Video Shared') : currentMsg;
       await supabase.from('chat_rooms').update({
         last_message: previewText,
@@ -286,15 +339,6 @@ export function ChatRoom() {
         is_read: false
       }).eq('id', roomId);
     }
-  };
-
-  const handleDeleteMessage = async (messageId: string, senderId: string) => {
-    if (senderId !== user?.id) return;
-    const confirmDelete = window.confirm("Delete this message?");
-    if (!confirmDelete) return;
-    const { error } = await supabase.from('chat_messages').delete().eq('id', messageId);
-    if (error) toast.error("Delete failed");
-    else toast.success("Message deleted");
   };
 
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -409,6 +453,7 @@ export function ChatRoom() {
                   </p>
                 )}
 
+                {/* Like Button */}
                 <button 
                   onClick={() => handleLikeMessage(msg.id, msg.is_liked)}
                   className={`absolute -bottom-2 ${isMe ? '-left-2' : '-right-2'} p-1 rounded-full bg-white shadow-md border border-gray-100 transition-transform active:scale-125`}
@@ -416,11 +461,14 @@ export function ChatRoom() {
                   <Heart size={12} className={`${msg.is_liked ? 'fill-red-500 text-red-500' : 'text-gray-300'}`} />
                 </button>
                 
-                {isMe && (
-                  <button onClick={() => handleDeleteMessage(msg.id, msg.sender_id)} className="absolute top-2 right-2 p-1.5 bg-black/40 backdrop-blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10">
-                    <Trash2 size={12} className="text-white" />
-                  </button>
-                )}
+                {/* 🗑️ Smart Delete Button (Visible for both sent and received messages) */}
+                <button 
+                  onClick={() => handleDeleteMessage(msg.id, msg.sender_id)} 
+                  className={`absolute top-2 ${isMe ? 'right-2' : 'left-2'} p-1.5 bg-black/40 backdrop-blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10`}
+                  title={isMe ? "Delete for Everyone" : "Delete for You"}
+                >
+                  <Trash2 size={12} className="text-white" />
+                </button>
               </div>
             </div>
           );
