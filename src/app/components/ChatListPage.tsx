@@ -6,7 +6,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Search, UserPlus, Send } from 'lucide-react';
 
-// ⏱️ Helper function for "Active 5m ago" / "Active 2h ago"
 function formatLastSeen(lastSeenTimestamp: string | null) {
   if (!lastSeenTimestamp) return 'Offline';
   const now = new Date().getTime();
@@ -50,7 +49,7 @@ function UserAvatar({ userId, username, isOnline }: { userId: string, username: 
           onError={(e) => (e.currentTarget.style.display = 'none')}
         />
       )}
-      {/* 🟢 REAL-TIME ONLINE GREEN DOT (Sirf tabhi jab online ho) */}
+      {/* 🟢 Real-time Global Green Dot */}
       {isOnline && (
         <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white shadow-sm" />
       )}
@@ -66,7 +65,7 @@ export function ChatListPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
 
   const [activeTab, setActiveTab] = useState<'all' | 'primary' | 'general' | 'requests'>('all');
 
@@ -75,16 +74,15 @@ export function ChatListPage() {
 
     fetchRooms();
 
-    // 🚀 1. REAL-TIME PRESENCE (Real Online/Offline Status Track Karna)
-    const presenceChannel = supabase.channel('online-users-presence', {
+    // 🌐 GLOBAL PRESENCE CHANNEL
+    const presenceChannel = supabase.channel('global-app-presence', {
       config: { presence: { key: user.id } }
     });
 
     presenceChannel
       .on('presence', { event: 'sync' }, () => {
         const state = presenceChannel.presenceState();
-        const activeIds = new Set(Object.keys(state));
-        setOnlineUserIds(activeIds);
+        setOnlineUsers(new Set(Object.keys(state)));
       })
       .subscribe(async (status) => {
         if (status === 'SUBSCRIBED') {
@@ -92,14 +90,14 @@ export function ChatListPage() {
         }
       });
 
-    // 🚀 2. REAL-TIME CHAT ROOMS & MESSAGES LISTENER (Bina refresh top par lane ke liye)
+    // ⚡ REALTIME LISTENER FOR INSTANT CHAT ROOM SORTING & BLUE DOT
     const roomChannel = supabase
-      .channel('chat_rooms_realtime')
+      .channel('chat_rooms_realtime_feed')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'chat_rooms' },
         () => {
-          fetchRooms(); // Auto refresh room order on new message
+          fetchRooms(); // Naya message aate hi re-fetch karke sabse upar daal do
         }
       )
       .subscribe();
@@ -137,7 +135,7 @@ export function ChatListPage() {
           user2:profiles!chat_rooms_user2_id_fkey(id, username, last_seen)
         `)
         .or(`user1_id.eq.${user?.id},user2_id.eq.${user?.id}`)
-        .order('last_message_time', { ascending: false }); // Sabse naya message sabse upar
+        .order('last_message_time', { ascending: false }); // 🔥 Latest Message Pehle Aayega
 
       if (!error) setRooms(data || []);
     } catch (err) { console.error(err); } 
@@ -162,12 +160,12 @@ export function ChatListPage() {
     }
   };
 
-  // 🚀 Sort Rooms: Pehle Online Users, fir Offline Users
-  const sortedRooms = [...rooms].sort((a, b) => {
+  // 🔴 Active/Online Friends Tray Sort Logic: Online Users First
+  const activeOnlineRooms = [...rooms].sort((a, b) => {
     const userA = a.user1_id === user?.id ? a.user2 : a.user1;
     const userB = b.user1_id === user?.id ? b.user2 : b.user1;
-    const isAOnline = onlineUserIds.has(userA?.id);
-    const isBOnline = onlineUserIds.has(userB?.id);
+    const isAOnline = onlineUsers.has(userA?.id);
+    const isBOnline = onlineUsers.has(userB?.id);
 
     if (isAOnline && !isBOnline) return -1;
     if (!isAOnline && isBOnline) return 1;
@@ -187,12 +185,12 @@ export function ChatListPage() {
         <Send size={20} className="text-black cursor-pointer" />
       </div>
 
-      {/* 🚀 Top Active/Online Friends Horizontal Row (Online Users Pehle Dikhenge) */}
-      {sortedRooms.length > 0 && searchQuery.length < 2 && (
+      {/* 🚀 Top Active Friends Horizontal Row */}
+      {activeOnlineRooms.length > 0 && searchQuery.length < 2 && (
         <div className="px-4 py-3 flex items-center gap-4 overflow-x-auto no-scrollbar border-b border-gray-50">
-          {sortedRooms.map((room) => {
+          {activeOnlineRooms.map((room) => {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
-            const isOnline = onlineUserIds.has(otherUser?.id);
+            const isOnline = onlineUsers.has(otherUser?.id);
 
             return (
               <div 
@@ -223,7 +221,7 @@ export function ChatListPage() {
         </div>
       </div>
 
-      {/* Instagram Tabs Bar */}
+      {/* Tabs Bar */}
       {searchQuery.length < 2 && (
         <div className="px-4 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
           {(['all', 'primary', 'general', 'requests'] as const).map((tab) => (
@@ -242,13 +240,13 @@ export function ChatListPage() {
         </div>
       )}
 
-      {/* Chat / Search List */}
+      {/* Chat List Sorted By Last Message Time */}
       <div className="px-4 space-y-1 mt-2">
         {searchQuery.length >= 2 ? (
           <div>
             <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Suggested People</h2>
             {searchResults.map((person) => {
-              const isOnline = onlineUserIds.has(person.id);
+              const isOnline = onlineUsers.has(person.id);
               return (
                 <div key={person.id} onClick={() => startChat(person.id)} className="flex items-center justify-between py-3">
                   <div className="flex items-center gap-4">
@@ -266,9 +264,9 @@ export function ChatListPage() {
         ) : (
           rooms.map((room) => {
             const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
-            const isOnline = onlineUserIds.has(otherUser?.id);
+            const isOnline = onlineUsers.has(otherUser?.id);
             
-            // 🚀 Highlight Logic: Agar samne wale ne naya message bheja aur read nahi hua
+            // 🚀 Highlight logic: Last message received from friend and unread
             const isUnread = room.last_sender_id !== user?.id && room.is_read === false;
 
             return (
@@ -285,11 +283,9 @@ export function ChatListPage() {
                     </h3>
                     <p className={`text-xs truncate ${isUnread ? 'font-bold text-blue-600' : 'text-gray-500'}`}>
                       {room.last_message || 'Tap to chat'} 
-                      {!isUnread && (
-                        <span className="text-gray-400 text-[10px] ml-2">
-                          · {isOnline ? 'Active now' : formatLastSeen(otherUser?.last_seen)}
-                        </span>
-                      )}
+                      <span className="text-gray-400 text-[10px] ml-2">
+                        · {isOnline ? 'Active now' : formatLastSeen(otherUser?.last_seen)}
+                      </span>
                     </p>
                   </div>
                   
