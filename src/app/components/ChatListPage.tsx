@@ -1,11 +1,13 @@
+"use client";
+
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, UserPlus, Loader2 } from 'lucide-react';
+import { ArrowLeft, Search, UserPlus, Send } from 'lucide-react';
 
-// ✅ Wahi logic jo CommentSheet mein kaam kar raha hai
-function UserAvatar({ userId, username }: { userId: string, username: string }) {
+// ✅ Wahi logic jo CommentSheet mein kaam kar raha hai (Intact)
+function UserAvatar({ userId, username, showOnlineDot = false }: { userId: string, username: string, showOnlineDot?: boolean }) {
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -34,6 +36,10 @@ function UserAvatar({ userId, username }: { userId: string, username: string }) 
           onError={(e) => (e.currentTarget.style.display = 'none')}
         />
       )}
+      {/* 🟢 Instagram Online Status Dot */}
+      {showOnlineDot && (
+        <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-green-500 rounded-full border-2 border-white" />
+      )}
     </div>
   );
 }
@@ -46,6 +52,9 @@ export function ChatListPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+
+  // 🚀 Instagram Style Tabs Filter State
+  const [activeTab, setActiveTab] = useState<'all' | 'primary' | 'general' | 'requests'>('all');
 
   useEffect(() => {
     if (user) {
@@ -114,12 +123,40 @@ export function ChatListPage() {
 
   return (
     <div className="fixed inset-0 z-[110] bg-white text-black overflow-y-auto">
-      <div className="p-4 pt-10 flex items-center gap-6 sticky top-0 bg-white border-b border-gray-100">
-        <ArrowLeft onClick={() => navigate('/')} className="cursor-pointer text-black" />
-        <h1 className="text-xl font-extrabold tracking-tight">Messages</h1>
+      {/* 🚀 Header */}
+      <div className="p-4 pt-10 flex items-center justify-between sticky top-0 bg-white border-b border-gray-100 z-10">
+        <div className="flex items-center gap-4">
+          <ArrowLeft onClick={() => navigate('/')} className="cursor-pointer text-black" />
+          <h1 className="text-xl font-extrabold tracking-tight">
+            {user?.user_metadata?.username || 'Messages'}
+          </h1>
+        </div>
+        <Send size={20} className="text-black cursor-pointer" />
       </div>
 
-      <div className="p-4">
+      {/* 🚀 Top Active Friends Horizontal Row */}
+      {rooms.length > 0 && searchQuery.length < 2 && (
+        <div className="px-4 py-3 flex items-center gap-4 overflow-x-auto no-scrollbar border-b border-gray-50">
+          {rooms.map((room) => {
+            const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
+            return (
+              <div 
+                key={room.id}
+                onClick={() => navigate(`/chat/${room.id}?friend=${otherUser?.id}`)}
+                className="flex flex-col items-center gap-1 flex-shrink-0 cursor-pointer"
+              >
+                <UserAvatar userId={otherUser?.id} username={otherUser?.username} showOnlineDot={true} />
+                <span className="text-[11px] text-gray-600 font-medium truncate max-w-[60px]">
+                  @{otherUser?.username}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Search Input */}
+      <div className="p-4 pb-2">
         <div className="flex items-center gap-3 bg-gray-100 p-3 rounded-2xl border border-gray-200">
           <Search size={18} className="text-gray-400" />
           <input 
@@ -131,7 +168,27 @@ export function ChatListPage() {
         </div>
       </div>
 
-      <div className="px-4 space-y-1">
+      {/* 🚀 Instagram Style Tabs Bar (All / Primary / General / Requests) */}
+      {searchQuery.length < 2 && (
+        <div className="px-4 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
+          {(['all', 'primary', 'general', 'requests'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`px-4 py-1.5 rounded-full text-xs font-semibold capitalize transition-all ${
+                activeTab === tab
+                  ? 'bg-black text-white'
+                  : 'bg-gray-100 text-gray-500 hover:text-black'
+              }`}
+            >
+              {tab === 'all' ? 'All' : tab}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Chat / Search List */}
+      <div className="px-4 space-y-1 mt-2">
         {searchQuery.length >= 2 ? (
           <div>
             <h2 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Suggested People</h2>
@@ -161,7 +218,7 @@ export function ChatListPage() {
                 onClick={() => navigate(`/chat/${room.id}?friend=${otherUser?.id}`)} 
                 className={`flex items-center gap-4 py-3 active:bg-gray-50 transition-colors cursor-pointer ${isUnread ? 'bg-blue-50/30' : ''}`}
               >
-                <UserAvatar userId={otherUser?.id} username={otherUser?.username} />
+                <UserAvatar userId={otherUser?.id} username={otherUser?.username} showOnlineDot={true} />
                 <div className="flex-1 border-b border-gray-50 pb-3 flex items-center justify-between pr-2">
                   <div className="flex-1 min-w-0">
                     <h3 className={`text-sm ${isUnread ? 'font-black text-black' : 'font-bold text-gray-900'}`}>
@@ -172,7 +229,7 @@ export function ChatListPage() {
                     </p>
                   </div>
                   
-                  {/* ✅ Instagram Blue Dot */}
+                  {/* ✅ Instagram Blue Dot Badge */}
                   {isUnread && (
                     <div className="w-2.5 h-2.5 bg-blue-500 rounded-full shadow-[0_0_8px_rgba(59,130,246,0.4)]" />
                   )}
@@ -184,4 +241,4 @@ export function ChatListPage() {
       </div>
     </div>
   );
-} 
+}
