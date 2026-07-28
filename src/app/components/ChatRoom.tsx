@@ -258,11 +258,15 @@ export function ChatRoom() {
   const handleSendMessage = async (e?: React.FormEvent, mediaUrl?: string, mediaType?: 'video' | 'photo') => {
     if (e) e.preventDefault();
     if (!newMessage.trim() && !mediaUrl) return;
+    
     const currentMsg = newMessage.trim();
     setNewMessage(''); 
     supabase.channel(`typing-${roomId}`).track({ user_id: user?.id, is_typing: false });
     
-    const displayMsgContent = mediaUrl ? (mediaType === 'photo' ? '📷 Photo' : '🎥 Video') : currentMsg;
+    // 🔴 1. Fix: Correct Preview Display Label for Chat List
+    const lastMessagePreview = mediaUrl 
+      ? (mediaType === 'photo' ? '📷 Photo Shared' : '🎥 Video Shared') 
+      : currentMsg;
 
     const { error } = await supabase.from('chat_messages').insert([{
       room_id: roomId,
@@ -275,9 +279,10 @@ export function ChatRoom() {
 
     if (!error) {
       playSound('sent'); 
-      // 🚀 REAL-TIME RE-ORDER FIX: Chat list me chat ko top par bhejne ke liye room timestamp update
+      // 🚀 REAL-TIME RE-ORDER & UNREAD HIGHLIGHT FIX:
+      // Updates chat_rooms table to push conversation to the very top with exact message preview & unread flag
       await supabase.from('chat_rooms').update({
-        last_message: displayMsgContent,
+        last_message: lastMessagePreview,
         last_message_time: new Date().toISOString(),
         last_sender_id: user?.id,
         is_read: false
