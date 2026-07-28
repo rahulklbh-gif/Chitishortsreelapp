@@ -1,3 +1,5 @@
+"use client";
+
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
 import { User, Session, AuthError } from '@supabase/supabase-js';
@@ -65,7 +67,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Google Sign-In Logic
+  // 🚀 GLOBAL REAL-TIME PRESENCE (User App me Kahin Bhi Ho - Online Dikhega)
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // Global Presence Channel for Online Status Tracking Across Entire App
+    const globalPresence = supabase.channel('global-app-presence', {
+      config: { presence: { key: user.id } }
+    });
+
+    globalPresence.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        // Track Online Status
+        await globalPresence.track({ 
+          online_at: new Date().toISOString(),
+          user_id: user.id
+        });
+        
+        // Update DB Last Seen for Backup
+        await supabase.from('profiles').update({ 
+          last_seen: new Date().toISOString() 
+        }).eq('id', user.id);
+      }
+    });
+
+    return () => {
+      supabase.removeChannel(globalPresence);
+    };
+  }, [user?.id]);
+
+  // 2. Google Sign-In Logic (Intact)
   const signInWithGoogle = async () => {
     try {
       const { error } = await supabase.auth.signInWithOAuth({
@@ -87,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // 3. Email Sign-In Logic
+  // 3. Email Sign-In Logic (Intact)
   const signIn = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -96,7 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   };
 
-  // 4. Email Sign-Up Logic
+  // 4. Email Sign-Up Logic (Intact)
   const signUp = async (email: string, password: string, name: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -110,7 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error };
   };
 
-  // 5. Sign Out Logic
+  // 5. Sign Out Logic (Intact)
   const signOut = async () => {
     try {
       const { error } = await supabase.auth.signOut();
@@ -134,7 +165,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signOut 
     }}>
       {/* ✅ Yahan change kiya hai: Loading hone par bhi children render honge */}
-      {/* Isse feed component ko render hone se koi rok nahi payega */}
       {children}
     </AuthContext.Provider>
   );
