@@ -34,16 +34,22 @@ function UserAvatar({ userId, username, isOnline }: { userId: string, username: 
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
     async function getPhoto() {
       if (!userId) return;
-      const { data } = await supabase
-        .from('profiles')
-        .select('avatar_url')
-        .eq('id', userId)
-        .single();
-      if (data?.avatar_url) setAvatarUrl(data.avatar_url);
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('avatar_url')
+          .eq('id', userId)
+          .maybeSingle();
+        if (isMounted && data?.avatar_url) setAvatarUrl(data.avatar_url);
+      } catch (e) {
+        console.error(e);
+      }
     }
     getPhoto();
+    return () => { isMounted = false; };
   }, [userId]);
 
   return (
@@ -80,49 +86,56 @@ export function ChatListPage() {
   const [activeTab, setActiveTab] = useState<'all' | 'primary' | 'general' | 'requests'>('all');
 
   useEffect(() => {
-    if (!user) {
-      if (!authLoading) setLoading(false);
-      return;
-    }
+    let isMounted = true;
 
-    fetchRooms();
+    async function initChatList() {
+      if (!user?.id) {
+        if (!authLoading) setLoading(false);
+        return;
+      }
 
-    // 🌐 Real-time Online Channel
-    const presenceChannel = supabase.channel('global-app-presence', {
-      config: { presence: { key: user.id } }
-    });
+      await fetchRooms();
 
-    presenceChannel
-      .on('presence', { event: 'sync' }, () => {
-        const state = presenceChannel.presenceState();
-        setOnlineUsers(new Set(Object.keys(state)));
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await presenceChannel.track({ online_at: new Date().toISOString() });
-        }
+      // 🌐 Real-time Online Channel
+      const presenceChannel = supabase.channel('global-app-presence', {
+        config: { presence: { key: user.id } }
       });
 
-    // ⚡ FIXED: DUAL REALTIME LISTENER (Rooms + Messages Delete/Insert Sync)
-    const realtimeChannel = supabase
-      .channel('chat_list_realtime_sync')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'chat_rooms' },
-        () => { fetchRooms(); }
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'chat_messages' },
-        () => { fetchRooms(); } // Naya message aane par ya delete hone par list sync
-      )
-      .subscribe();
+      presenceChannel
+        .on('presence', { event: 'sync' }, () => {
+          if (!isMounted) return;
+          const state = presenceChannel.presenceState();
+          setOnlineUsers(new Set(Object.keys(state)));
+        })
+        .subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            await presenceChannel.track({ online_at: new Date().toISOString() });
+          }
+        });
+
+      // ⚡ DUAL REALTIME LISTENER (Rooms + Messages Delete/Insert Sync)
+      const realtimeChannel = supabase
+        .channel('chat_list_realtime_sync')
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'chat_rooms' },
+          () => { if (isMounted) fetchRooms(); }
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'chat_messages' },
+          () => { if (isMounted) fetchRooms(); }
+        )
+        .subscribe();
+    }
+
+    initChatList();
 
     return () => {
-      supabase.removeChannel(presenceChannel);
-      supabase.removeChannel(realtimeChannel);
+      isMounted = false;
+      supabase.removeAllChannels();
     };
-  }, [user, authLoading]);
+  }, [user?.id, authLoading]);
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
@@ -131,32 +144,67 @@ export function ChatListPage() {
       return;
     }
     setIsSearching(true);
-    const { data } = await supabase
-      .from('profiles')
-      .select('id, username, avatar_url, full_name, last_seen')
-      .ilike('username', `%${query}%`)
-      .not('id', 'eq', user?.id)
-      .limit(8);
-    setSearchResults(data || []);
-    setIsSearching(false);
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url, full_name, last_seen')
+        .ilike('username', `%${query}%`)
+        .not('id', 'eq', user?.id)
+        .limit(8);
+      setSearchResults(data || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSearching(false);
+    }
   };
 
+  // 🚀 CRASH-PROOF SAFE FETCH ROOMS
   const fetchRooms = async () => {
+    if (!user?.id) {
+      setLoading(false);
+      return;
+    }
     try {
-      if (!user?.id) return;
-      const { data, error } = await supabase
+      // Step 1: Rooms fetch karo
+      const { data: rawRooms, error: roomError } = await supabase
         .from('chat_rooms')
-        .select(`
-          *, 
-          user1:profiles!chat_rooms_user1_id_fkey(id, username, last_seen), 
-          user2:profiles!chat_rooms_user2_id_fkey(id, username, last_seen)
-        `)
+        .select('*')
         .or(`user1_id.eq.${user.id},user2_id.eq.${user.id}`)
-        .order('last_message_time', { ascending: false }); // 🔥 STRICT INSTAGRAM SORT: Most Recent Message First
+        .order('last_message_time', { ascending: false });
 
-      if (!error) setRooms(data || []);
+      if (roomError || !rawRooms || rawRooms.length === 0) {
+        setRooms([]);
+        setLoading(false);
+        return;
+      }
+
+      // Step 2: Friends ki IDs collect karo
+      const friendIds = rawRooms.map(r => r.user1_id === user.id ? r.user2_id : r.user1_id).filter(Boolean);
+
+      // Step 3: Profiles safely fetch karo (bina joins ke)
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, username, avatar_url, last_seen, full_name')
+        .in('id', friendIds);
+
+      const profileMap = new Map();
+      (profiles || []).forEach(p => profileMap.set(p.id, p));
+
+      // Step 4: Map rooms safely
+      const formattedRooms = rawRooms.map(room => {
+        const otherId = room.user1_id === user.id ? room.user2_id : room.user1_id;
+        const otherProfile = profileMap.get(otherId) || { id: otherId, username: 'User' };
+        return {
+          ...room,
+          user1: room.user1_id === user.id ? user : otherProfile,
+          user2: room.user2_id === user.id ? user : otherProfile,
+        };
+      });
+
+      setRooms(formattedRooms);
     } catch (err) { 
-      console.error(err); 
+      console.error("Fetch Rooms Error: ", err); 
     } finally { 
       setLoading(false); 
     }
@@ -164,25 +212,29 @@ export function ChatListPage() {
 
   const startChat = async (friendId: string) => {
     if (!user?.id) return;
-    const { data: existingRoom } = await supabase
-      .from('chat_rooms')
-      .select('id')
-      .or(`and(user1_id.eq.${user.id},user2_id.eq.${friendId}),and(user1_id.eq.${friendId},user2_id.eq.${user.id})`)
-      .maybeSingle();
-
-    if (existingRoom) {
-      navigate(`/chat/${existingRoom.id}?friend=${friendId}`);
-    } else {
-      const { data: newRoom, error } = await supabase
+    try {
+      const { data: existingRoom } = await supabase
         .from('chat_rooms')
-        .insert([{ user1_id: user.id, user2_id: friendId }])
-        .select().single();
-      if (!error) navigate(`/chat/${newRoom.id}?friend=${friendId}`);
+        .select('id')
+        .or(`and(user1_id.eq.${user.id},user2_id.eq.${friendId}),and(user1_id.eq.${friendId},user2_id.eq.${user.id})`)
+        .maybeSingle();
+
+      if (existingRoom) {
+        navigate(`/chat/${existingRoom.id}?friend=${friendId}`);
+      } else {
+        const { data: newRoom, error } = await supabase
+          .from('chat_rooms')
+          .insert([{ user1_id: user.id, user2_id: friendId }])
+          .select().single();
+        if (!error && newRoom) navigate(`/chat/${newRoom.id}?friend=${friendId}`);
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
   // 🚀 ONLY Top Horizontal Tray Filters for Online Friends
-  const topActiveTrayRooms = [...rooms].filter(room => {
+  const topActiveTrayRooms = rooms.filter(room => {
     const otherUser = room.user1_id === user?.id ? room.user2 : room.user1;
     return checkIsOnline(otherUser?.id, otherUser?.last_seen, onlineUsers);
   });
@@ -200,9 +252,9 @@ export function ChatListPage() {
         <Send size={20} className="text-black cursor-pointer" />
       </div>
 
-      {/* 🚀 Loading Fallback: White screen aane se rokega */}
+      {/* 🚀 Loader Indicator: White screen aane se bachaayega */}
       {(loading || authLoading) ? (
-        <div className="flex flex-col items-center justify-center p-12 text-gray-400 gap-3">
+        <div className="flex flex-col items-center justify-center p-16 text-gray-400 gap-3">
           <Loader2 className="animate-spin text-black" size={28} />
           <p className="text-xs font-semibold text-gray-500">Loading messages...</p>
         </div>
@@ -270,7 +322,7 @@ export function ChatListPage() {
                 {searchResults.map((person) => {
                   const isOnline = checkIsOnline(person.id, person.last_seen, onlineUsers);
                   return (
-                    <div key={person.id} onClick={() => startChat(person.id)} className="flex items-center justify-between py-3">
+                    <div key={person.id} onClick={() => startChat(person.id)} className="flex items-center justify-between py-3 cursor-pointer">
                       <div className="flex items-center gap-4">
                         <UserAvatar userId={person.id} username={person.username} isOnline={isOnline} />
                         <div>
@@ -307,7 +359,7 @@ export function ChatListPage() {
                       <div className="flex-1 min-w-0">
                         {/* 🔴 Username: Bold Red 🔴 if unread, Bold Black if read */}
                         <h3 className={`text-sm ${isUnread ? 'font-black text-red-600' : 'font-bold text-gray-800'}`}>
-                          {otherUser?.username}
+                          {otherUser?.username || 'User'}
                         </h3>
                         
                         {/* 🔴 Message preview: Bold Red 🔴 if unread, Normal Gray if read or Tap to chat */}
