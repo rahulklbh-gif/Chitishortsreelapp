@@ -30,6 +30,7 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
 
   const [followedUsers, setFollowedUsers] = useState<Set<string>>(new Set()); 
   const containerRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
   const viewedVideos = useRef<Set<string>>(new Set());
   const isRemoteScrolling = useRef(false); // Loop Protection Flag
   const scrollTimeoutRef = useRef<any>(null);
@@ -109,6 +110,49 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     return () => clearTimeout(timer);
   }, [activeIndex, videos, currentUser?.id]); 
 
+  // ⚡ INSTAGRAM ULTRA-FAST INTERSECTION OBSERVER SCROLL DETECTOR
+  useEffect(() => {
+    if (videos.length === 0) return;
+
+    const observerOptions = {
+      root: containerRef.current,
+      rootMargin: '0px',
+      threshold: 0.65 // Instant detection when 65% of screen is reached
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const index = Number(entry.target.getAttribute('data-index'));
+          if (!isNaN(index) && index !== activeIndex) {
+            if (isRemoteScrolling.current) {
+              isRemoteScrolling.current = false;
+              return;
+            }
+
+            setActiveIndex(index);
+            setIsPlaying(true);
+
+            if (videos[index]) {
+              if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+              scrollTimeoutRef.current = setTimeout(() => {
+                broadcastVideoChange(videos[index].id, location.pathname);
+              }, 150);
+            }
+          }
+        }
+      });
+    }, observerOptions);
+
+    itemRefs.current.forEach((ref) => {
+      if (ref) observer.observe(ref);
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [videos, activeIndex, broadcastVideoChange, location.pathname]);
+
   const fetchVideos = async () => {
     try {
       setLoading(true);
@@ -117,13 +161,13 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
       const { data, error } = await supabase
        .from('posts')
        .select(`
-          *,
-          profiles:user_id (
-            username,
-            full_name,
-            avatar_url
-          )
-        `);
+         *,
+         profiles:user_id (
+           username,
+           full_name,
+           avatar_url
+         )
+       `);
 
       if (error) {
         console.error("Join fetch failed, falling back to simple fetch:", error);
@@ -194,31 +238,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
        .eq('follower_id', currentUser.id);
       if (data) setFollowedUsers(new Set(data.map(f => f.following_id)));
     } catch (err) { console.error(err); }
-  };
-
-  // 🔴 AAPKE SCROLL PAR SABHI DOSTON KO REAL-TIME SYNC SIGNAL BHEJNA (Optimized with Debounce)
-  const handleScroll = () => {
-    if (!containerRef.current) return;
-
-    if (isRemoteScrolling.current) {
-      isRemoteScrolling.current = false;
-      return;
-    }
-
-    const { scrollTop, clientHeight } = containerRef.current;
-    const index = Math.round(scrollTop / clientHeight);
-    
-    if (index !== activeIndex) {
-      setActiveIndex(index);
-      setIsPlaying(true); 
-
-      if (videos[index]) {
-        if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-        scrollTimeoutRef.current = setTimeout(() => {
-          broadcastVideoChange(videos[index].id, location.pathname);
-        }, 150);
-      }
-    }
   };
 
   // 🔴 REMOTE FRIEND KE SCROLL SIGNAL PAR APNI VIDEO AUTO-MOVE KARNA
@@ -298,7 +317,6 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     <div
       ref={containerRef}
       className="fixed inset-0 overflow-y-scroll snap-y snap-mandatory no-scrollbar bg-black scroll-smooth"
-      onScroll={handleScroll}
       style={{ 
         WebkitOverflowScrolling: 'touch',
         willChange: 'transform'
@@ -306,11 +324,14 @@ export function RealVideoFeed({ onComment }: { onComment: (videoId: string, vide
     >
       {videos.map((video, index) => {
         const isActive = index === activeIndex;
+        // ⚡ Preloading next 2 videos to eliminate loading spinners on swipe
         const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 2;
 
         return (
           <div 
             key={video.id} 
+            data-index={index}
+            ref={(el) => (itemRefs.current[index] = el)}
             className="relative h-screen w-full snap-start snap-always bg-black transform-gpu"
             onClick={togglePlayPause} 
           >
