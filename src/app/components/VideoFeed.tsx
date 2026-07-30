@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer'; 
-import { VideoActions } from './VideoActions'; // 👈 VideoActions Import Added
+import { VideoActions } from './VideoActions'; 
 import { Loader2, Zap, Music2, Send } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -15,7 +15,9 @@ export default function VideoFeed() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
 
+  // Fetch posts from Supabase
   useEffect(() => {
     const fetchPosts = async () => {
       try {
@@ -46,16 +48,35 @@ export default function VideoFeed() {
     fetchPosts();
   }, []);
 
+  // ⚡ INSTAGRAM FAST INTERSECTION OBSERVER ENGINE
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const handleScroll = () => {
-      const index = Math.round(container.scrollTop / window.innerHeight);
-      if (index !== activeIndex) setActiveIndex(index);
+    if (posts.length === 0) return;
+
+    const observerOptions = {
+      root: containerRef.current,
+      rootMargin: '0px',
+      threshold: 0.65 // 65% Screen visible hote hi instant video activate hoga
     };
-    container.addEventListener('scroll', handleScroll);
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [activeIndex]);
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const index = Number(entry.target.getAttribute('data-index'));
+          if (!isNaN(index)) {
+            setActiveIndex(index);
+          }
+        }
+      });
+    }, observerOptions);
+
+    itemRefs.current.forEach((ref) => {
+      if (ref) observer.observe(ref);
+    });
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [posts]);
 
   if (loading) {
     return (
@@ -94,16 +115,26 @@ export default function VideoFeed() {
         </div>
       </div>
 
-      {/* VIDEO CONTAINER */}
-      <div ref={containerRef} className="h-full w-full overflow-y-scroll snap-y snap-mandatory no-scrollbar">
+      {/* ⚡ LIGHTNING FAST SNAP SCROLL CONTAINER */}
+      <div 
+        ref={containerRef} 
+        className="h-full w-full overflow-y-scroll snap-y snap-mandatory scroll-smooth no-scrollbar"
+        style={{ scrollBehavior: 'smooth', WebkitOverflowScrolling: 'touch' }}
+      >
         {posts.length > 0 ? (
           posts.map((post, index) => {
-            const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 1;
+            // ⚡ INSTANT BUFFER: Current se 1 piche aur 2 AAGE ke videos pehle se pre-load honge
+            const shouldRender = index >= activeIndex - 1 && index <= activeIndex + 2;
             const latestName = post.profiles?.username || post.user_name || 'user';
             const latestAvatar = post.profiles?.avatar_url || post.user_avatar;
 
             return (
-              <div key={post.id} className="h-screen w-full snap-start snap-always relative border-b border-white/5">
+              <div 
+                key={post.id} 
+                data-index={index}
+                ref={(el) => (itemRefs.current[index] = el)}
+                className="h-screen w-full snap-start snap-always relative border-b border-white/5"
+              >
                 {shouldRender ? (
                   <>
                     <OptimizedVideoPlayer
@@ -144,7 +175,7 @@ export default function VideoFeed() {
                       </div>
                     </div>
 
-                    {/* 👈 Right Side Video Actions & Watch Party Button Panel */}
+                    {/* Right Side Video Actions */}
                     <div className="absolute right-3 bottom-24 z-30" onClick={(e) => e.stopPropagation()}>
                       <VideoActions 
                         videoId={post.id} 
@@ -166,7 +197,9 @@ export default function VideoFeed() {
             );
           })
         ) : (
-          <div className="h-screen w-full flex items-center justify-center text-zinc-500 font-bold">Abhi koi video nahi hai.</div>
+          <div className="h-screen w-full flex items-center justify-center text-zinc-500 font-bold">
+            Abhi koi video nahi hai.
+          </div>
         )}
       </div>
     </div>
