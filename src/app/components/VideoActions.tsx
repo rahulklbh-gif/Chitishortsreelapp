@@ -131,32 +131,32 @@ export function VideoActions({
   };
 
   return (
-    <div className="flex flex-col items-center gap-5 relative">
+    <div className="flex flex-col items-center gap-4 relative">
       {/* Hearts Animation */}
       {hearts.map(heart => (
-        <div key={heart.id} className="absolute bottom-10 text-red-500 text-2xl animate-bounce-up pointer-events-none" style={{ left: `${heart.left}px` }}>❤️</div>
+        <div key={heart.id} className="absolute bottom-10 text-red-500 text-xl animate-bounce-up pointer-events-none" style={{ left: `${heart.left}px` }}>❤️</div>
       ))}
 
-      {/* 1. WATCH PARTY BUTTON (Clean Icon on Right Action Panel) */}
+      {/* 1. WATCH PARTY BUTTON (Instagram Sleek Circle) */}
       <button 
         onClick={(e) => {
           e.stopPropagation();
           setIsPartyOpen(true);
         }} 
-        className="flex flex-col items-center group outline-none bg-transparent border-none active:scale-110 transition-transform"
+        className="flex flex-col items-center group outline-none bg-transparent border-none active:scale-90 transition-transform"
       >
-        <div className="p-2.5 rounded-full bg-purple-600/40 backdrop-blur-md active:scale-125 transition-transform text-purple-300 border border-purple-400/50 shadow-lg shadow-purple-950/50">
-          <PartyPopper className="w-8 h-8 text-yellow-300 animate-pulse" strokeWidth={2.2} />
+        <div className="p-2 rounded-full bg-purple-600/40 backdrop-blur-md active:scale-110 transition-transform text-purple-300 border border-purple-400/40 shadow-md">
+          <PartyPopper className="w-6 h-6 text-yellow-300 animate-pulse" strokeWidth={1.8} />
         </div>
-        <span className="text-white text-[10px] font-bold drop-shadow-md mt-1">Party 🎉</span>
+        <span className="text-white text-[9px] font-semibold drop-shadow-md mt-0.5">Party 🎉</span>
       </button>
 
       {/* 2. LIKE BUTTON */}
       <button onClick={handleLike} className="flex flex-col items-center group outline-none focus:outline-none bg-transparent border-none">
-        <div className={`p-2 rounded-full transition-transform active:scale-150 duration-200 ${isLiked ? 'scale-110' : 'scale-100'}`}>
-          <Heart className={`w-9 h-9 ${isLiked ? 'fill-red-500 text-red-500' : 'text-white'}`} strokeWidth={2.5} />
+        <div className={`p-1.5 transition-transform active:scale-125 duration-200 ${isLiked ? 'scale-105' : 'scale-100'}`}>
+          <Heart className={`w-7 h-7 ${isLiked ? 'fill-red-500 text-red-500' : 'text-white'}`} strokeWidth={2} />
         </div>
-        <span className="text-white text-[12px] font-black drop-shadow-md">{likeCount}</span>
+        <span className="text-white text-[11px] font-semibold drop-shadow-md">{likeCount}</span>
       </button>
 
       {/* 3. COMMENT BUTTON */}
@@ -164,10 +164,10 @@ export function VideoActions({
         onClick={handleCommentClick} 
         className="flex flex-col items-center group outline-none bg-transparent border-none"
       >
-        <div className="p-2 active:scale-125 transition-transform text-white">
-          <MessageCircle className="w-9 h-9" strokeWidth={2.5} />
+        <div className="p-1.5 active:scale-125 transition-transform text-white">
+          <MessageCircle className="w-7 h-7" strokeWidth={2} />
         </div>
-        <span className="text-white text-[12px] font-black drop-shadow-md">
+        <span className="text-white text-[11px] font-semibold drop-shadow-md">
           {commentCount}
         </span>
       </button>
@@ -177,10 +177,10 @@ export function VideoActions({
         onClick={handleShareInternal} 
         className="flex flex-col items-center group outline-none bg-transparent border-none"
       >
-        <div className="p-2 active:scale-125 transition-transform text-white">
-          <Share2 className="w-9 h-9" strokeWidth={2.5} />
+        <div className="p-1.5 active:scale-125 transition-transform text-white">
+          <Share2 className="w-7 h-7" strokeWidth={2} />
         </div>
-        <span className="text-white text-[12px] font-black drop-shadow-md">
+        <span className="text-white text-[11px] font-semibold drop-shadow-md">
           {shareCount}
         </span>
       </button>
@@ -207,7 +207,7 @@ export function VideoActions({
       <style>{`
         @keyframes bounce-up {
           0% { transform: translateY(0) scale(1); opacity: 1; }
-          100% { transform: translateY(-150px) scale(2.5); opacity: 0; }
+          100% { transform: translateY(-150px) scale(2); opacity: 0; }
         }
         .animate-bounce-up { animation: bounce-up 0.8s ease-out forwards; }
       `}</style>
