@@ -5,7 +5,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
-import { ArrowLeft, Camera, Loader2, Trash2, Play, Heart, Check, CheckCheck } from 'lucide-react'; 
+import { ArrowLeft, Send, Camera, Loader2, Trash2, Play, Heart, Check, CheckCheck } from 'lucide-react'; 
 import { toast } from 'sonner';
 
 // --- Cloudflare R2 Config ---
@@ -72,39 +72,17 @@ export function ChatRoom() {
   const [newMessage, setNewMessage] = useState('');
   const [friendProfile, setFriendProfile] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false); 
   const [isTyping, setIsTyping] = useState(false);
   const [isFriendOnlineGlobal, setIsFriendOnlineGlobal] = useState(false);
-  const [isFriendInRoom, setIsFriendInRoom] = useState(false);
   const [now, setNow] = useState(new Date()); 
-  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const statusInterval = useRef<any>(null);
   const channelRef = useRef<any>(null);
 
-  // 🎵 Direct Javascript Audio Instances (Fixes Audio Loading & Autoplay Issues)
-  const sentSound = useRef(new Audio("https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3"));
-  const receivedSound = useRef(new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3"));
-  const typingSound = useRef(new Audio("https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3"));
-  
-  const lastRemoteTypingSoundTime = useRef<number>(0);
-
-  const playSound = (type: 'sent' | 'received' | 'typing') => {
-    let soundObj: HTMLAudioElement;
-    if (type === 'sent') soundObj = sentSound.current;
-    else if (type === 'received') soundObj = receivedSound.current;
-    else soundObj = typingSound.current;
-
-    if (soundObj) {
-      soundObj.currentTime = 0;
-      soundObj.play().catch((err) => {
-        console.log("Audio play blocked/failed:", err);
-        if (navigator.vibrate && type !== 'typing') {
-          navigator.vibrate(type === 'sent' ? 30 : 60);
-        }
-      });
-    }
-  };
+  const sentAudioRef = useRef<HTMLAudioElement>(null);
+  const receivedAudioRef = useRef<HTMLAudioElement>(null);
 
   const renderFormattedMessage = (content: string, isMe: boolean) => {
     if (!content) return null;
@@ -140,12 +118,35 @@ export function ChatRoom() {
     });
   };
 
+  const playSound = (type: 'sent' | 'received') => {
+    const audio = type === 'sent' ? sentAudioRef.current : receivedAudioRef.current;
+    if (audio) {
+      audio.currentTime = 0;
+      audio.play().catch(() => {
+        if (navigator.vibrate) navigator.vibrate(50);
+      });
+    }
+    if (navigator.vibrate) navigator.vibrate(type === 'sent' ? 30 : 60);
+  };
+
+  const unlockAudio = () => {
+    if (!isAudioUnlocked && sentAudioRef.current && receivedAudioRef.current) {
+      sentAudioRef.current.play().then(() => {
+        sentAudioRef.current?.pause();
+        setIsAudioUnlocked(true);
+      }).catch(() => {});
+    }
+  };
+
+  // ðŸ”µ FIXED READ LOGIC: Updates DB + Broadcasts Event Realtime
   const markAsRead = async () => {
     if (!roomId || !user) return;
     
+    // DB Update
     await supabase.from('chat_messages').update({ is_read: true, read_at: new Date().toISOString() }).eq('room_id', roomId).neq('sender_id', user.id).eq('is_read', false);
     await supabase.from('chat_rooms').update({ is_read: true }).eq('id', roomId).neq('last_sender_id', user.id);
 
+    // Instant Realtime Broadcast to sender's phone
     if (channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
@@ -180,43 +181,11 @@ export function ChatRoom() {
           }
         });
 
-      const roomPresence = supabase.channel(`room-presence-${roomId}`, {
-        config: { presence: { key: user.id } }
-      });
-
-      roomPresence
-        .on('presence', { event: 'sync' }, () => {
-          const state = roomPresence.presenceState();
-          const activeRoomUsers = new Set(Object.keys(state));
-          if (friendId) {
-            setIsFriendInRoom(activeRoomUsers.has(friendId));
-          }
-        })
-        .subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            await roomPresence.track({ in_room_at: new Date().toISOString() });
-          }
-        });
-
-      // Typing Indicator & Friend Typing Sound Detector
       const typingChannel = supabase.channel(`typing-${roomId}`)
         .on('presence', { event: 'sync' }, () => {
           const state: any = typingChannel.presenceState();
-          const typingUsers = Object.values(state).flat() as any[];
-          
-          const friendTypingObj = typingUsers.find((u: any) => u.user_id === friendId);
-          const friendIsCurrentlyTyping = !!friendTypingObj?.is_typing;
-          
-          setIsTyping(friendIsCurrentlyTyping);
-
-          // Jab friend type kar raha ho, tab typing sound play ho (Throttled 300ms)
-          if (friendIsCurrentlyTyping) {
-            const nowTime = Date.now();
-            if (nowTime - lastRemoteTypingSoundTime.current > 300) {
-              playSound('typing');
-              lastRemoteTypingSoundTime.current = nowTime;
-            }
-          }
+          const typingUsers = Object.values(state).flat();
+          setIsTyping(typingUsers.some((u: any) => u.user_id === friendId && u.is_typing));
         })
         .subscribe(async (status) => {
           if (status === 'SUBSCRIBED') {
@@ -224,6 +193,7 @@ export function ChatRoom() {
           }
         });
 
+      // âš¡ DUAL-SYNC REALTIME LISTENER FOR INSTANT DOUBLE TICK (âœ“âœ“)
       const messageChannel = supabase.channel(`room-${roomId}`, {
         config: { broadcast: { self: false } }
       })
@@ -254,6 +224,7 @@ export function ChatRoom() {
             setMessages((prev) => prev.filter(m => m.id !== payload.old.id));
           }
         })
+        // ðŸ”µ BROADCAST EVENT: Instant Double Tick without DB latency
         .on('broadcast', { event: 'messages_read' }, (payload) => {
           if (payload.payload.reader_id !== user.id) {
             setMessages((prev) => prev.map(m => ({ ...m, is_read: true })));
@@ -279,7 +250,6 @@ export function ChatRoom() {
         supabase.removeChannel(profileSubscription);
         supabase.removeChannel(typingChannel);
         supabase.removeChannel(globalPresence);
-        supabase.removeChannel(roomPresence);
       };
     }
   }, [roomId, friendId, user?.id]);
@@ -321,7 +291,7 @@ export function ChatRoom() {
     let previewText = 'Tap to chat';
     if (lastMsg) {
       if (lastMsg.media_url) {
-        previewText = lastMsg.media_type === 'photo' ? '📷 Photo' : '🎥 Video Shared';
+        previewText = lastMsg.media_type === 'photo' ? 'ðŸ“· Photo' : 'ðŸŽ¥ Video Shared';
       } else {
         previewText = lastMsg.content || 'Message';
       }
@@ -399,7 +369,7 @@ export function ChatRoom() {
 
     if (!error) {
       playSound('sent'); 
-      const previewText = mediaUrl ? (mediaType === 'photo' ? '📷 Photo' : '🎥 Video Shared') : currentMsg;
+      const previewText = mediaUrl ? (mediaType === 'photo' ? 'ðŸ“· Photo' : 'ðŸŽ¥ Video Shared') : currentMsg;
       await supabase.from('chat_rooms').update({
         last_message: previewText,
         last_message_time: new Date().toISOString(),
@@ -444,12 +414,10 @@ export function ChatRoom() {
   const isOnline = isFriendOnlineGlobal || lastSeenStatus === "Online";
   
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black" onClick={() => {
-      // Audio unlock trigger on any screen touch
-      sentSound.current.load();
-      receivedSound.current.load();
-      typingSound.current.load();
-    }}>
+    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black" onClick={unlockAudio}>
+      <audio ref={sentAudioRef} src="https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3" preload="auto" />
+      <audio ref={receivedAudioRef} src="https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3" preload="auto" />
+
       {/* Header */}
       <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0 shadow-sm z-10">
         <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer text-black" />
@@ -460,7 +428,7 @@ export function ChatRoom() {
         <div className="flex-1">
           <h3 className="text-sm font-bold text-gray-900">{friendProfile?.full_name || friendProfile?.username || 'User'}</h3>
           <p className={`text-[10px] font-bold ${isTyping ? 'text-blue-500 animate-pulse' : (isOnline ? 'text-green-600' : 'text-gray-400')}`}>
-            {isTyping ? "typing..." : (isFriendInRoom ? "In Chat Room" : (isOnline ? "Online" : `Active ${lastSeenStatus}`))}
+            {isTyping ? "typing..." : (isOnline ? "Online" : `Active ${lastSeenStatus}`)}
           </p>
         </div>
       </div>
@@ -510,6 +478,7 @@ export function ChatRoom() {
                     {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                   
+                  {/* ðŸ”µ Read Status: Double Tick (âœ“âœ“) when read, Single Tick (âœ“) when sent */}
                   {isMe && (
                     <span className="ml-1">
                       {msg.is_read ? (
@@ -535,7 +504,7 @@ export function ChatRoom() {
                   <Heart size={12} className={`${msg.is_liked ? 'fill-red-500 text-red-500' : 'text-gray-300'}`} />
                 </button>
                 
-                {/* Delete Button */}
+                {/* ðŸ—‘ï¸ Smart Delete Button */}
                 <button 
                   onClick={() => handleDeleteMessage(msg.id, msg.sender_id)} 
                   className={`absolute top-2 ${isMe ? 'right-2' : 'left-2'} p-1.5 bg-black/40 backdrop-blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10`}
