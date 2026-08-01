@@ -72,7 +72,6 @@ export function ChatRoom() {
   const [newMessage, setNewMessage] = useState('');
   const [friendProfile, setFriendProfile] = useState<any>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const [isAudioUnlocked, setIsAudioUnlocked] = useState(false); 
   const [isTyping, setIsTyping] = useState(false);
   const [isFriendOnlineGlobal, setIsFriendOnlineGlobal] = useState(false);
   const [isFriendInRoom, setIsFriendInRoom] = useState(false);
@@ -83,11 +82,29 @@ export function ChatRoom() {
   const statusInterval = useRef<any>(null);
   const channelRef = useRef<any>(null);
 
-  // Audio References
-  const sentAudioRef = useRef<HTMLAudioElement>(null);
-  const receivedAudioRef = useRef<HTMLAudioElement>(null);
-  const typingAudioRef = useRef<HTMLAudioElement>(null);
+  // 🎵 Direct Javascript Audio Instances (Fixes Audio Loading & Autoplay Issues)
+  const sentSound = useRef(new Audio("https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3"));
+  const receivedSound = useRef(new Audio("https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3"));
+  const typingSound = useRef(new Audio("https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3"));
+  
   const lastRemoteTypingSoundTime = useRef<number>(0);
+
+  const playSound = (type: 'sent' | 'received' | 'typing') => {
+    let soundObj: HTMLAudioElement;
+    if (type === 'sent') soundObj = sentSound.current;
+    else if (type === 'received') soundObj = receivedSound.current;
+    else soundObj = typingSound.current;
+
+    if (soundObj) {
+      soundObj.currentTime = 0;
+      soundObj.play().catch((err) => {
+        console.log("Audio play blocked/failed:", err);
+        if (navigator.vibrate && type !== 'typing') {
+          navigator.vibrate(type === 'sent' ? 30 : 60);
+        }
+      });
+    }
+  };
 
   const renderFormattedMessage = (content: string, isMe: boolean) => {
     if (!content) return null;
@@ -121,34 +138,6 @@ export function ChatRoom() {
       }
       return <span key={idx}>{part}</span>;
     });
-  };
-
-  const playSound = (type: 'sent' | 'received' | 'typing') => {
-    let audio: HTMLAudioElement | null = null;
-    if (type === 'sent') audio = sentAudioRef.current;
-    if (type === 'received') audio = receivedAudioRef.current;
-    if (type === 'typing') audio = typingAudioRef.current;
-
-    if (audio) {
-      audio.currentTime = 0;
-      audio.play().catch(() => {
-        if (navigator.vibrate && type !== 'typing') navigator.vibrate(50);
-      });
-    }
-    if (navigator.vibrate && type !== 'typing') {
-      navigator.vibrate(type === 'sent' ? 30 : 60);
-    }
-  };
-
-  const unlockAudio = () => {
-    if (!isAudioUnlocked && sentAudioRef.current && receivedAudioRef.current && typingAudioRef.current) {
-      sentAudioRef.current.play().then(() => {
-        sentAudioRef.current?.pause();
-        receivedAudioRef.current?.pause();
-        typingAudioRef.current?.pause();
-        setIsAudioUnlocked(true);
-      }).catch(() => {});
-    }
   };
 
   const markAsRead = async () => {
@@ -209,19 +198,18 @@ export function ChatRoom() {
           }
         });
 
-      // Typing Indicator & Remote Typing Sound Detector
+      // Typing Indicator & Friend Typing Sound Detector
       const typingChannel = supabase.channel(`typing-${roomId}`)
         .on('presence', { event: 'sync' }, () => {
           const state: any = typingChannel.presenceState();
           const typingUsers = Object.values(state).flat() as any[];
           
-          // Check if friend is currently typing
           const friendTypingObj = typingUsers.find((u: any) => u.user_id === friendId);
           const friendIsCurrentlyTyping = !!friendTypingObj?.is_typing;
           
           setIsTyping(friendIsCurrentlyTyping);
 
-          // Agar friend type kar raha hai, toh typing sound bajayein (Har 300ms me throttle karke taaki awaz kharab na ho)
+          // Jab friend type kar raha ho, tab typing sound play ho (Throttled 300ms)
           if (friendIsCurrentlyTyping) {
             const nowTime = Date.now();
             if (nowTime - lastRemoteTypingSoundTime.current > 300) {
@@ -322,7 +310,6 @@ export function ChatRoom() {
     if (navigator.vibrate) navigator.vibrate(20);
   };
 
-  // Jab aap type karenge, sirf Supabase par tracking update hogi (sound nahi bajega taaki disturbance na ho)
   const handleTypingStatus = (val: string) => {
     setNewMessage(val);
     supabase.channel(`typing-${roomId}`).track({ user_id: user?.id, is_typing: val.length > 0 });
@@ -457,12 +444,12 @@ export function ChatRoom() {
   const isOnline = isFriendOnlineGlobal || lastSeenStatus === "Online";
   
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black" onClick={unlockAudio}>
-      {/* Audio elements */}
-      <audio ref={sentAudioRef} src="https://assets.mixkit.co/active_storage/sfx/2354/2354-preview.mp3" preload="auto" />
-      <audio ref={receivedAudioRef} src="https://assets.mixkit.co/active_storage/sfx/2358/2358-preview.mp3" preload="auto" />
-      <audio ref={typingAudioRef} src="https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3" preload="auto" />
-
+    <div className="fixed inset-0 z-[100] flex flex-col bg-white text-black" onClick={() => {
+      // Audio unlock trigger on any screen touch
+      sentSound.current.load();
+      receivedSound.current.load();
+      typingSound.current.load();
+    }}>
       {/* Header */}
       <div className="p-4 pt-10 border-b border-gray-100 flex items-center gap-4 bg-white sticky top-0 shadow-sm z-10">
         <ArrowLeft onClick={() => navigate(-1)} className="cursor-pointer text-black" />
@@ -554,7 +541,7 @@ export function ChatRoom() {
                   className={`absolute top-2 ${isMe ? 'right-2' : 'left-2'} p-1.5 bg-black/40 backdrop-blur-md rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10`}
                   title={isMe ? "Delete for Everyone" : "Delete for You"}
                 >
-                  <Trash2 size2={12} className="text-white" />
+                  <Trash2 size={12} className="text-white" />
                 </button>
               </div>
             </div>
